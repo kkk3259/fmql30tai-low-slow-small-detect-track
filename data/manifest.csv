@@ -1,0 +1,6 @@
+seq_id,frames,resolution,fps,source,distance_m,target_type,background,light,label_status,split,license,notes
+seqA,1800,1920x1080,30,own,30,balloon,sky_clean,front,full,eval,self,系留气球缓慢上升
+seqB,1800,1920x1080,30,own,100,quad,sky_thin_cloud,front,partial,eval,self,悬停+缓慢平移（主要演示序列）
+seqC,900,1920x1080,30,own,200,quad,sky_clean,back,partial,eval,self,逆光困难场景
+seqD,,,,public,,bird,,,full,eval,见数据集许可,Drone-vs-Bird 序列（填实际文件名与来源链接）
+seqE,600,1280x720,30,synth,,synth_target,sky_cloud,,full,eval,self,合成序列：目标 6px、ΔI=5

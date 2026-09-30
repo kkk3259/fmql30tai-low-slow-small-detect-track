@@ -1,0 +1,42 @@
+# 数据与中间产物不入库
+data/raw/
+data/frames/
+data/labels/
+data/synth/
+results/*.mp4
+results/*.avi
+results/ai-evidence/*.png
+*.yuv
+*.mjpg
+*.h264
+*.mp4
+*.avi
+*.bin
+*.bit
+
+# Icraft / Procise 工程的中间产物
+pl/sim/*.vcd
+pl/sim/*.out
+pl/sim/*.lxt2
+pl/**/work/
+pl/**/*.log
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# 系统与编辑器
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/settings.json
+.idea/
+
+# 大模型与权重文件（单独用网盘传递）
+*.pt
+*.pth
+*.onnx
+!npu/**/*.json
