@@ -6,7 +6,7 @@
       现在全部是 Python 实现（在 PC 上跑），板卡到货后按下面标了"★替换点"的地方
       逐段换成硬件模块，其它代码一行都不用改。
 
-流水线（7 个可替换接口，对应接口定义 I1~I5）：
+流水线（7 个处理环节，对应 5 个数据接口 I1~I5；其中 5 个环节可替换）：
   ① capture()   采集视频帧        -★- 将来: PS 的 V4L2(USB相机) / VPU(TF卡序列)
   ② detect()    检测(粗筛)        -★- 将来: PL 的 IP1+IP2  -> 输出候选列表 I2
   ③ crop_roi()  裁 128x128 图块   -★- 将来: PL 的 IP4      -> 输出 ROI 张量 I3
@@ -372,7 +372,7 @@ def main():
     print("端到端帧率      : {:.2f} fps".format(n / t_total))
     print("单帧总耗时      : 均值 {:.2f} ms".format(sum(r[5] for r in rows) / n))
     print("")
-    print("---- 各环节平均耗时（对应 7 个接口）----")
+    print("---- 各环节平均耗时（7 个处理环节）----")
     names = ["② 检测 detect", "③④ 裁ROI+判别", "⑤ 跟踪 track", "⑥ 显示 render"]
     for nm, v in zip(names, stage_sum / n):
         print("  {:<16s} {:.2f} ms".format(nm, v))
@@ -387,7 +387,7 @@ def main():
     print("输出视频        : {}".format(os.path.abspath(a.out)))
     print("逐帧数据        : {}".format(os.path.abspath(a.csv)))
     print("")
-    print("提示：本文件里的 ★替换点1~5 就是 P(PL) 和 A(NPU) 的接入位置。")
+    print("提示：7 个环节中 ①采集/②检测/③裁ROI/④判别/⑥显示 可替换（=★替换点1~5，是 P 和 A 的接入位置）；⑤跟踪/⑦上报 固定放 CPU。")
 
 
 if __name__ == "__main__":

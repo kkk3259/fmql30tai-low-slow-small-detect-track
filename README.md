@@ -70,7 +70,7 @@ D:\lowslow\venv\Scripts\python.exe ps\ps_app.py --src synth
 | `train/` | 训练与导出脚本（train.py / export_onnx.py） | **A** |
 | `npu/` | Icraft 工程、量化校准集清单、量化日志 | **A** |
 | `data/` | 数据集清单与抽帧结果（原始视频不入 Git，只放硬盘） | **A** |
-| `ps/` | **PS 侧应用与集成骨架**（`ps_app.py`，7 个可替换接口） | **S** |
+| `ps/` | **PS 侧应用与集成骨架**（`ps_app.py`：7 个处理环节，5 个可替换点） | **S** |
 | `baseline/` | 软件基线 v0/v1/v2（对比基准 + 硬件开发的"标准答案"） | **S** |
 | `tools/` | 工具脚本（真值标注 `mark_gt.py` 等） | **S** |
 | `docs/` | 接口规范、周报、环境/器材清单、AI 使用记录 | **S** |
