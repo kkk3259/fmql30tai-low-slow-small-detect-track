@@ -40,11 +40,29 @@
 
 ---
 
+## 环境与路径说明（**每个人用自己的路径**）
+
+本仓库**不假设任何人的本机路径**。文档与命令里出现的路径都是**示例**，请按自己的环境替换：
+
+| 示例路径 | 是什么 | 可否自定 |
+|---|---|---|
+| `D:\lowslow\venv` | Python 虚拟环境（含 numpy / opencv） | ✅ 换成你自己的 |
+| `D:\lowslow\data` | 自采视频、数据集、标注 | ✅ |
+| `D:\lowslow\models` | 训练好的模型（ONNX / NPU 模型） | ✅ |
+
+**三人必须一致的地方只有两条**：
+1. **大文件不进 Git**：视频、数据集、模型、镜像一律放**仓库外**（`.gitignore` 已挡住常见类型）；
+2. **代码、文档、测试数据（CSV）要提交进仓库** —— 这是团队的共同资产。
+
+> 如果 `python` 命令报错（它指向微软商店的占位程序），就用自己环境的完整路径调用，例如 `D:\你的路径\venv\Scripts\python.exe`。
+
+---
+
 ## 快速开始（30 分钟跑通）
 
 ```powershell
-# 1) 取代码
-git clone https://github.com/kkk3259/fmql30tai-low-slow-small-detect-track.git
+# 1) 取代码（Gitee 是主力仓库）
+git clone https://gitee.com/kkk3259/fmql30tai-low-slow-small-detect-track.git
 cd fmql30tai-low-slow-small-detect-track
 
 # 2) 跑软件基线（会自动生成合成测试视频）
