@@ -17,7 +17,8 @@ import numpy as np
 
 
 # ---------------------------------------------------------------- 合成序列
-def make_synthetic(path, w=1280, h=720, fps=30, n_frames=150, clouds=14):
+def make_synthetic(path, w=1280, h=720, fps=30, n_frames=150, clouds=14,
+                   target_radius=1.5, target_amp=15.0):
     """合成序列（贴近真实低空背景）：
       背景 = 基础天空 + 若干低频云团（幅度可达 ±40 灰阶，制造局部杂波）+ 传感器噪声
       目标 = 半径约 1.5px、对比度约 15 灰阶、约 1.2px/帧 缓慢移动的小亮点
@@ -36,14 +37,15 @@ def make_synthetic(path, w=1280, h=720, fps=30, n_frames=150, clouds=14):
         amp = rng.uniform(-35, 45)
         base += amp * np.exp(-(((xx_g - cx) ** 2 / (2.0 * sx ** 2)) + ((yy_g - cy) ** 2 / (2.0 * sy ** 2))))
     base = np.clip(base, 30, 240)
-    yy, xx = np.mgrid[-3:4, -3:4]
-    spot = 15.0 * np.exp(-(yy ** 2 + xx ** 2) / (2 * 1.5 ** 2))
+    half = max(3, int(np.ceil(float(target_radius) * 3)))       # 目标窗口半宽（取 3 倍半径）
+    yy, xx = np.mgrid[-half:half + 1, -half:half + 1]
+    spot = float(target_amp) * np.exp(-(yy ** 2 + xx ** 2) / (2 * float(target_radius) ** 2))
     x0, y0, vx, vy = w_out // 4, h_out // 2, 1.2, 0.35
     gt = []
     for i in range(n_frames):
         img = base + rng.normal(0, 2.0, (h_out, w_out)).astype(np.float32)
         cx, cy = int(x0 + vx * i), int(y0 + vy * i)
-        img[cy - 3:cy + 4, cx - 3:cx + 4] += spot
+        img[cy - half:cy + half + 1, cx - half:cx + half + 1] += spot
         vw.write(cv2.cvtColor(np.clip(img, 0, 255).astype(np.uint8), cv2.COLOR_GRAY2BGR))
         gt.append((i, cx, cy))
     vw.release()
