@@ -61,7 +61,7 @@ def main():
     ap.add_argument("--out", default="results\\detect_v1.mp4")
     ap.add_argument("--csv", default="results\\detect_v1.csv")
     ap.add_argument("--down", type=int, default=2)
-    ap.add_argument("--gauss", type=int, default=0, help="高斯核，<3 表示关闭（实测：3x3 高斯会把小目标削掉，Pd 从 95% 掉到 81%）")
+    ap.add_argument("--gauss", type=int, default=0, help="高斯核，<3 表示关闭（实测：3x3 高斯会把小目标削掉，Pd 从 95%% 掉到 81%%）")
     ap.add_argument("--tophat", type=int, default=5)
     ap.add_argument("--win", type=int, default=31, help="CFAR 局部窗口大小")
     ap.add_argument("--k", type=float, default=4.0, help="阈值 = 均值 + k*标准差")
