@@ -116,12 +116,12 @@ module candidate_extract #(
             case (state)
                 S_LOAD: begin
                     if (i_bin_valid && !bin_loaded) begin
-                        bin[bin_cnt[CNT_W-1:CW]][bin_cnt[CW-1:0]] <= (i_bin > 0);
+                        bin[bin_cnt / W][bin_cnt % W] <= (i_bin > 0);
                         if (bin_cnt == N - 1) bin_loaded <= 1'b1;
                         else bin_cnt <= bin_cnt + 1;
                     end
                     if (i_enh_valid && !enh_loaded) begin
-                        enh[enh_cnt[CNT_W-1:CW]][enh_cnt[CW-1:0]] <= i_enh;
+                        enh[enh_cnt / W][enh_cnt % W] <= i_enh;
                         if (enh_cnt == N - 1) enh_loaded <= 1'b1;
                         else enh_cnt <= enh_cnt + 1;
                     end
@@ -131,10 +131,10 @@ module candidate_extract #(
                 end
                 S_SCAN: begin
                     if (scan < N) begin
-                        if (bin[scan[CNT_W-1:CW]][scan[CW-1:0]] == 1'b1) begin
-                            px <= scan[CW-1:0]; py <= scan[CNT_W-1:CW];
-                            sx[0] <= scan[CW-1:0]; sy[0] <= scan[CNT_W-1:CW]; sp <= 16'd1;
-                            bin[scan[CNT_W-1:CW]][scan[CW-1:0]] <= 1'b0;
+                        if (bin[scan / W][scan % W] == 1'b1) begin
+                            px <= scan % W; py <= scan / W;
+                            sx[0] <= scan % W; sy[0] <= scan / W; sp <= 16'd1;
+                            bin[scan / W][scan % W] <= 1'b0;
                             x_sum <= 16'd0; y_sum <= 16'd0; area <= 16'd0; peak <= 8'd0;
                             fstep <= 4'd0;
                             state <= S_FILL;

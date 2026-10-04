@@ -36,8 +36,8 @@ module cfar_threshold #(
     reg [2:0] state;
     localparam S_IN = 0, S_INT1 = 1, S_MU = 2, S_INT2 = 3, S_BIN = 4, S_OUT = 5, S_DONE = 6;
 
-    wire [CH-1:0] r = cnt[CNT_W-1:CW];
-    wire [CW-1:0] c = cnt[CW-1:0];
+    wire [CH-1:0] r = cnt / W;      // 行（真除法，支持非 2 幂宽）
+    wire [CW-1:0] c = cnt % W;      // 列（取余）
 
     // 积分图 O(1) 盒求和（窗口 clamp）
     integer bx1, by1, bx2, by2;

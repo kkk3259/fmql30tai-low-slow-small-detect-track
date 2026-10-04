@@ -25,8 +25,8 @@ module tophat_5x5 #(
     reg [2:0] state;
     localparam S_IN = 3'd0, S_ERODE = 3'd1, S_DILATE = 3'd2, S_OUT = 3'd3, S_DONE = 3'd4;
 
-    wire [RW-1:0] r = cnt[CNT_W-1:CW];
-    wire [CW-1:0] c = cnt[CW-1:0];
+    wire [RW-1:0] r = cnt / W;      // 行（真除法，支持非 2 幂宽）
+    wire [CW-1:0] c = cnt % W;      // 列（取余）
 
     // 5x5 窗口行列（边界 clamp，内部像素精确）
     wire [RW-1:0] r0 = (r >= 2) ? r - 2 : {RW{1'b0}};
