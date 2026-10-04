@@ -3,7 +3,7 @@
 // 输入为降采样坐标，输出 x/y 已 ×2 到原图坐标；NMS 抑制过近的低 peak 候选
 module postproc_axis #(
     parameter MAX_CAND = 8,
-    parameter NMS_DIST = 6      // 合并距离阈值（原图坐标，像素）
+    parameter NMS_DIST = 6      // 合并邻域（矩形：|dx|<=D 且 |dy|<=D，原图坐标，像素）
 )(
     input  wire clk,
     input  wire rst_n,
@@ -49,7 +49,7 @@ module postproc_axis #(
                 if (keep[j]) begin
                     dx = (x2[i] >= x2[j]) ? (x2[i] - x2[j]) : (x2[j] - x2[i]);
                     dy = (y2[i] >= y2[j]) ? (y2[i] - y2[j]) : (y2[j] - y2[i]);
-                    if (dx <= NMS_DIST && dy <= NMS_DIST)
+                    if (dx <= NMS_DIST && dy <= NMS_DIST)   // 矩形邻域判据（FPGA 免乘法）
                         suppressed = 1'b1;
                 end
             end
