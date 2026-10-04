@@ -1,6 +1,5 @@
 // gauss3_stream.v —— 流式 3x3 高斯（行缓存 + 流水线 + AXI4-Stream）
-// 2 行行缓存（每行 W 深，读旧值 = 上一行同列）+ 3 列移位寄存器
-// 边界：本版零填充，REFLECT_101 镜像边界与行首清移位寄存器后续补齐
+// 2 行行缓存（每行 W+1 深，tap 在 W-1 读旧值 = 上一行同列）
 module gauss3_stream #(
     parameter W = 16,
     parameter H = 16
@@ -18,8 +17,8 @@ module gauss3_stream #(
 );
     localparam DELAY = W + 2;
 
-    reg [7:0] lb0 [0:W-1];
-    reg [7:0] lb1 [0:W-1];
+    reg [7:0] lb0 [0:W];
+    reg [7:0] lb1 [0:W];
     reg [7:0] cur  [0:2];
     reg [7:0] prev [0:2];
     reg [7:0] prev2[0:2];
@@ -30,13 +29,13 @@ module gauss3_stream #(
     integer i;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (i = 0; i < W; i = i + 1) begin lb0[i] <= 8'd0; lb1[i] <= 8'd0; end
+            for (i = 0; i <= W; i = i + 1) begin lb0[i] <= 8'd0; lb1[i] <= 8'd0; end
             for (i = 0; i < 3; i = i + 1) begin cur[i] <= 8'd0; prev[i] <= 8'd0; prev2[i] <= 8'd0; end
         end else if (hs) begin
             lb1[0] <= lb0[W-1];
-            for (i = 1; i < W; i = i + 1) lb1[i] <= lb1[i-1];
+            for (i = 1; i <= W; i = i + 1) lb1[i] <= lb1[i-1];
             lb0[0] <= s_axis_tdata;
-            for (i = 1; i < W; i = i + 1) lb0[i] <= lb0[i-1];
+            for (i = 1; i <= W; i = i + 1) lb0[i] <= lb0[i-1];
             prev2[0] <= lb1[W-1]; prev2[1] <= prev2[0]; prev2[2] <= prev2[1];
             prev[0]  <= lb0[W-1]; prev[1]  <= prev[0];  prev[2]  <= prev[1];
             cur[0]   <= s_axis_tdata; cur[1] <= cur[0]; cur[2] <= cur[1];
