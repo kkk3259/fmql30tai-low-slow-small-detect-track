@@ -20,11 +20,10 @@ blob = 90.0 * np.exp(-((xx - 22.0) ** 2 + (yy - 9.0) ** 2) / (2 * 2.5 ** 2))
 noise = rng.normal(0, 3.0, (H, W))
 rgb = np.clip(np.stack([R + blob, G + blob, B + blob], axis=2) + noise[..., None], 0, 255).astype(np.uint8)
 
-# OpenCV 参考（与 baseline/run.py 完全一致：BGR2GRAY -> [::2,::2] -> GaussianBlur 3x3）
+# OpenCV 参考（与 baseline/detect_v1.py 的 gauss=0 一致：BGR2GRAY -> [::2,::2]，无高斯）
 bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-gray_d = gray[::2, ::2]
-gauss = cv2.GaussianBlur(gray_d, (3, 3), 0)
+gauss = gray[::2, ::2]
 
 os.makedirs(sim_dir, exist_ok=True)
 with open(os.path.join(sim_dir, "input.hex"), "w") as f:
