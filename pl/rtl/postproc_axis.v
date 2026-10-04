@@ -1,9 +1,9 @@
-// postproc_axis.v —— IP3 后处理：坐标变换(×2 换回原图坐标) + NMS(合并过近候选)
+// postproc_axis.v —— IP3 后处理：NMS(合并过近候选)，输出降采样坐标（I2 约定：不 ×2）
 // 输入/输出：57 字节候选列表（n_cand + 8×(x_hi,x_lo,y_hi,y_lo,area_hi,area_lo,peak)）
-// 输入为降采样坐标，输出 x/y 已 ×2 到原图坐标；NMS 抑制过近的低 peak 候选
+// 坐标保持降采样坐标（640×360），×2 换回原图坐标由 PS 显示时做；NMS 抑制过近的低 peak 候选
 module postproc_axis #(
     parameter MAX_CAND = 8,
-    parameter NMS_DIST = 6      // 合并邻域（矩形：|dx|<=D 且 |dy|<=D，原图坐标，像素）
+    parameter NMS_DIST = 3      // 合并邻域（矩形：|dx|<=D 且 |dy|<=D，降采样坐标，像素）
 )(
     input  wire clk,
     input  wire rst_n,
@@ -22,23 +22,19 @@ module postproc_axis #(
     reg [1:0] state;
     localparam S_IN = 2'd0, S_PROC = 2'd1, S_OUT = 2'd2, S_DONE = 2'd3;
 
-    // ---- 组合逻辑：解析 16 位 + ×2 + NMS + 压缩 ----
+    // ---- 组合逻辑：解析 16 位 + NMS + 压缩 ----
     reg [15:0] x16 [0:MAX_CAND-1];
     reg [15:0] y16 [0:MAX_CAND-1];
-    reg [15:0] x2  [0:MAX_CAND-1];
-    reg [15:0] y2  [0:MAX_CAND-1];
     reg [0:0]  keep [0:MAX_CAND-1];
     reg [7:0]  n_out;
     reg [15:0] dx, dy;
     reg suppressed;
     integer i, j, p, cntv;
     always @* begin
-        // 1) 解析 16 位坐标 + ×2
+        // 1) 解析 16 位坐标（保持降采样坐标，不 ×2）
         for (i = 0; i < MAX_CAND; i = i + 1) begin
             x16[i] = (in_list[1 + i*7 + 0] << 8) | in_list[1 + i*7 + 1];
             y16[i] = (in_list[1 + i*7 + 2] << 8) | in_list[1 + i*7 + 3];
-            x2[i]  = x16[i] << 1;
-            y2[i]  = y16[i] << 1;
         end
         // 2) NMS：keep[i]=1 表示保留
         for (i = 0; i < MAX_CAND; i = i + 1) keep[i] = 1'b0;
@@ -47,8 +43,8 @@ module postproc_axis #(
             suppressed = 1'b0;
             for (j = 0; j < i; j = j + 1) begin
                 if (keep[j]) begin
-                    dx = (x2[i] >= x2[j]) ? (x2[i] - x2[j]) : (x2[j] - x2[i]);
-                    dy = (y2[i] >= y2[j]) ? (y2[i] - y2[j]) : (y2[j] - y2[i]);
+                    dx = (x16[i] >= x16[j]) ? (x16[i] - x16[j]) : (x16[j] - x16[i]);
+                    dy = (y16[i] >= y16[j]) ? (y16[i] - y16[j]) : (y16[j] - y16[i]);
                     if (dx <= NMS_DIST && dy <= NMS_DIST)   // 矩形邻域判据（FPGA 免乘法）
                         suppressed = 1'b1;
                 end
@@ -65,10 +61,10 @@ module postproc_axis #(
         p = 0;
         for (i = 0; i < in_list[0] && i < MAX_CAND; i = i + 1) begin
             if (keep[i] && p < MAX_CAND) begin
-                out_list[1 + p*7 + 0] = x2[i][15:8];
-                out_list[1 + p*7 + 1] = x2[i][7:0];
-                out_list[1 + p*7 + 2] = y2[i][15:8];
-                out_list[1 + p*7 + 3] = y2[i][7:0];
+                out_list[1 + p*7 + 0] = x16[i][15:8];
+                out_list[1 + p*7 + 1] = x16[i][7:0];
+                out_list[1 + p*7 + 2] = y16[i][15:8];
+                out_list[1 + p*7 + 3] = y16[i][7:0];
                 out_list[1 + p*7 + 4] = 8'd0;                       // area 高字节
                 out_list[1 + p*7 + 5] = in_list[1 + i*7 + 5];       // area 低字节
                 out_list[1 + p*7 + 6] = in_list[1 + i*7 + 6];       // peak

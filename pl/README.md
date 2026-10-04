@@ -13,10 +13,10 @@ FPGA 可编程逻辑部分的 Verilog 源码、仿真与工具脚本。
 | IP2-② CFAR | `rtl/cfar_threshold.v` | 31×31 自适应阈值（**定点 MAD + 积分图 O(1)**） | ✅ 0 误差 |
 | IP2-③ 候选提取 | `rtl/candidate_extract.v` | **CCL 8连通 BFS** → 质心/面积/峰值 top8 | ✅ 零误差 |
 | IP2 整合 | `rtl/ip2_top.v` | Top-Hat → CFAR → CCL | ✅ 128×72 / 320×180 逐字段一致 |
-| IP3 后处理 | `rtl/postproc_axis.v` | 坐标×2 + NMS（16 位坐标） | ✅ 逐字段一致 |
+| IP3 后处理 | `rtl/postproc_axis.v` | NMS 合并过近候选（16 位降采样坐标，**不 ×2**） | ✅ 逐字段一致 |
 | 流水线样板 | `rtl/gauss3_stream.v` | 3×3 高斯（行缓存+流水线+AXI4-Stream） | ✅ 深内部零误差 |
 
-**数据流**：彩色大图 → IP1（灰度+降采样）→ IP2（增强+CFAR+候选）→ IP3（×2+NMS）→ 候选列表(57字节,16位坐标) → NPU/PS。
+**数据流**：彩色大图 → IP1（灰度+降采样）→ IP2（增强+CFAR+候选）→ IP3（NMS）→ 候选列表(57字节,16位降采样坐标) → NPU/PS。
 
 ## 怎么跑仿真（统一 4 步）
 
