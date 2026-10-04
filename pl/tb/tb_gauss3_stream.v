@@ -25,6 +25,10 @@ module tb_gauss3_stream;
     initial begin
         $dumpfile("tb_gauss3_stream.vcd");
         $dumpvars(0, tb_gauss3_stream);
+        if ($fopen("input_gauss.hex","r") == 0) begin
+            $display("ERROR: 缺 input_gauss.hex，请先运行 pl/tools/gen_gauss_stimulus.py");
+            $finish;
+        end
         $readmemh("input_gauss.hex", in_mem);
 
         rst_n = 0; s_valid = 0; s_last = 0; m_ready = 1;

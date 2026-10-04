@@ -25,6 +25,10 @@ module tb_tophat;
         $dumpfile("tb_tophat.vcd");
         $dumpvars(0, tb_tophat);
 
+        if ($fopen("input_gray.hex","r") == 0) begin
+            $display("ERROR: 缺 input_gray.hex，请先运行 pl/tools/gen_ip2_stimulus.py");
+            $finish;
+        end
         $readmemh("input_gray.hex", in_mem);
 
         rst_n = 0; i_valid = 0; o_ready = 1;

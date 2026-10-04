@@ -25,6 +25,10 @@ module tb_cfar;
         $dumpfile("tb_cfar.vcd");
         $dumpvars(0, tb_cfar);
 
+        if ($fopen("input_cfar.hex","r") == 0) begin
+            $display("ERROR: 缺 input_cfar.hex，请先运行 pl/tools/gen_cfar_stimulus.py");
+            $finish;
+        end
         $readmemh("input_cfar.hex", in_mem);
 
         rst_n = 0; i_valid = 0; o_ready = 1;

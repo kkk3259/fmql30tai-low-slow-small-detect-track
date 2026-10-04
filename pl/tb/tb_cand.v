@@ -25,6 +25,10 @@ module tb_cand;
         $dumpfile("tb_cand.vcd");
         $dumpvars(0, tb_cand);
 
+        if ($fopen("input_cand.hex","r") == 0) begin
+            $display("ERROR: 缺 input_cand.hex，请先运行 pl/tools/gen_cand_stimulus.py");
+            $finish;
+        end
         $readmemh("input_cand.hex", in_mem);
 
         rst_n = 0; i_valid = 0; o_ready = 1;

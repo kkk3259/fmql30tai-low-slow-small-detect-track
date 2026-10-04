@@ -25,6 +25,10 @@ module tb_ip2_top;
         $dumpfile("tb_ip2_top.vcd");
         $dumpvars(0, tb_ip2_top);
 
+        if ($fopen("input_integration.hex","r") == 0) begin
+            $display("ERROR: 缺 input_integration.hex，请先运行 pl/tools/gen_integration.py");
+            $finish;
+        end
         $readmemh("input_integration.hex", in_mem);
 
         rst_n = 0; i_valid = 0; o_ready = 1;

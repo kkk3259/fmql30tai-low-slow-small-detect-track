@@ -25,6 +25,10 @@ module tb_preproc;
         $dumpfile("tb_preproc.vcd");
         $dumpvars(0, tb_preproc);
 
+        if ($fopen("input.hex","r") == 0) begin
+            $display("ERROR: 缺 input.hex，请先运行 pl/tools/gen_stimulus.py");
+            $finish;
+        end
         $readmemh("input.hex", in_mem);
 
         rst_n = 0; i_valid = 0; o_ready = 1;
