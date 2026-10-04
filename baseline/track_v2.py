@@ -126,7 +126,7 @@ def main():
     if os.path.exists(gtf):
         with open(gtf) as f:
             for row in csv.DictReader(f):
-                gt[int(row["frame"])] = (int(row["x"]), int(row["y"]))
+                gt[int(row["frame"])] = (float(row["x"]), float(row["y"]))  # 兼容带小数的真值（mark_gt.py 输出 541.0 形式）
 
     cap = cv2.VideoCapture(a.src)
     if not cap.isOpened():
