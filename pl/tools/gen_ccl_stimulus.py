@@ -52,8 +52,8 @@ with open(os.path.join(sim_dir, "ref_ccl.hex"), "w") as f:
     for i in range(8):
         if i < len(cands):
             x, y, a, p = cands[i]
-            f.write("%02X\n%02X\n%02X\n%02X\n" % (x, y, a, p))
+            f.write("%02X\n%02X\n%02X\n%02X\n%02X\n%02X\n%02X\n" % (x >> 8, x & 255, y >> 8, y & 255, a >> 8, a & 255, p))
         else:
-            f.write("00\n00\n00\n00\n")
+            f.write("00\n00\n00\n00\n00\n00\n00\n")
 
 print("OK: 连通域=%d（过滤后） 候选=%d  peak顺序=%s" % (n - 1, len(cands), [c[3] for c in cands]))

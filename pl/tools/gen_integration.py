@@ -61,8 +61,9 @@ with open(os.path.join(sim_dir, "ref_integration.hex"), "w") as fw:
     fw.write("%02X\n" % len(cands))
     for i in range(8):
         if i < len(cands):
-            fw.write("%02X\n%02X\n%02X\n%02X\n" % cands[i])
+            x, y, a, p = cands[i]
+            fw.write("%02X\n%02X\n%02X\n%02X\n%02X\n%02X\n%02X\n" % (x >> 8, x & 255, y >> 8, y & 255, a >> 8, a & 255, p))
         else:
-            fw.write("00\n00\n00\n00\n")
+            fw.write("00\n00\n00\n00\n00\n00\n00\n")
 
 print("OK: 图 %dx%d | 检测到 %d 个候选: %s" % (W, H, len(cands), [(c[0], c[1], c[2], c[3]) for c in cands]))

@@ -8,7 +8,7 @@ module tb_postproc;
     wire o_valid;
     reg o_ready;
 
-    reg [7:0] in_mem [0:32];
+    reg [7:0] in_mem [0:56];
 
     postproc_axis uut (
         .clk(clk), .rst_n(rst_n),
@@ -35,7 +35,7 @@ module tb_postproc;
         rst_n = 1;
         @(posedge clk);
 
-        for (idx = 0; idx < 33; idx = idx + 1) begin
+        for (idx = 0; idx < 57; idx = idx + 1) begin
             i_data = in_mem[idx];
             i_valid = 1'b1;
             @(posedge clk);
@@ -44,7 +44,7 @@ module tb_postproc;
 
         out_idx = 0; idle = 0;
         out_file = $fopen("output_postproc.hex", "w");
-        while (out_idx < 33) begin
+        while (out_idx < 57) begin
             @(posedge clk);
             if (o_valid) begin
                 $fwrite(out_file, "%02X\n", o_data);

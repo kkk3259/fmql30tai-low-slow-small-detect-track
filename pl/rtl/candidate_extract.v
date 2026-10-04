@@ -80,22 +80,27 @@ module candidate_extract #(
     wire [CH-1:0] top_y = sy[sp-1];
     wire [CW-1:0] top_x = sx[sp-1];
 
-    // 输出字段选择
-    wire [5:0] out_idx = cnt[5:0];        // 0..32
-    wire [2:0] cand_i  = (out_idx - 6'd1) >> 2;
-    wire [1:0] field   = (out_idx - 6'd1) & 2'd3;
+    // 输出字段选择（57 字节：n_cand + 8×(x_hi,x_lo,y_hi,y_lo,area_hi,area_lo,peak)，x/y/area 16 位）
+    wire [5:0] out_idx = cnt[5:0];                  // 0..56
+    wire [2:0] cand_i  = (out_idx - 7'd1) / 3'd7;   // 0..7
+    wire [2:0] field   = (out_idx - 7'd1) % 3'd7;   // 0..6
+    wire [15:0] x16 = {{(16-CW){1'b0}}, cx[cand_i]};
+    wire [15:0] y16 = {{(16-CH){1'b0}}, cy[cand_i]};
     reg [7:0] out_val;
     always @* begin
         if (out_idx == 6'd0)
             out_val = (n_comp < MAX_CAND) ? n_comp : MAX_CAND[7:0];
         else if (cand_i >= n_comp)
-            out_val = 8'd0;                       // 空槽补 0
+            out_val = 8'd0;                          // 空槽补 0
         else begin
             case (field)
-                2'd0: out_val = {1'b0, cx[cand_i]};
-                2'd1: out_val = {1'b0, cy[cand_i]};
-                2'd2: out_val = carea[cand_i][7:0];
-                2'd3: out_val = cpeak[cand_i];
+                3'd0: out_val = x16[15:8];
+                3'd1: out_val = x16[7:0];
+                3'd2: out_val = y16[15:8];
+                3'd3: out_val = y16[7:0];
+                3'd4: out_val = 8'd0;                // area 高字节恒 0
+                3'd5: out_val = carea[cand_i][7:0];
+                3'd6: out_val = cpeak[cand_i];
             endcase
         end
     end
@@ -199,7 +204,7 @@ module candidate_extract #(
                     o_valid <= 1'b1;
                     o_data  <= out_val;
                     if (o_ready) begin
-                        if (out_idx == 6'd32) state <= S_DONE;
+                        if (out_idx == 6'd56) state <= S_DONE;
                         else cnt <= cnt + 1;
                     end
                 end
