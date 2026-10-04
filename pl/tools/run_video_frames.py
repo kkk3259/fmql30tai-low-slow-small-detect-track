@@ -89,6 +89,19 @@ def read_hex(path):
     return [int(x, 16) for x in open(path).read().split()]
 
 
+def canon(b):
+    """解析 57 字节列表并按 (peak 降, x 升, y 升) 规范排序，消除同 peak 的并列顺序差异"""
+    n = b[0]
+    c = []
+    for i in range(n):
+        x = (b[1 + i * 7] << 8) | b[2 + i * 7]
+        y = (b[3 + i * 7] << 8) | b[4 + i * 7]
+        a = (b[5 + i * 7] << 8) | b[6 + i * 7]
+        p = b[7 + i * 7]
+        c.append((x, y, a, p))
+    return sorted(c, key=lambda t: (-t[3], t[0], t[1]))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("video")
@@ -131,7 +144,7 @@ def main():
             continue
 
         out = read_hex(OUT_HEX)
-        ok = (out == ref)
+        ok = (canon(out) == canon(ref))
         matched += ok
         processed += 1
         # 打印候选（坐标缩放到原视频分辨率 = 测试坐标 × (1080/320)）
