@@ -15,16 +15,19 @@ module cfar_threshold #(
     input  wire o_ready
 );
     localparam N = W * H;
+    localparam CW = $clog2(W);
+    localparam CH = $clog2(H);
+    localparam CNT_W = CW + CH;
 
     reg [7:0] img [0:H-1][0:W-1];
     reg [7:0] bin [0:H-1][0:W-1];
 
-    reg [15:0] cnt;
+    reg [CNT_W-1:0] cnt;
     reg [1:0]  state;
     localparam S_IN = 2'd0, S_CFAR = 2'd1, S_OUT = 2'd2, S_DONE = 2'd3;
 
-    wire [5:0] r = cnt[11:6];
-    wire [5:0] c = cnt[5:0];
+    wire [CH-1:0] r = cnt[CNT_W-1:CW];
+    wire [CW-1:0] c = cnt[CW-1:0];
 
     // 31x31 窗口求和 + 平方和（边界 clamp，内部像素精确）
     reg [19:0] win_sum;

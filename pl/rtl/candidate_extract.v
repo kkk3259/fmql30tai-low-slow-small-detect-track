@@ -38,11 +38,12 @@ module candidate_extract #(
     reg [7:0] n_comp;
 
     reg [3:0] state;
-    localparam S_LOAD_BIN = 0, S_LOAD_ENH = 1, S_SCAN = 2, S_FILL = 3,
-               S_SORT = 4, S_OUT = 5, S_DONE = 6;
+    localparam S_LOAD = 0, S_SCAN = 1, S_FILL = 2, S_SORT = 3, S_OUT = 4, S_DONE = 5;
 
-    reg [CNT_W-1:0] cnt;   // 通用计数
-    reg [CNT_W:0] scan;    // 扫描指针（需 13 位到 4096 才能终止）
+    reg [CNT_W-1:0] bin_cnt, enh_cnt;
+    reg bin_loaded, enh_loaded;
+    reg [CNT_W-1:0] cnt;   // 输出计数
+    reg [CNT_W:0] scan;    // 扫描指针（需 CNT_W+1 位到 N 才能终止）
     reg [3:0]  fstep;      // 洪泛子步：0=弹出累加, 1..8=查邻居, 9=收尾
     reg [CW-1:0] px;
     reg [CH-1:0] py;
@@ -101,23 +102,25 @@ module candidate_extract #(
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state <= S_LOAD_BIN; cnt <= 0; scan <= 0; o_valid <= 1'b0; o_data <= 8'd0;
+            state <= S_LOAD; bin_cnt <= 0; enh_cnt <= 0; bin_loaded <= 1'b0; enh_loaded <= 1'b0;
+            cnt <= 0; scan <= 0; o_valid <= 1'b0; o_data <= 8'd0;
             n_comp <= 8'd0; sp <= 16'd0; fstep <= 4'd0;
             si <= 4'd0; sj <= 4'd0; mi <= 4'd0; maxp <= 8'd0; sort_phase <= 2'd0;
         end else begin
             case (state)
-                S_LOAD_BIN: begin
-                    if (i_bin_valid) begin
-                        bin[cnt[CNT_W-1:CW]][cnt[CW-1:0]] <= (i_bin > 0);
-                        if (cnt == N - 1) begin state <= S_LOAD_ENH; cnt <= 0; end
-                        else cnt <= cnt + 1;
+                S_LOAD: begin
+                    if (i_bin_valid && !bin_loaded) begin
+                        bin[bin_cnt[CNT_W-1:CW]][bin_cnt[CW-1:0]] <= (i_bin > 0);
+                        if (bin_cnt == N - 1) bin_loaded <= 1'b1;
+                        else bin_cnt <= bin_cnt + 1;
                     end
-                end
-                S_LOAD_ENH: begin
-                    if (i_enh_valid) begin
-                        enh[cnt[CNT_W-1:CW]][cnt[CW-1:0]] <= i_enh;
-                        if (cnt == N - 1) begin state <= S_SCAN; cnt <= 0; scan <= 0; end
-                        else cnt <= cnt + 1;
+                    if (i_enh_valid && !enh_loaded) begin
+                        enh[enh_cnt[CNT_W-1:CW]][enh_cnt[CW-1:0]] <= i_enh;
+                        if (enh_cnt == N - 1) enh_loaded <= 1'b1;
+                        else enh_cnt <= enh_cnt + 1;
+                    end
+                    if (bin_loaded && enh_loaded) begin
+                        state <= S_SCAN; scan <= 0;
                     end
                 end
                 S_SCAN: begin

@@ -1,4 +1,4 @@
-// tb_ip2_top.v —— IP2 整合测试平台：喂 64x64 灰度帧，收 64 个块面积
+// tb_ip2_top.v —— IP2 全链整合测试：喂 128x72 灰度帧，收候选列表（33 字节）
 `timescale 1ns/1ps
 module tb_ip2_top;
     reg clk, rst_n;
@@ -8,15 +8,15 @@ module tb_ip2_top;
     wire o_valid;
     reg o_ready;
 
-    reg [7:0] in_mem [0:4095];
+    reg [7:0] in_mem [0:9215];   // 128*72
 
-    ip2_top #(.W(64), .H(64)) uut (
+    ip2_top #(.W(128), .H(72)) uut (
         .clk(clk), .rst_n(rst_n),
         .i_data(i_data), .i_valid(i_valid),
         .o_data(o_data), .o_valid(o_valid), .o_ready(o_ready)
     );
 
-    integer idx, out_idx, out_file;
+    integer idx, out_idx, out_file, idle;
 
     initial clk = 0;
     always #5 clk = ~clk;
@@ -24,7 +24,6 @@ module tb_ip2_top;
     initial begin
         $dumpfile("tb_ip2_top.vcd");
         $dumpvars(0, tb_ip2_top);
-
         if ($fopen("input_integration.hex","r") == 0) begin
             $display("ERROR: 缺 input_integration.hex，请先运行 pl/tools/gen_integration.py");
             $finish;
@@ -36,24 +35,28 @@ module tb_ip2_top;
         rst_n = 1;
         @(posedge clk);
 
-        for (idx = 0; idx < 4096; idx = idx + 1) begin
+        for (idx = 0; idx < 9216; idx = idx + 1) begin
             i_data = in_mem[idx];
             i_valid = 1'b1;
             @(posedge clk);
         end
         i_valid = 1'b0;
 
-        out_idx = 0;
+        out_idx = 0; idle = 0;
         out_file = $fopen("output_integration.hex", "w");
-        while (out_idx < 64) begin
+        while (out_idx < 33) begin
             @(posedge clk);
             if (o_valid) begin
                 $fwrite(out_file, "%02X\n", o_data);
                 out_idx = out_idx + 1;
+                idle = 0;
+            end else begin
+                idle = idle + 1;
+                if (idle > 2000000) begin $display("WATCHDOG out_idx=%0d", out_idx); $finish; end
             end
         end
         $fclose(out_file);
-        $display("收集到 %0d 个候选块面积", out_idx);
+        $display("IP2 全链收集到 %0d 个输出", out_idx);
         #50 $finish;
     end
 endmodule
