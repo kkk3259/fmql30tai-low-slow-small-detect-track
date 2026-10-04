@@ -29,8 +29,8 @@ os.makedirs(sim_dir, exist_ok=True)
 with open(os.path.join(sim_dir, "input.hex"), "w") as f:
     for y in range(H):
         for x in range(W):
-            r, g, b = int(rgb[y, x, 0]), int(rgb[y, x, 1]), int(rgb[y, x, 2])
-            f.write("%06X\n" % ((r << 16) | (g << 8) | b))
+            b, g, r = int(bgr[y, x, 0]), int(bgr[y, x, 1]), int(bgr[y, x, 2])
+            f.write("%06X\n" % ((b << 16) | (g << 8) | r))   # BGR 字节序（高位=B，与 OpenCV 一致）
 
 with open(os.path.join(sim_dir, "ref.hex"), "w") as f:
     for y in range(gauss.shape[0]):

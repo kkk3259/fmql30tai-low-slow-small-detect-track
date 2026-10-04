@@ -1,8 +1,8 @@
 // preproc_axis.v —— IP1 图像预处理
-// 功能：RGB -> 灰度(BT.601) -> 2x 降采样（无高斯：实测 3x3 高斯伤小目标 Pd 95%->81%，故去掉）
-// 输入：W_IN x H_IN 的 RGB 像素流（行优先，i_valid 每周期一个像素）
+// 功能：BGR -> 灰度(BT.601) -> 2x 降采样（无高斯：实测 3x3 高斯伤小目标 Pd 95%->81%，故去掉）
+// 输入：W_IN x H_IN 的 BGR 像素流（i_r=B, i_g=G, i_b=R，行优先，i_valid 每周期一个像素）
 // 输出：(W_IN/2) x (H_IN/2) 的灰度图（降采样后）
-// 定点约定：gray = (4899R+9617G+1868B+8192)>>14（OpenCV BGR2GRAY 精确 14bit 定点，0 误差）
+// 定点约定：gray = (1868*B + 9617*G + 4899*R + 8192)>>14（OpenCV BGR2GRAY 精确 14bit 定点，0 误差）
 module preproc_axis #(
     parameter W_IN = 32,
     parameter H_IN = 32
@@ -53,7 +53,7 @@ module preproc_axis #(
                 S_IN: begin
                     if (i_valid) begin
                         if (in_row[0] == 1'b0 && in_col[0] == 1'b0)
-                            gray_mem[ds_row][ds_col] <= (i_r*4899 + i_g*9617 + i_b*1868 + 8192) >> 14;
+                            gray_mem[ds_row][ds_col] <= (i_r*1868 + i_g*9617 + i_b*4899 + 8192) >> 14;
                         in_cnt <= in_cnt + 10'd1;
                         if (in_cnt == IN_TOTAL - 1) begin
                             state   <= S_OUT;
