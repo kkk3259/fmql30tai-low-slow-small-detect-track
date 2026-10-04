@@ -227,7 +227,7 @@ def main():
             cv2.putText(canv, "ID" + str(t.id), (px + 16, py - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         if idx in gt:                                     # 黄色 = 真值
-            cv2.circle(canv, (gt[idx][0], gt[idx][1]), 4, (0, 255, 255), 2)
+            cv2.circle(canv, (int(gt[idx][0]), int(gt[idx][1])), 4, (0, 255, 255), 2)  # 真值为 float，绘图需 int
         v3 = cv2.cvtColor(cv2.resize(binary, (hw, hh), interpolation=cv2.INTER_NEAREST), cv2.COLOR_GRAY2BGR)
         panel = np.hstack([v1img, canv, v3])
         assert panel.shape[0] == H_OUT and panel.shape[1] == W_OUT, "面板尺寸与写入器不一致！"

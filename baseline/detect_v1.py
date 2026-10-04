@@ -144,7 +144,7 @@ def main():
             cx, cy = int(c["x"] * a.down), int(c["y"] * a.down)
             cv2.circle(canv, (cx, cy), 12, (0, 255, 0), 2)
         if idx in gt:                                    # 黄色 = 真值
-            cv2.circle(canv, (gt[idx][0], gt[idx][1]), 4, (0, 255, 255), 2)
+            cv2.circle(canv, (int(gt[idx][0]), int(gt[idx][1])), 4, (0, 255, 255), 2)  # 真值为 float，绘图需 int
         v3 = cv2.cvtColor(cv2.resize(binary, (hw, hh), interpolation=cv2.INTER_NEAREST), cv2.COLOR_GRAY2BGR)
         panel = np.hstack([v1, canv, v3])
         assert panel.shape[0] == H_OUT and panel.shape[1] == W_OUT, "面板尺寸与写入器不一致！"

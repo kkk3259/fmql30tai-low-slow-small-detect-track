@@ -200,7 +200,7 @@ def render(frame, enhanced, cands, passed, tracks, gt, idx, down, stage_ms, mode
         cv2.putText(canv, "ID" + str(t.id), (px + 16, py - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
     if gt is not None:
-        cv2.circle(canv, (gt[0], gt[1]), 4, (0, 255, 255), 2)
+        cv2.circle(canv, (int(gt[0]), int(gt[1])), 4, (0, 255, 255), 2)  # 真值为 float，绘图需 int
 
     # 第三格：流水线状态面板（把每个环节的耗时摊出来，一眼看出瓶颈在哪）
     panel3 = np.zeros((hh, hw, 3), np.uint8)

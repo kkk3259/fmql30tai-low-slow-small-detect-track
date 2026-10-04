@@ -168,7 +168,7 @@ def main():
         t3 = time.perf_counter()
 
         if idx in gt:
-            gx, gy = gt[idx][0] // a.down, gt[idx][1] // a.down
+            gx, gy = gt[idx][0] / a.down, gt[idx][1] / a.down
             m_before.append(metrics(g, gx, gy))
             m_after.append(metrics(th, gx, gy))
 
