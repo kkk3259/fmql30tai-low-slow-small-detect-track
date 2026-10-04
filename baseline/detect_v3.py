@@ -200,7 +200,7 @@ def run_sequence(src, enhancer, cfg, out_path=None, csv_path=None, max_frames=0)
 
     gt = {}
     if os.path.exists(gt_file):
-        with open(gt_file) as f:
+        with open(gt_file, encoding="utf-8-sig") as f:
             for r in csv.DictReader(f):
                 gt[int(r["frame"])] = (float(r["x"]), float(r["y"]))  # 兼容带小数的真值（mark_gt.py 输出）
 
@@ -316,7 +316,7 @@ def main():
     ap.add_argument("--floor", type=float, default=3.0)
     ap.add_argument("--min-area", type=int, default=2)
     ap.add_argument("--max-area", type=int, default=200)
-    ap.add_argument("--topk", type=int, default=8)
+    ap.add_argument("--topk", type=int, default=5)
     ap.add_argument("--gate", type=float, default=3.0)
 
     # ---- 合成序列参数（便于做低对比度实验）----

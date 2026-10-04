@@ -72,7 +72,7 @@ class Detector(object):
     """
 
     def __init__(self, down=2, gauss_k=0, tophat_se=5,
-                 win=31, k=4.0, floor=3.0, min_area=2, max_area=200, topk=8,
+                 win=31, k=4.0, floor=3.0, min_area=2, max_area=200, topk=5,
                  temporal="none", n_acc=8, alpha=0.95, vel_x=0.0, vel_y=0.0):
         self.cfg = dict(down=down, gauss_k=gauss_k, tophat_se=tophat_se,
                         win=win, k=k, floor=floor,
@@ -298,7 +298,7 @@ def main():
     cap, src = capture_init(a.src)
     gtf = os.path.splitext(src)[0] + "_gt.csv"
     if os.path.exists(gtf):
-        with open(gtf) as f:
+        with open(gtf, encoding="utf-8-sig") as f:
             for row in csv.DictReader(f):
                 gt[int(row["frame"])] = (float(row["x"]), float(row["y"]))  # 兼容带小数的真值
     print("[输入] {}  真值 {} 帧".format(src, len(gt)))

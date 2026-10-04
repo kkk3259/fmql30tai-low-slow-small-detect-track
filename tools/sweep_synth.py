@@ -36,7 +36,7 @@ from detect_v1 import adaptive_threshold, extract_candidates          # noqa: E4
 def evaluate(video, gt_file, cfg, gate):
     """对一段合成序列跑完整检测链，返回 (Pd%, 虚警数, 平均候选数, 帧数)"""
     gt = {}
-    with open(gt_file) as f:
+    with open(gt_file, encoding="utf-8-sig") as f:
         for r in csv.DictReader(f):
             gt[int(r["frame"])] = (float(r["x"]), float(r["y"]))  # 兼容带小数的真值（mark_gt.py 输出）
 

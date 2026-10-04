@@ -114,7 +114,7 @@ def main():
     ap.add_argument("--floor", type=float, default=3.0)
     ap.add_argument("--min-area", type=int, default=2)
     ap.add_argument("--max-area", type=int, default=200)
-    ap.add_argument("--topk", type=int, default=8)
+    ap.add_argument("--topk", type=int, default=5)
     # 跟踪参数
     ap.add_argument("--gate", type=float, default=12.0, help="匹配距离门限（降采样图上的像素）")
     ap.add_argument("--confirm", type=int, default=3, help="连续命中多少帧才确认航迹（抑制虚警的关键）")
@@ -141,7 +141,7 @@ def main():
     # 原实现只在 src=="synth" 时加载，导致真实视频统计不出 Pd / 虚警。
     gtf = os.path.splitext(a.src)[0] + "_gt.csv"
     if os.path.exists(gtf):
-        with open(gtf) as f:
+        with open(gtf, encoding="utf-8-sig") as f:
             for row in csv.DictReader(f):
                 gt[int(row["frame"])] = (float(row["x"]), float(row["y"]))  # 兼容带小数的真值（mark_gt.py 输出 541.0 形式）
 

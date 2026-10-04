@@ -127,7 +127,7 @@ def main():
             make_synthetic(a.src)
         gtf = os.path.splitext(a.src)[0] + "_gt.csv"
         if os.path.exists(gtf):
-            with open(gtf) as f:
+            with open(gtf, encoding="utf-8-sig") as f:
                 for row in csv.DictReader(f):
                     gt[int(row["frame"])] = (float(row["x"]), float(row["y"]))  # 兼容带小数的真值（mark_gt.py 输出 541.0 形式）
 
