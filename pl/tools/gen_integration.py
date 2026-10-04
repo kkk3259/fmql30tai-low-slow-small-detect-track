@@ -29,13 +29,14 @@ gray = np.clip(gray, 0, 255).astype(np.uint8)
 # ---- 参考链路（= detect_v1.py：Top-Hat -> CFAR -> CCL）----
 kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
 th = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
-f = th.astype(np.float32)
-mu = cv2.boxFilter(f, -1, (31, 31), normalize=True, borderType=cv2.BORDER_REFLECT)
-mu2 = cv2.boxFilter(f * f, -1, (31, 31), normalize=True, borderType=cv2.BORDER_REFLECT)
-var = np.maximum(mu2 - mu * mu, 0.0)
-sd = np.sqrt(var)
-thr = mu + 4.0 * sd + 3.0
-binary = (f > thr).astype(np.uint8) * 255
+# CFAR 定点 MAD（与 Verilog 一致：整数均值 + 5×MAD + 3，clamp 边界）
+img_i = th.astype(np.int32)
+win_sum = cv2.boxFilter(img_i.astype(np.float32), -1, (31, 31), normalize=False, borderType=cv2.BORDER_REPLICATE)
+mu = (win_sum // 961).astype(np.int32)
+win_abs = cv2.boxFilter(np.abs(img_i - mu).astype(np.float32), -1, (31, 31), normalize=False, borderType=cv2.BORDER_REPLICATE)
+mad = (win_abs // 961).astype(np.int32)
+thr = mu + 5 * mad + 3
+binary = (img_i > thr).astype(np.uint8) * 255
 
 n, lab, stats, cents = cv2.connectedComponentsWithStats(binary, connectivity=8)
 cands = []
