@@ -23,6 +23,7 @@ import cv2
 import numpy as np
 
 from run import make_synthetic, to_gray_down, gauss, tophat
+from detect_v3 import TemporalEnhancer   # 复用 v3 的时域增强器
 from detect_v1 import adaptive_threshold, extract_candidates
 
 
@@ -99,6 +100,14 @@ def main():
     # 检测参数（沿用 v1 调优值）
     ap.add_argument("--down", type=int, default=2)
     ap.add_argument("--gauss", type=int, default=0)
+    # ---- 时域增强（复用 detect_v3 的实现）----
+    ap.add_argument("--temporal", default="none",
+                    choices=["none", "acc", "mc", "bg", "tmax", "both"],
+                    help="时域增强模式：none=关闭 / acc=多帧平均 / mc=运动补偿 / bg=背景差分")
+    ap.add_argument("--n-acc", type=int, default=8, help="时域窗口帧数")
+    ap.add_argument("--alpha", type=float, default=0.95, help="背景更新率（bg 模式）")
+    ap.add_argument("--vel-x", type=float, default=0.0, help="目标水平速度 px/帧（mc 模式，降采样坐标）")
+    ap.add_argument("--vel-y", type=float, default=0.0, help="目标垂直速度 px/帧（mc 模式，降采样坐标）")
     ap.add_argument("--tophat", type=int, default=5)
     ap.add_argument("--win", type=int, default=31)
     ap.add_argument("--k", type=float, default=4.0)
@@ -114,6 +123,14 @@ def main():
     a = ap.parse_args()
 
     cv2.setNumThreads(1)
+
+    # 时域增强器（none 时不做任何处理）
+    enh = None
+    if a.temporal != "none":
+        enh = TemporalEnhancer(mode=a.temporal, alpha=a.alpha, n_acc=a.n_acc,
+                               vel_x=a.vel_x, vel_y=a.vel_y)
+        print("[时域] 模式={} 窗口={} alpha={} vel=({}, {})".format(
+            a.temporal, a.n_acc, a.alpha, a.vel_x, a.vel_y))
 
     gt = {}
     if a.src == "synth":
@@ -160,6 +177,8 @@ def main():
             break
         t0 = time.perf_counter()
         gray = to_gray_down(frame, a.down)
+        if enh is not None:
+            gray = enh(gray)                       # 时域增强（acc / mc / bg / tmax）
         g = gauss(gray, a.gauss)
         th = tophat(g, a.tophat)
         binary, _ = adaptive_threshold(th, a.win, a.k, a.floor)
