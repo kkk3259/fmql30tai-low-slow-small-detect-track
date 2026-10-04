@@ -14,9 +14,10 @@ FPGA 可编程逻辑部分的 Verilog 源码、仿真与工具脚本。
 | IP2-③ 候选提取 | `rtl/candidate_extract.v` | **CCL 8连通 BFS** → 质心/面积/峰值 top8 | ✅ 零误差 |
 | IP2 整合 | `rtl/ip2_top.v` | Top-Hat → CFAR → CCL | ✅ 128×72 / 320×180 逐字段一致 |
 | IP3 后处理 | `rtl/postproc_axis.v` | NMS 合并过近候选（16 位降采样坐标，**不 ×2**） | ✅ 逐字段一致 |
+| IP4 ROI打包 | `rtl/roi_pack.v` | 按候选裁 128×128 ROI（越界补 0） | ✅ 逐字节一致 |
 | 流水线样板 | `rtl/gauss3_stream.v` | 3×3 高斯（行缓存+流水线+AXI4-Stream） | ✅ 深内部零误差 |
 
-**数据流**：彩色大图 → IP1（灰度+降采样）→ IP2（增强+CFAR+候选）→ IP3（NMS）→ 候选列表(57字节,16位降采样坐标) → NPU/PS。
+**数据流**：彩色大图 → IP1（灰度+降采样）→ IP2（增强+CFAR+候选）→ IP3（NMS）→ 候选列表(57字节,16位降采样坐标) → IP4（裁 ROI）→ NPU/PS。
 
 ## 怎么跑仿真（统一 4 步）
 
@@ -43,6 +44,7 @@ FPGA 可编程逻辑部分的 Verilog 源码、仿真与工具脚本。
 | IP2 整合(128×72) | gen_integration.py | input_integration.hex | tb_ip2_top + ip2_top |
 | IP2 整合(320×180) | gen_integration_320.py | input_integration_320.hex | tb_ip2_top_320 + ip2_top |
 | IP3 | gen_postproc_stimulus.py | input_postproc.hex | tb_postproc + postproc_axis |
+| IP4 | gen_roi_stimulus.py | input_roi_gray.hex + input_roi_cand.hex | tb_roi_pack + roi_pack |
 | 流式高斯 | gen_gauss_stimulus.py | input_gauss.hex | tb_gauss3_stream + gauss3_stream |
 | 视频逐帧 | run_video_frames.py | 直接读视频 | （复用 tb_ip2_top） |
 
