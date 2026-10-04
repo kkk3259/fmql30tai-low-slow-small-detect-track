@@ -4,7 +4,7 @@
 module ip2_top #(
     parameter W = 64,
     parameter H = 64,
-    parameter MAX_CAND = 8
+    parameter MAX_CAND = 5
 )(
     input  wire clk,
     input  wire rst_n,

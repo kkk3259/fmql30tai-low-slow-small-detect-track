@@ -49,7 +49,7 @@ module tb_ccl;
 
         out_idx = 0; idle = 0;
         out_file = $fopen("output_ccl.hex", "w");
-        while (out_idx < 57) begin
+        while (out_idx < 36) begin
             @(posedge clk);
             if (o_valid) begin
                 $fwrite(out_file, "%02X\n", o_data);

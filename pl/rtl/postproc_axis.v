@@ -1,8 +1,8 @@
 // postproc_axis.v —— IP3 后处理：NMS(合并过近候选)，输出降采样坐标（I2 约定：不 ×2）
-// 输入/输出：57 字节候选列表（n_cand + 8×(x_hi,x_lo,y_hi,y_lo,area_hi,area_lo,peak)）
+// 输入/输出：36 字节候选列表（n_cand + 5×(x_hi,x_lo,y_hi,y_lo,area_hi,area_lo,peak)）
 // 坐标保持降采样坐标（640×360），×2 换回原图坐标由 PS 显示时做；NMS 抑制过近的低 peak 候选
 module postproc_axis #(
-    parameter MAX_CAND = 8,
+    parameter MAX_CAND = 5,
     parameter NMS_DIST = 3      // 合并邻域（矩形：|dx|<=D 且 |dy|<=D，降采样坐标，像素）
 )(
     input  wire clk,
@@ -13,7 +13,7 @@ module postproc_axis #(
     output reg  o_valid,
     input  wire o_ready
 );
-    localparam NW = 57;
+    localparam NW = 1 + MAX_CAND * 7;   // 36 字节 = n_cand + 5×7
 
     reg [7:0] in_list  [0:NW-1];
     reg [7:0] out_list [0:NW-1];
@@ -55,7 +55,7 @@ module postproc_axis #(
             end
         end
         n_out = cntv;
-        // 3) 组装 57 字节输出
+        // 3) 组装 36 字节输出
         out_list[0] = n_out;
         for (i = 1; i < NW; i = i + 1) out_list[i] = 8'd0;
         p = 0;

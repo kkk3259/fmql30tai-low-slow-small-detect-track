@@ -3,7 +3,7 @@
 module candidate_extract #(
     parameter W = 64,
     parameter H = 64,
-    parameter MAX_CAND = 8,
+    parameter MAX_CAND = 5,
     parameter MIN_AREA = 2,
     parameter MAX_AREA = 200,
     parameter MAX_COMP = 64
@@ -81,7 +81,7 @@ module candidate_extract #(
     wire [CH-1:0] top_y = sy[sp-1];
     wire [CW-1:0] top_x = sx[sp-1];
 
-    // 输出字段选择（57 字节：n_cand + 8×(x_hi,x_lo,y_hi,y_lo,area_hi,area_lo,peak)，x/y/area 16 位）
+    // 输出字段选择（36 字节：n_cand + 5×(x_hi,x_lo,y_hi,y_lo,area_hi,area_lo,peak)，x/y/area 16 位）
     wire [5:0] out_idx = cnt[5:0];                  // 0..56
     wire [2:0] cand_i  = (out_idx - 7'd1) / 3'd7;   // 0..7
     wire [2:0] field   = (out_idx - 7'd1) % 3'd7;   // 0..6
@@ -205,7 +205,7 @@ module candidate_extract #(
                     o_valid <= 1'b1;
                     o_data  <= out_val;
                     if (o_ready) begin
-                        if (out_idx == 6'd56) state <= S_DONE;
+                        if (out_idx == 6'd35) state <= S_DONE;   // 36 字节 = n_cand + 5×7
                         else cnt <= cnt + 1;
                     end
                 end

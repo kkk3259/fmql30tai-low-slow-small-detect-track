@@ -44,7 +44,7 @@ module tb_ip2_top_320;
 
         out_idx = 0; idle = 0;
         out_file = $fopen("output_integration_320.hex", "w");
-        while (out_idx < 57) begin
+        while (out_idx < 36) begin
             @(posedge clk);
             if (o_valid) begin
                 $fwrite(out_file, "%02X\n", o_data);

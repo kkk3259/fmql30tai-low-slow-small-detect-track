@@ -68,7 +68,7 @@ for i in range(1, n):
     peak = int(th[m].max())
     cands.append(((sum_x + area // 2) // area, (sum_y + area // 2) // area, area, peak))
 cands.sort(key=lambda c: -c[3])
-cands = cands[:8]
+cands = cands[:5]
 
 os.makedirs(sim_dir, exist_ok=True)
 with open(os.path.join(sim_dir, "input_integration.hex"), "w") as fw:
@@ -77,7 +77,7 @@ with open(os.path.join(sim_dir, "input_integration.hex"), "w") as fw:
             fw.write("%02X\n" % int(gray[y, x]))
 with open(os.path.join(sim_dir, "ref_integration.hex"), "w") as fw:
     fw.write("%02X\n" % len(cands))
-    for i in range(8):
+    for i in range(5):
         if i < len(cands):
             x, y, a, p = cands[i]
             fw.write("%02X\n%02X\n%02X\n%02X\n%02X\n%02X\n%02X\n" % (x >> 8, x & 255, y >> 8, y & 255, a >> 8, a & 255, p))

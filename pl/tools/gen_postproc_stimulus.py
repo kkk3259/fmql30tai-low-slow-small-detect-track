@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """IP3 后处理测试：候选列表（含一对近邻，测 NMS）+ 参考（NMS 抑制，输出降采样坐标）。
-产出：pl/sim/input_postproc.hex（57 字节候选列表，16 位坐标）
-      pl/sim/ref_postproc.hex（57 字节，NMS 合并后，保持降采样坐标）
+产出：pl/sim/input_postproc.hex（36 字节候选列表，16 位坐标）
+      pl/sim/ref_postproc.hex（36 字节，NMS 合并后，保持降采样坐标）
 格式：n_cand + 8×(x_hi,x_lo,y_hi,y_lo,area_hi,area_lo,peak)
 """
 import os
@@ -30,7 +30,7 @@ def nms(cands):
 def write_list(path, lst):
     with open(path, "w") as f:
         f.write("%02X\n" % len(lst))
-        for i in range(8):
+        for i in range(5):
             if i < len(lst):
                 x, y, a, p = lst[i]
                 f.write("%02X\n%02X\n%02X\n%02X\n%02X\n%02X\n%02X\n" %

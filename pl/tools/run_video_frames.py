@@ -65,12 +65,12 @@ def ref_chain(gray):
         area = int(m.sum()); peak = int(th[m].max())
         cands.append(((sum_x + area // 2) // area, (sum_y + area // 2) // area, area, peak))
     cands.sort(key=lambda c: -c[3])
-    return cands[:8]
+    return cands[:5]
 
 
 def w57(cands):
     out = [len(cands)]
-    for i in range(8):
+    for i in range(5):
         if i < len(cands):
             x, y, a, p = cands[i]
             out += [x >> 8, x & 255, y >> 8, y & 255, a >> 8, a & 255, p]
@@ -90,7 +90,7 @@ def read_hex(path):
 
 
 def canon(b):
-    """解析 57 字节列表并按 (peak 降, x 升, y 升) 规范排序，消除同 peak 的并列顺序差异"""
+    """解析 36 字节列表并按 (peak 降, x 升, y 升) 规范排序，消除同 peak 的并列顺序差异"""
     n = b[0]
     c = []
     for i in range(n):

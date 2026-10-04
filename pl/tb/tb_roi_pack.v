@@ -9,7 +9,7 @@ module tb_roi_pack;
     reg o_ready;
 
     reg [7:0] gray_mem [0:25599];   // 160*160
-    reg [7:0] cand_mem [0:56];      // 57 字节候选
+    reg [7:0] cand_mem [0:35];      // 36 字节候选
 
     roi_pack #(.W(160), .H(160), .ROI(128)) uut (
         .clk(clk), .rst_n(rst_n),
@@ -44,7 +44,7 @@ module tb_roi_pack;
         i_valid = 1'b0;
         @(posedge clk);
         // 2) 喂候选
-        for (idx = 0; idx < 57; idx = idx + 1) begin
+        for (idx = 0; idx < 36; idx = idx + 1) begin
             i_data = cand_mem[idx];
             i_valid = 1'b1;
             @(posedge clk);

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """IP2 全链 320x180 真实分辨率测试（宽 320 > 255，验证 16 位坐标）。
 产出：pl/sim/input_integration_320.hex（320x180 灰度）
-      pl/sim/ref_integration_320.hex（57 字节候选列表）
+      pl/sim/ref_integration_320.hex（36 字节候选列表）
 """
 import os
 import numpy as np
@@ -62,7 +62,7 @@ for i in range(1, n):
     area = int(m.sum()); peak = int(th[m].max())
     cands.append(((sum_x + area // 2) // area, (sum_y + area // 2) // area, area, peak))
 cands.sort(key=lambda c: -c[3])
-cands = cands[:8]
+cands = cands[:5]
 
 os.makedirs(sim_dir, exist_ok=True)
 with open(os.path.join(sim_dir, "input_integration_320.hex"), "w") as fw:
@@ -71,7 +71,7 @@ with open(os.path.join(sim_dir, "input_integration_320.hex"), "w") as fw:
             fw.write("%02X\n" % int(gray[y, x]))
 with open(os.path.join(sim_dir, "ref_integration_320.hex"), "w") as fw:
     fw.write("%02X\n" % len(cands))
-    for i in range(8):
+    for i in range(5):
         if i < len(cands):
             x, y, a, p = cands[i]
             fw.write("%02X\n%02X\n%02X\n%02X\n%02X\n%02X\n%02X\n" %

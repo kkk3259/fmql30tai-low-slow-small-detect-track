@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """IP4 roi_pack 测试：160x160 灰度图 + 候选列表 → 每个候选裁 128x128 ROI（越界补 0）。
-产出：pl/sim/input_roi_gray.hex（灰度图）、input_roi_cand.hex（57 字节候选）、ref_roi.hex（ROI 数据）
+产出：pl/sim/input_roi_gray.hex（灰度图）、input_roi_cand.hex（36 字节候选）、ref_roi.hex（ROI 数据）
 """
 import os
 import numpy as np
 
 W, H, ROI = 160, 160, 128
-MAX_CAND = 8
+MAX_CAND = 5
 sim_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sim"))
 
 rng = np.random.default_rng(5)

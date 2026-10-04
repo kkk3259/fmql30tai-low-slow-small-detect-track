@@ -1,12 +1,12 @@
 // roi_pack.v —— IP4：裁 128x128 ROI（I3 接口，PL → NPU）
-// 输入：降采样灰度图（W×H）+ 候选列表（I2，57 字节）
+// 输入：降采样灰度图（W×H）+ 候选列表（I2，36 字节）
 // 输出：对每个候选，裁以 (cx,cy) 为中心、128x128 的图块（越界补 0），逐字节流式输出
 // 语义对齐 ps_app.py::crop_roi（x0=cx-64, y0=cy-64，越界补 0）
 module roi_pack #(
     parameter W = 160,
     parameter H = 160,
     parameter ROI = 128,
-    parameter MAX_CAND = 8
+    parameter MAX_CAND = 5
 )(
     input  wire clk,
     input  wire rst_n,
@@ -26,7 +26,7 @@ module roi_pack #(
     localparam ROI_CNT = 2 * ROI_W;            // 14
 
     reg [7:0] gray [0:H-1][0:W-1];
-    reg [7:0] cbytes [0:56];       // 57 字节候选列表
+    reg [7:0] cbytes [0:35];       // 36 字节候选列表 = n_cand + 5×7
     reg [15:0] cx [0:MAX_CAND-1];
     reg [15:0] cy [0:MAX_CAND-1];
     reg [7:0] n_cand;
@@ -78,7 +78,7 @@ module roi_pack #(
                 S_CAND: begin
                     if (i_valid) begin
                         cbytes[cnt] <= i_data;
-                        if (cnt == 56) begin state <= S_CROP; roi_cnt <= 0; cand_i <= 0; end
+                        if (cnt == 35) begin state <= S_CROP; roi_cnt <= 0; cand_i <= 0; end
                         else cnt <= cnt + 1;
                     end
                 end

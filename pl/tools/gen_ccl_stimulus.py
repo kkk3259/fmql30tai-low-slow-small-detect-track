@@ -36,7 +36,7 @@ for i in range(1, n):
     # 与 Verilog 的 (x_sum + area/2)/area 完全一致
     cands.append(((sum_x + area // 2) // area, (sum_y + area // 2) // area, area, peak))
 cands.sort(key=lambda c: -c[3])   # peak 降序
-cands = cands[:8]
+cands = cands[:5]
 
 os.makedirs(sim_dir, exist_ok=True)
 with open(os.path.join(sim_dir, "input_bin.hex"), "w") as f:
@@ -49,7 +49,7 @@ with open(os.path.join(sim_dir, "input_enh.hex"), "w") as f:
             f.write("%02X\n" % int(enh[y, x]))
 with open(os.path.join(sim_dir, "ref_ccl.hex"), "w") as f:
     f.write("%02X\n" % len(cands))
-    for i in range(8):
+    for i in range(5):
         if i < len(cands):
             x, y, a, p = cands[i]
             f.write("%02X\n%02X\n%02X\n%02X\n%02X\n%02X\n%02X\n" % (x >> 8, x & 255, y >> 8, y & 255, a >> 8, a & 255, p))
