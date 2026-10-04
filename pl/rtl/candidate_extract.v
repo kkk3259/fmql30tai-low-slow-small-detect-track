@@ -50,7 +50,8 @@ module candidate_extract #(
     reg [15:0] x_sum, y_sum, area;
     reg [7:0]  peak;
     // 排序
-    reg [3:0] si, sj, mi;
+    reg [3:0] si;
+    reg [5:0] sj, mi;      // 需 6 位：候选数最多 MAX_COMP=64
     reg [7:0] maxp;
     reg [1:0] sort_phase;
 

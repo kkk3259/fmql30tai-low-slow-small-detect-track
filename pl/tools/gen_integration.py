@@ -29,12 +29,29 @@ gray = np.clip(gray, 0, 255).astype(np.uint8)
 # ---- 参考链路（= detect_v1.py：Top-Hat -> CFAR -> CCL）----
 kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
 th = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
-# CFAR 定点 MAD（与 Verilog 一致：整数均值 + 5×MAD + 3，clamp 边界）
+# CFAR 定点 MAD（与 Verilog 积分图一致：裁剪窗口、按实际像素数求均值，整数算术）
 img_i = th.astype(np.int32)
-win_sum = cv2.boxFilter(img_i.astype(np.float32), -1, (31, 31), normalize=False, borderType=cv2.BORDER_REPLICATE)
-mu = (win_sum // 961).astype(np.int32)
-win_abs = cv2.boxFilter(np.abs(img_i - mu).astype(np.float32), -1, (31, 31), normalize=False, borderType=cv2.BORDER_REPLICATE)
-mad = (win_abs // 961).astype(np.int32)
+HH, WW = img_i.shape
+HALF = 15
+integ = cv2.integral(th)   # th 是 uint8，积分图返回 int32
+mu = np.zeros((HH, WW), np.int32)
+for r in range(HH):
+    for c in range(WW):
+        x1 = max(c - HALF, 0); x2 = min(c + HALF, WW - 1)
+        y1 = max(r - HALF, 0); y2 = min(r + HALF, HH - 1)
+        area = (x2 - x1 + 1) * (y2 - y1 + 1)
+        s = integ[y2 + 1][x2 + 1] - integ[y1][x2 + 1] - integ[y2 + 1][x1] + integ[y1][x1]
+        mu[r, c] = s // area
+abs_dev = np.abs(img_i - mu)
+integ2 = cv2.integral(abs_dev.astype(np.uint8))
+mad = np.zeros((HH, WW), np.int32)
+for r in range(HH):
+    for c in range(WW):
+        x1 = max(c - HALF, 0); x2 = min(c + HALF, WW - 1)
+        y1 = max(r - HALF, 0); y2 = min(r + HALF, HH - 1)
+        area = (x2 - x1 + 1) * (y2 - y1 + 1)
+        s = integ2[y2 + 1][x2 + 1] - integ2[y1][x2 + 1] - integ2[y2 + 1][x1] + integ2[y1][x1]
+        mad[r, c] = s // area
 thr = mu + 5 * mad + 3
 binary = (img_i > thr).astype(np.uint8) * 255
 
