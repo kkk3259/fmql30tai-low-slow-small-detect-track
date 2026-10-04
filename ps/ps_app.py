@@ -72,14 +72,23 @@ class Detector(object):
     """
 
     def __init__(self, down=2, gauss_k=0, tophat_se=5,
-                 win=31, k=4.0, floor=3.0, min_area=2, max_area=200, topk=8):
+                 win=31, k=4.0, floor=3.0, min_area=2, max_area=200, topk=8,
+                 temporal="none", n_acc=8, alpha=0.95, vel_x=0.0, vel_y=0.0):
         self.cfg = dict(down=down, gauss_k=gauss_k, tophat_se=tophat_se,
                         win=win, k=k, floor=floor,
                         min_area=min_area, max_area=max_area, topk=topk)
+        # 时域增强（★将来对应 PL 的"帧缓存 + 时域累加"模块）
+        self.enh = None
+        if temporal != "none":
+            from detect_v3 import TemporalEnhancer
+            self.enh = TemporalEnhancer(mode=temporal, alpha=alpha, n_acc=n_acc,
+                                        vel_x=vel_x, vel_y=vel_y)
 
     def __call__(self, frame):
         c = self.cfg
         gray = to_gray_down(frame, c["down"])
+        if self.enh is not None:
+            gray = self.enh(gray)                 # 时域增强（acc / mc / bg / tmax）
         g = gauss(gray, c["gauss_k"])
         th = tophat(g, c["tophat_se"])
         binary, _ = adaptive_threshold(th, c["win"], c["k"], c["floor"])
@@ -266,6 +275,14 @@ def main():
     ap.add_argument("--json", default="results\\app_alerts.jsonl")
     ap.add_argument("--model", default="", help="ROI 判别模型 ONNX 路径（A 提供）")
     ap.add_argument("--no-classify", action="store_true", help="关掉判别环节（全部通过）")
+    # ---- 时域增强（复用 detect_v3 的实现）----
+    ap.add_argument("--temporal", default="none",
+                    choices=["none", "acc", "mc", "bg", "tmax", "both"],
+                    help="时域增强：none=关 / acc=多帧平均 / mc=运动补偿 / bg=背景差分 / tmax=时间TopHat")
+    ap.add_argument("--n-acc", type=int, default=8, help="时域窗口帧数")
+    ap.add_argument("--alpha", type=float, default=0.95, help="背景更新率（bg）")
+    ap.add_argument("--vel-x", type=float, default=0.0, help="目标水平速度 px/帧（mc，降采样坐标）")
+    ap.add_argument("--vel-y", type=float, default=0.0, help="目标垂直速度 px/帧（mc，降采样坐标）")
     ap.add_argument("--down", type=int, default=2)
     ap.add_argument("--k", type=float, default=4.0)
     ap.add_argument("--floor", type=float, default=3.0)
@@ -295,7 +312,9 @@ def main():
     if not vw.isOpened():
         raise SystemExit("输出视频写入器创建失败：" + a.out)
 
-    detector = Detector(down=a.down, k=a.k, floor=a.floor)
+    detector = Detector(down=a.down, k=a.k, floor=a.floor,
+                    temporal=a.temporal, n_acc=a.n_acc, alpha=a.alpha,
+                    vel_x=a.vel_x, vel_y=a.vel_y)
     judge = RoIJudge(model_path=a.model, enabled=not a.no_classify)
     tracker = Tracker(gate=a.gate, confirm=a.confirm)
     mode = "python(占位判别)" if judge.sess is None else "python(ONNX判别)"
