@@ -120,11 +120,13 @@ def main():
         a.src = "synth_sky.mp4"
         if not os.path.exists(a.src):
             make_synthetic(a.src)
-        gtf = os.path.splitext(a.src)[0] + "_gt.csv"
-        if os.path.exists(gtf):
-            with open(gtf) as f:
-                for row in csv.DictReader(f):
-                    gt[int(row["frame"])] = (int(row["x"]), int(row["y"]))
+    # 修正：任何视频源（包括真实视频）都尝试加载同名的 _gt.csv
+    # 原实现只在 src=="synth" 时加载，导致真实视频统计不出 Pd / 虚警。
+    gtf = os.path.splitext(a.src)[0] + "_gt.csv"
+    if os.path.exists(gtf):
+        with open(gtf) as f:
+            for row in csv.DictReader(f):
+                gt[int(row["frame"])] = (int(row["x"]), int(row["y"]))
 
     cap = cv2.VideoCapture(a.src)
     if not cap.isOpened():
