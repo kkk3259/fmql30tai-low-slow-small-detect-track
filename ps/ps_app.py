@@ -283,7 +283,7 @@ def main():
     if os.path.exists(gtf):
         with open(gtf) as f:
             for row in csv.DictReader(f):
-                gt[int(row["frame"])] = (int(row["x"]), int(row["y"]))
+                gt[int(row["frame"])] = (float(row["x"]), float(row["y"]))  # 兼容带小数的真值
     print("[输入] {}  真值 {} 帧".format(src, len(gt)))
 
     fps_in = cap.get(cv2.CAP_PROP_FPS) or 30.0

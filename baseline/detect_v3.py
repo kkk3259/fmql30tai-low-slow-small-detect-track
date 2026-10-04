@@ -202,7 +202,7 @@ def run_sequence(src, enhancer, cfg, out_path=None, csv_path=None, max_frames=0)
     if os.path.exists(gt_file):
         with open(gt_file) as f:
             for r in csv.DictReader(f):
-                gt[int(r["frame"])] = (int(r["x"]), int(r["y"]))
+                gt[int(r["frame"])] = (float(r["x"]), float(r["y"]))  # 兼容带小数的真值（mark_gt.py 输出）
 
     cap = cv2.VideoCapture(video)
     if not cap.isOpened():
