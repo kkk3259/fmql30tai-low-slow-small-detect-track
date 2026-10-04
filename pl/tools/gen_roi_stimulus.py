@@ -16,7 +16,7 @@ gray = rng.integers(0, 256, (H, W)).astype(np.uint8)
 cands = [(80, 80, 10, 50), (10, 10, 5, 40), (150, 150, 8, 45), (5, 90, 6, 42)]
 
 
-def w57(cands):
+def w_cand(cands):
     out = [len(cands)]
     for i in range(MAX_CAND):
         if i < len(cands):
@@ -42,7 +42,7 @@ with open(os.path.join(sim_dir, "input_roi_gray.hex"), "w") as f:
     for v in gray.ravel():
         f.write("%02X\n" % int(v))
 with open(os.path.join(sim_dir, "input_roi_cand.hex"), "w") as f:
-    for v in w57(cands):
+    for v in w_cand(cands):
         f.write("%02X\n" % v)
 with open(os.path.join(sim_dir, "ref_roi.hex"), "w") as f:
     for v in ref:

@@ -68,7 +68,7 @@ def ref_chain(gray):
     return cands[:5]
 
 
-def w57(cands):
+def w_cand(cands):
     out = [len(cands)]
     for i in range(5):
         if i < len(cands):
@@ -134,7 +134,7 @@ def main():
                           interpolation=cv2.INTER_AREA)
 
         cands = ref_chain(gray)
-        ref = w57(cands)
+        ref = w_cand(cands)
         write_hex(IN_HEX, [int(v) for v in gray.ravel()])
         write_hex(REF_HEX, ref)
 
