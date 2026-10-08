@@ -1,14 +1,16 @@
 // win5.v —— 流式 5x5 窗口（行缓存 + 流水线），输出 min(腐蚀) 或 max(膨胀)
 // ⚠️ 状态：WIP（未完成）。内部 15/16 像素正确，但有 3 个已知问题，见下。暂不用于正式验证。
 //
-// 【已知 bug 1 · 1 像素对齐偏差】
-//   8x8 单测(tb_win5.v)：内部 (2,2) 输出 1、期望 0（差 1 像素），其余内部像素全对。
-//   原因：行缓存 tap 与 valid 有 1 周期时序偏差（valid 采到的窗口比实际早/晚 1 列）。
+// 【已知 bug 1 · 1 像素对齐偏差（含 2 列因果偏移）】
+//   8x8 单测(tb_win5.v)：内部 (2,2) 输出 1、期望 0（差 1），其余内部（r>=3,c>=2）全对。
+//   现象：因果窗口中心在 (r-2,c-2)，输出天然偏移 2 行 2 列；valid 延迟 2W+2 应补偿但残 1 像素。
 //   已试过（记录，避免重蹈）：
-//     - DELAY = 2W+3（当前，最好：内部 15/16 正确，仅 (2,2) 差 1）
-//     - DELAY = 2W+4（更糟：整体错 1 列，内部 0/16）
-//     - tap 用 lbX[W-1]（当前，已确认等价"上一行同列"，正确）
+//     - DELAY = 2W+3（当前，最好：内部 15/16）
+//     - DELAY = 2W+4（更糟：整体错 1 列）
+//     - tap 用 lbX[W-1]（当前，已确认等价"上一行同列"，正确；$strobe 验证 r2 与 r0 恰差 2W）
 //     - tap 用 lbX[W]（更糟，不要用）
+//     - 寄存输出 o_data/o_valid（已加，标准流式做法，但不改变相对对齐）
+//     - 负列掩码（加列计数器 c<4 置 PAD）——试过但 off-by-one，反而更糟，已回退
 //
 // 【已知 bug 2 · 行边界列回绕】
 //   行边界处（c<4），负列 tap 会串到上一行尾部（gray(r-1,W-1) 等）而非 PAD。
@@ -110,6 +112,16 @@ module win5 #(
         else if (o_ready) valid_shift <= {valid_shift[DELAY-2:0], i_valid};
     end
 
-    assign o_data  = result;
-    assign o_valid = valid_shift[DELAY-1];
+    // 寄存输出（标准流式：数据与 valid 同步寄存，消费者在时钟沿取到对齐值）
+    reg [7:0] o_data_r;
+    reg o_valid_r;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin o_data_r <= 8'd0; o_valid_r <= 1'b0; end
+        else begin
+            o_data_r  <= result;
+            o_valid_r <= valid_shift[DELAY-1];
+        end
+    end
+    assign o_data  = o_data_r;
+    assign o_valid = o_valid_r;
 endmodule

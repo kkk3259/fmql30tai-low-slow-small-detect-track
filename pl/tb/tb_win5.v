@@ -37,7 +37,7 @@ module tb_win5;
             else i_valid = 1'b0;
             if (o_valid) begin
                 $fwrite(out_file, "%02X\n", o_data);
-                if (out_idx < 8) $display("DBG #%0d o=%h", out_idx, o_data);
+                if (out_idx < 10) $display("DBG #%0d o=%h idx=%0d", out_idx, o_data, idx);
                 out_idx = out_idx + 1; idle = 0;
             end else begin
                 idle = idle + 1;
