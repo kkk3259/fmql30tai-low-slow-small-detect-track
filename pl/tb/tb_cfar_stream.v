@@ -6,6 +6,7 @@ module tb_cfar_stream;
     reg i_valid;
     wire i_ready;
     wire [7:0] o_data;
+    wire [7:0] o_enh;
     wire o_valid;
     reg o_ready;
 
@@ -14,7 +15,7 @@ module tb_cfar_stream;
     cfar_threshold_stream #(.W(64), .H(64)) uut (
         .clk(clk), .rst_n(rst_n),
         .i_data(i_data), .i_valid(i_valid), .i_ready(i_ready),
-        .o_data(o_data), .o_valid(o_valid), .o_ready(o_ready)
+        .o_data(o_data), .o_enh(o_enh), .o_valid(o_valid), .o_ready(o_ready)
     );
 
     integer idx, out_idx, out_file, idle;

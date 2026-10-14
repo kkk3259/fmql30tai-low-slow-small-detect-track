@@ -22,7 +22,8 @@ module cfar_threshold_stream #(
     input  wire [7:0] i_data,
     input  wire i_valid,
     output wire i_ready,
-    output wire [7:0] o_data,
+    output wire [7:0] o_data,   // 二值图（255/0）
+    output wire [7:0] o_enh,    // 对齐的增强图（因果中心像素，与 o_data 同位置）
     output wire o_valid,
     input  wire o_ready
 );
@@ -81,6 +82,7 @@ module cfar_threshold_stream #(
     wire [7:0] center_px = img_bram[(cnt >= CENTER_OFF) ? (cnt - CENTER_OFF) : 0];
 
     reg [7:0] o_data_r;
+    reg [7:0] o_enh_r;
     reg o_valid_r;
 
     always @(posedge clk or negedge rst_n) begin
@@ -89,7 +91,7 @@ module cfar_threshold_stream #(
             for (i = 0; i < W; i = i + 1) col_sum[i] <= 0;
             for (i = 0; i < WIN; i = i + 1) fifo[i] <= 0;
             col <= 0; row <= 0; cnt <= 0; state <= S_LOAD;
-            o_data_r <= 8'd0; o_valid_r <= 1'b0;
+            o_data_r <= 8'd0; o_enh_r <= 8'd0; o_valid_r <= 1'b0;
         end else begin
             o_valid_r <= 1'b0;
             case (state)
@@ -135,6 +137,7 @@ module cfar_threshold_stream #(
                     for (i = 1; i < WIN; i = i + 1) fifo[i] <= fifo[i-1];
                 end
                 o_data_r <= (center_px > thr[7:0]) ? 8'd255 : 8'd0;
+                o_enh_r  <= center_px;   // 对齐的增强图（与二值图同位置）
                 o_valid_r <= 1'b1;
                 if (cnt == N - 1) begin state <= S_DONE; end
                 else begin
@@ -155,5 +158,6 @@ module cfar_threshold_stream #(
 
     assign i_ready = (state == S_LOAD);
     assign o_data  = o_data_r;
+    assign o_enh   = o_enh_r;
     assign o_valid = o_valid_r;
 endmodule
