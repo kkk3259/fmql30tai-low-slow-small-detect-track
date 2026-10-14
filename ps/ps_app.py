@@ -178,7 +178,9 @@ class RoIJudge(object):
 
     def __call__(self, roi):
         """输入 ROI(灰度 uint8)，输出目标置信度 0~1（将来取自 I4）"""
-        if not self.enabled or self.sess is None:
+        if not self.enabled:
+            return 1.0                     # --no-classify：完全关掉判别（全部通过）
+        if self.sess is None:
             # ---- 双平台后端分派（backend 在 __init__ 里探测并缓存，避免每帧 import）----
             backend = self.backend
             try:
@@ -201,22 +203,25 @@ class RoIJudge(object):
         raise NotImplementedError("30TAI 上接入 Icraft；当前平台无 NPU")
 
     def _cpu_infer(self, roi):
-        """45T900：ARM 上 CPU 推理（ONNX Runtime）；无模型时返回占位值"""
+        """45T900 / PC：CPU 推理（ONNX Runtime）
+
+        模型统一由 --model 参数传入（存于 self.sess）；
+        没有模型时返回 1.0（占位），保证链路不中断。
+        """
+        if self.sess is None:
+            return 1.0                     # 没模型 -> 占位（等价"全部通过"）
         try:
-            import onnxruntime as ort
             import numpy as np
-            sess = getattr(self, "_sess", None)
-            if sess is None:
-                import os as _os
-                mp = _os.environ.get("ROI_ONNX", "")
-                if not mp or not _os.path.exists(mp):
-                    return 1.0                      # 没有模型 → 占位
-                self._sess = ort.InferenceSession(mp)
-                sess = self._sess
-            x = roi.astype(np.float32)[None, None, :, :] / 255.0
-            out = sess.run(None, {sess.get_inputs()[0].name: x})[0]
-            return float(out.reshape(-1)[-1])
-        except Exception:
+            x = roi.astype(np.float32) / 255.0
+            if len(self.sess.get_inputs()[0].shape) == 4:
+                x = x[None, None, :, :]    # NCHW 单通道
+            logits = self.sess.run(None, {self.input_name: x})[0].ravel()
+            if logits.size == 1:
+                return float(1.0 / (1.0 + np.exp(-logits[0])))   # 单输出 -> sigmoid
+            e = np.exp(logits - logits.max())
+            return float((e / e.sum())[-1])                       # 多类 -> 最后一类
+        except Exception as e:
+            print("[判别] CPU 推理失败，回退占位: {}".format(e))
             return 1.0
 
         x = roi.astype(np.float32) / 255.0
