@@ -156,28 +156,44 @@ class RoIJudge(object):
         self.enabled = enabled
         self.sess = None
         self.input_name = None
+        # ---- 双平台后端（初始化时探测一次，避免每帧 import 探测）----
+        self.backend = detect_backend()
         if enabled and model_path and os.path.exists(model_path):
             try:
                 import onnxruntime as ort
                 self.sess = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
                 self.input_name = self.sess.get_inputs()[0].name
+                self.backend = "onnx"          # 有本地模型时优先用它
                 print("[判别] 已加载模型: {}  (输入 {})".format(
                     os.path.basename(model_path), self.sess.get_inputs()[0].shape))
             except Exception as e:
                 print("[判别] 模型加载失败，回退占位实现: {}".format(e))
                 self.sess = None
+        if self.sess is None:
+            print("[判别] 后端 = {}（{}）".format(
+                self.backend,
+                {"npu": "30TAI / Icraft",
+                 "cpu": "45T900 / ONNX Runtime（无模型时占位）",
+                 "placeholder": "占位：全部通过"}.get(self.backend, self.backend)))
 
     def __call__(self, roi):
         """输入 ROI(灰度 uint8)，输出目标置信度 0~1（将来取自 I4）"""
         if not self.enabled or self.sess is None:
-            # ---- 双平台后端分派 ----
-            backend = detect_backend()
-            if backend == "npu":
-                # 30TAI：Icraft 推理（拿到板后替换此处）
-                return float(self._npu_infer(roi))            # ★替换点4 真实现
-            elif backend == "cpu":
-                # 45T900：ARM 上 CPU 推理（ONNX Runtime）
-                return float(self._cpu_infer(roi))
+            # ---- 双平台后端分派（backend 在 __init__ 里探测并缓存，避免每帧 import）----
+            backend = self.backend
+            try:
+                if backend == "npu":
+                    # 30TAI：Icraft 推理（拿到板后替换此处）
+                    return float(self._npu_infer(roi))            # ★替换点4 真实现
+                elif backend in ("cpu", "onnx"):
+                    # 45T900 / PC：CPU 推理（ONNX Runtime）
+                    return float(self._cpu_infer(roi))
+            except NotImplementedError as e:
+                # 当前平台没有 NPU（如 FMQL45T900）→ 不崩，回退占位
+                self.backend = "placeholder"
+                print("[判别] 该平台无 NPU，回退占位：{}".format(e))
+            except Exception as e:
+                print("[判别] 后端 {} 推理失败，回退占位：{}".format(backend, e))
             return 1.0                                   # placeholder：全部通过
 
     def _npu_infer(self, roi):

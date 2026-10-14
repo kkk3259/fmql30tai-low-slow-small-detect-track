@@ -65,17 +65,21 @@ def parse_report(path):
         return False
 
     # 形如：| Slice LUTs                 | 28100|     0 |     78600 | 35.75 |
-    grab([r"Slice\s+LUTs\s*\|?\s*([\d,]+)"], ["LUT"])
+    # LUT：多个候选写法，按优先顺序兜底（Vivado 主格式 / 其他工具）
+    grab([r"Slice\s+LUTs\s*\|?\s*([\d,]+)",      # Vivado: "Slice LUTs | 28100"
+          r"CLB\s+LUTs\s*\|?\s*([\d,]+)",        # 某些工具
+          r"LUT\s+as\s+Logic\s*\|?\s*([\d,]+)"  # Vivado 变体
+          ], ["LUT"])
     grab([r"Slice\s+Registers\s*\|?\s*([\d,]+)"], ["FF"])
     grab([r"\bDSPs?\s*\|?\s*([\d,]+)"], ["DSP"])
+    # BRAM：优先直接读 Mb；否则读块数换算（Xilinx "Block RAM Tile" 1 块 = 36 Kb）
     grab([r"Block\s+RAM\s+Tile\s*\|?\s*([\d,]+)"], ["BRAM_TILE"])
     grab([r"Block\s+RAM\s+(?:Tile\s+)?[^\d]*([\d.]+)\s*Mb"], ["BRAM_Mb"])
-    grab([r"CLB\s+LUTs?\s*\|?\s*([\d,]+)"], ["LUT2"])
     grab([r"Logic\s+Cells?\s*\|?\s*([\d,]+)"], ["LC"])
-    # BRAM 块数 -> Mb（1 块 = 36 Kb）
     if "BRAM_TILE" in out and "BRAM_Mb" not in out:
         out["BRAM_Mb"] = out.pop("BRAM_TILE") * 36.0 / 1024.0
-    out.pop("LUT2", None)
+    else:
+        out.pop("BRAM_TILE", None)
     return out or None
 
 
