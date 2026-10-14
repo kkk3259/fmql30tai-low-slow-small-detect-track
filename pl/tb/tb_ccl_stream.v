@@ -4,7 +4,7 @@ module tb_ccl_stream;
     reg clk, rst_n;
     reg i_bin;
     reg [7:0] i_enh;
-    reg i_valid;
+    reg bin_valid, enh_valid;
     wire o_valid;
     wire [7:0] o_data;
     reg o_ready;
@@ -14,7 +14,8 @@ module tb_ccl_stream;
 
     candidate_extract_stream #(.W(64), .H(64)) uut (
         .clk(clk), .rst_n(rst_n),
-        .i_bin(i_bin), .i_enh(i_enh), .i_valid(i_valid),
+        .i_bin(i_bin), .i_bin_valid(bin_valid),
+        .i_enh(i_enh), .i_enh_valid(enh_valid),
         .o_valid(o_valid), .o_data(o_data), .o_ready(o_ready)
     );
 
@@ -29,20 +30,22 @@ module tb_ccl_stream;
         $readmemh("input_bin.hex", bin_mem);
         $readmemh("input_enh.hex", enh_mem);
 
-        rst_n = 0; i_valid = 0; o_ready = 1;
+        rst_n = 0; bin_valid = 0; enh_valid = 0; o_ready = 1;
         repeat (2) @(posedge clk);
         rst_n = 1;
         @(posedge clk);
 
-        // 并行加载 bin + enh
+        // 并行加载 bin + enh（独立 valid，同时给）
         for (idx = 0; idx < 4096; idx = idx + 1) begin
             i_bin = (bin_mem[idx] > 0) ? 1'b1 : 1'b0;
             i_enh = enh_mem[idx];
-            i_valid = 1'b1;
+            bin_valid = 1'b1;
+            enh_valid = 1'b1;
             @(posedge clk);
         end
         @(posedge clk);
-        i_valid = 1'b0;
+        bin_valid = 1'b0;
+        enh_valid = 1'b0;
 
         // 收集 36 字节输出
         out_idx = 0; idle = 0;
