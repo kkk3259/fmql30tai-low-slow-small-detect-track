@@ -119,6 +119,30 @@ def crop_roi(gray, cx, cy, size=ROI_SIZE):
     return roi, (x0, y0)          # (offset_x, offset_y) 属于接口 I3
 
 
+# ---------------------------------------------------------------- 判别后端（双平台）
+# 2026-10-14：FMQL45T900（现在）无 NPU → 用 cpu/placeholder；FMQL30TAI（最终）→ 用 npu
+# 用环境变量 ROIJUDGE_BACKEND 控制：auto / npu / cpu / placeholder
+ROIJUDGE_BACKEND = os.environ.get("ROIJUDGE_BACKEND", "auto")
+
+
+def detect_backend():
+    """自动探测可用后端：优先 NPU，其次 CPU，最后占位"""
+    if ROIJUDGE_BACKEND and ROIJUDGE_BACKEND.lower() != "auto":
+        return ROIJUDGE_BACKEND.lower()
+    # 自动：找 Icraft 运行时（仅 30TAI 有）
+    try:
+        import icraft  # noqa: F401
+        return "npu"
+    except Exception:
+        pass
+    # 其次：ONNX Runtime（45T900 上 CPU 推理用）
+    try:
+        import onnxruntime  # noqa: F401
+        return "cpu"
+    except Exception:
+        return "placeholder"
+
+
 # ================================================================ ④ 判别（精判）
 class RoIJudge(object):
     """★替换点4：板卡上换成 NPU 推理（A 的 Icraft 模型）
@@ -146,7 +170,39 @@ class RoIJudge(object):
     def __call__(self, roi):
         """输入 ROI(灰度 uint8)，输出目标置信度 0~1（将来取自 I4）"""
         if not self.enabled or self.sess is None:
-            return 1.0                                   # 占位：全部通过
+            # ---- 双平台后端分派 ----
+            backend = detect_backend()
+            if backend == "npu":
+                # 30TAI：Icraft 推理（拿到板后替换此处）
+                return float(self._npu_infer(roi))            # ★替换点4 真实现
+            elif backend == "cpu":
+                # 45T900：ARM 上 CPU 推理（ONNX Runtime）
+                return float(self._cpu_infer(roi))
+            return 1.0                                   # placeholder：全部通过
+
+    def _npu_infer(self, roi):
+        """30TAI：调用 Icraft 运行时（★ 拿到板后实现）"""
+        raise NotImplementedError("30TAI 上接入 Icraft；当前平台无 NPU")
+
+    def _cpu_infer(self, roi):
+        """45T900：ARM 上 CPU 推理（ONNX Runtime）；无模型时返回占位值"""
+        try:
+            import onnxruntime as ort
+            import numpy as np
+            sess = getattr(self, "_sess", None)
+            if sess is None:
+                import os as _os
+                mp = _os.environ.get("ROI_ONNX", "")
+                if not mp or not _os.path.exists(mp):
+                    return 1.0                      # 没有模型 → 占位
+                self._sess = ort.InferenceSession(mp)
+                sess = self._sess
+            x = roi.astype(np.float32)[None, None, :, :] / 255.0
+            out = sess.run(None, {sess.get_inputs()[0].name: x})[0]
+            return float(out.reshape(-1)[-1])
+        except Exception:
+            return 1.0
+
         x = roi.astype(np.float32) / 255.0
         if len(self.sess.get_inputs()[0].shape) == 4:
             x = x[None, None, :, :]                      # NCHW, 单通道
