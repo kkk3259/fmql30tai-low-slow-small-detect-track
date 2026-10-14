@@ -18,8 +18,9 @@ module candidate_extract_stream #(
     input  wire clk,
     input  wire rst_n,
     input  wire i_bin,          // 二值图（1=前景）
+    input  wire i_bin_valid,
     input  wire [7:0] i_enh,    // 增强图（算 peak）
-    input  wire i_valid,        // bin/enh 共用 valid（已对齐）
+    input  wire i_enh_valid,
     input  wire o_ready,
     output wire [7:0] o_data,
     output wire o_valid
@@ -50,6 +51,8 @@ module candidate_extract_stream #(
     reg [5:0]  cnt;
 
     reg [CNT_W-1:0] scan;
+    reg [CNT_W-1:0] bin_cnt, enh_cnt;
+    reg bin_loaded, enh_loaded;
     reg [CW-1:0] col;
     reg [CH-1:0] row;
     reg [CNT_W-1:0] ucnt;
@@ -132,18 +135,22 @@ module candidate_extract_stream #(
             for (i = 0; i < MAX_COMP; i = i + 1) begin parent[i] <= i + 1; carea[i] <= 0; csumx[i] <= 0; csumy[i] <= 0; cpeak[i] <= 0; cx[i] <= 0; cy[i] <= 0; end
             left_lbl <= 0; n_lbl <= 0; n_comp <= 0;
             scan <= 0; col <= 0; row <= 0; cnt <= 0; ucnt <= 0;
+            bin_cnt <= 0; enh_cnt <= 0; bin_loaded <= 0; enh_loaded <= 0;
             state <= S_LOAD;
             o_data_r <= 0; o_valid_r <= 0;
         end else begin
             o_valid_r <= 1'b0;
             case (state)
             S_LOAD: begin
-                if (i_valid) begin
-                    bin_bram[scan] <= i_bin;
-                    enh_bram[scan] <= i_enh;
-                    if (scan == N - 1) begin state <= S_LABEL; scan <= 0; col <= 0; end
-                    else scan <= scan + 1;
+                if (i_bin_valid && !bin_loaded) begin
+                    bin_bram[bin_cnt] <= i_bin;
+                    if (bin_cnt == N - 1) bin_loaded <= 1'b1; else bin_cnt <= bin_cnt + 1;
                 end
+                if (i_enh_valid && !enh_loaded) begin
+                    enh_bram[enh_cnt] <= i_enh;
+                    if (enh_cnt == N - 1) enh_loaded <= 1'b1; else enh_cnt <= enh_cnt + 1;
+                end
+                if (bin_loaded && enh_loaded) begin state <= S_LABEL; scan <= 0; col <= 0; end
             end
             S_LABEL: begin
                 if (scan < N) begin
