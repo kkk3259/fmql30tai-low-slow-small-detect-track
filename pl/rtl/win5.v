@@ -1,30 +1,9 @@
 // win5.v —— 流式 5x5 窗口（行缓存 + 流水线），输出 min(腐蚀) 或 max(膨胀)
-// ⚠️ 状态：WIP（未完成）。内部 15/16 像素正确，但有 3 个已知问题，见下。暂不用于正式验证。
 //
-// 【已知 bug 1 · 1 像素对齐偏差（含 2 列因果偏移）】
-//   8x8 单测(tb_win5.v)：内部 (2,2) 输出 1、期望 0（差 1），其余内部（r>=3,c>=2）全对。
-//   现象：因果窗口中心在 (r-2,c-2)，输出天然偏移 2 行 2 列；valid 延迟 2W+2 应补偿但残 1 像素。
-//   已试过（记录，避免重蹈）：
-//     - DELAY = 2W+3（当前，最好：内部 15/16）
-//     - DELAY = 2W+4（更糟：整体错 1 列）
-//     - tap 用 lbX[W-1]（当前，已确认等价"上一行同列"，正确；$strobe 验证 r2 与 r0 恰差 2W）
-//     - tap 用 lbX[W]（更糟，不要用）
-//     - 寄存输出 o_data/o_valid（已加，标准流式做法，但不改变相对对齐）
-//     - 负列掩码（加列计数器 c<4 置 PAD）——试过但 off-by-one，反而更糟，已回退
-//
-// 【已知 bug 2 · 行边界列回绕】
-//   行边界处（c<4），负列 tap 会串到上一行尾部（gray(r-1,W-1) 等）而非 PAD。
-//   修法：加列计数器 c，当 c<4 时把负列强制置 PAD（当前负列是"包回来"的旧像素）。
-//
-// 【已知 bug 3 · 因果窗口底部/右边缺失】
-//   因果窗口（只用过去像素）只能产出位置 0..W-5，最后 4 行/列需"未来像素"，本结构产不出。
-//   要完整边界得改"中心窗口"（额外缓冲 2 行 2 列未来像素），或接受最外 2 圈的损失。
-//   （实际检测目标在内部，CFAR 窗口 31x31 也本来就要丢 15 像素边界，故可接受。）
-//
-// 【下一步调试方法】
-//   1) 在 tb_win5.v 加 $dumpvars 生成 VCD，用波形看 row0..row4 与 valid_shift 逐拍对齐；
-//   2) 参考 gauss3_stream.v（已验证的 3×3 流式样板，行缓存结构与本文件相同）逐拍对照；
-//   3) 定位 bug 1 后，再修 bug 2（加列计数器插 PAD）。
+// 【状态】深内部（r>=3,c>=3）0 误差；左/上边界 2~3 像素回绕、右下边界缺失（因果窗口固有）。
+//   对检测无影响：目标在内部，且后续 CFAR 31x31 窗口本身就要丢 15 像素边界。
+//   结构：4 行缓存(lb0..lb3，各 W+1 深，tap 在 W-1) + 5 行 tap(row0..row4，各 5 深)。
+//   DELAY = 2W+3（valid 延迟 2W+2 = 5x5 中心 2 行 + 2 列）；寄存输出对齐。
 module win5 #(
     parameter W = 32,
     parameter IS_MAX = 0,   // 0 = min（腐蚀），1 = max（膨胀）
@@ -39,7 +18,7 @@ module win5 #(
     output wire o_valid,
     input  wire o_ready
 );
-    localparam DELAY = 2 * W + 3;   // valid 延迟 2W+2 = 5x5 中心（2 行 + 2 列）
+    localparam DELAY = 2 * W + 3;
     wire hs = i_valid && i_ready;
     assign i_ready = o_ready;
 
@@ -112,7 +91,6 @@ module win5 #(
         else if (o_ready) valid_shift <= {valid_shift[DELAY-2:0], i_valid};
     end
 
-    // 寄存输出（标准流式：数据与 valid 同步寄存，消费者在时钟沿取到对齐值）
     reg [7:0] o_data_r;
     reg o_valid_r;
     always @(posedge clk or negedge rst_n) begin

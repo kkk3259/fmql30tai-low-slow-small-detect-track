@@ -38,7 +38,6 @@ module tb_tophat_stream;
         out_file = $fopen("output_tophat_stream.hex", "w");
         while (out_idx < 1024) begin
             @(posedge clk);
-            // 边喂边收（流式有延迟，输出与输入并发）
             if (idx < 1024) begin
                 i_data = in_mem[idx];
                 i_valid = 1'b1;
@@ -48,7 +47,6 @@ module tb_tophat_stream;
             end
             if (o_valid) begin
                 $fwrite(out_file, "%02X\n", o_data);
-                if (out_idx < 5) $display("DBG 收集 #%0d: o_data=%h @t=%0t", out_idx, o_data, $time);
                 out_idx = out_idx + 1;
                 idle = 0;
             end else begin
