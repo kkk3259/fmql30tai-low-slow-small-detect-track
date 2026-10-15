@@ -38,7 +38,6 @@ module tb_ip2_stream;
             i_valid = 1'b1;
             @(posedge clk);
         end
-        @(posedge clk);
         i_valid = 1'b0;
 
         out_idx = 0; idle = 0;
