@@ -81,6 +81,8 @@ module candidate_extract_stream #(
     endfunction
     wire [LW-1:0] min_nb = min4(nb_ul, nb_t, nb_ur, nb_l);
     wire fg = bin_bram[scan];
+    // label_bram 写数据（组合逻辑，供独立写块使用）
+    wire [LW-1:0] label_wdata = fg ? (min_nb == {LW{1'b0}} ? (n_lbl < MAX_COMP - 1 ? n_lbl + 1'b1 : {LW{1'b0}}) : min_nb) : {LW{1'b0}};
 
     // 根标签：parent 已压缩后 parent[l-1] 即根
     wire [LW-1:0] lbl = label_bram[scan];
@@ -129,28 +131,54 @@ module candidate_extract_stream #(
     reg [7:0] o_data_r;
     reg o_valid_r;
 
+    // ---- RAM 独立写块（标准 1写1读，供综合器推断 BRAM）----
+    // bin_bram：写 + bin_cnt 递增/回绕
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) bin_cnt <= 0;
+        else if (state == S_LOAD && i_bin_valid && !bin_loaded) begin
+            bin_bram[bin_cnt] <= i_bin;
+            if (bin_cnt == N - 1) bin_cnt <= 0;
+            else bin_cnt <= bin_cnt + 1;
+        end
+    end
+    // enh_bram：写 + enh_cnt 递增/回绕
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) enh_cnt <= 0;
+        else if (state == S_LOAD && i_enh_valid && !enh_loaded) begin
+            enh_bram[enh_cnt] <= i_enh;
+            if (enh_cnt == N - 1) enh_cnt <= 0;
+            else enh_cnt <= enh_cnt + 1;
+        end
+    end
+    // label_bram：写 + scan 递增/回绕（S_LABEL 写标签，S_ACCUM 只扫描，S_UNION 回绕到 0）
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) scan <= 0;
+        else if (state == S_LABEL && scan < N) begin
+            label_bram[scan] <= label_wdata;
+            scan <= scan + 1;
+        end else if (state == S_UNION) begin
+            scan <= 0;
+        end else if (state == S_ACCUM && scan < N) begin
+            scan <= scan + 1;
+        end
+    end
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             for (i = 0; i < W; i = i + 1) prev_lbl[i] <= 0;
             for (i = 0; i < MAX_COMP; i = i + 1) begin parent[i] <= i + 1; carea[i] <= 0; csumx[i] <= 0; csumy[i] <= 0; cpeak[i] <= 0; cx[i] <= 0; cy[i] <= 0; end
             left_lbl <= 0; n_lbl <= 0; n_comp <= 0;
-            scan <= 0; col <= 0; row <= 0; cnt <= 0; ucnt <= 0;
-            bin_cnt <= 0; enh_cnt <= 0; bin_loaded <= 0; enh_loaded <= 0;
+            col <= 0; row <= 0; cnt <= 0; ucnt <= 0;
+            bin_loaded <= 0; enh_loaded <= 0;
             state <= S_LOAD;
             o_data_r <= 0; o_valid_r <= 0;
         end else begin
             o_valid_r <= 1'b0;
             case (state)
             S_LOAD: begin
-                if (i_bin_valid && !bin_loaded) begin
-                    bin_bram[bin_cnt] <= i_bin;
-                    if (bin_cnt == N - 1) bin_loaded <= 1'b1; else bin_cnt <= bin_cnt + 1;
-                end
-                if (i_enh_valid && !enh_loaded) begin
-                    enh_bram[enh_cnt] <= i_enh;
-                    if (enh_cnt == N - 1) enh_loaded <= 1'b1; else enh_cnt <= enh_cnt + 1;
-                end
-                if (bin_loaded && enh_loaded) begin state <= S_LABEL; scan <= 0; col <= 0; end
+                if (i_bin_valid && !bin_loaded && bin_cnt == N - 1) bin_loaded <= 1'b1;
+                if (i_enh_valid && !enh_loaded && enh_cnt == N - 1) enh_loaded <= 1'b1;
+                if (bin_loaded && enh_loaded) begin state <= S_LABEL; col <= 0; end
             end
             S_LABEL: begin
                 if (scan < N) begin
@@ -159,13 +187,11 @@ module candidate_extract_stream #(
                             if (n_lbl < MAX_COMP - 1) begin
                                 left_lbl <= n_lbl + 1;
                                 prev_lbl[col] <= n_lbl + 1;
-                                label_bram[scan] <= n_lbl + 1;
                                 n_lbl <= n_lbl + 1;
-                            end else begin left_lbl <= 0; prev_lbl[col] <= 0; label_bram[scan] <= 0; end
+                            end else begin left_lbl <= 0; prev_lbl[col] <= 0; end
                         end else begin
                             left_lbl <= min_nb;
                             prev_lbl[col] <= min_nb;
-                            label_bram[scan] <= min_nb;
                             if (nb_ul != 0 && nb_ul != min_nb) parent[nb_ul-1] <= min_nb;
                             if (nb_t  != 0 && nb_t  != min_nb) parent[nb_t -1] <= min_nb;
                             if (nb_ur != 0 && nb_ur != min_nb) parent[nb_ur-1] <= min_nb;
@@ -174,9 +200,7 @@ module candidate_extract_stream #(
                     end else begin
                         left_lbl <= 0;
                         prev_lbl[col] <= 0;
-                        label_bram[scan] <= 0;
                     end
-                    scan <= scan + 1;
                     if (col == W - 1) begin col <= 0; left_lbl <= 0; end
                     else col <= col + 1;
                 end else begin
@@ -190,7 +214,7 @@ module candidate_extract_stream #(
                         parent[i] <= parent[parent[i]-1];
                 end
                 if (ucnt >= MAX_COMP) begin
-                    state <= S_ACCUM; scan <= 0; col <= 0; row <= 0;
+                    state <= S_ACCUM; col <= 0; row <= 0;
                     for (i = 0; i < MAX_COMP; i = i + 1) begin carea[i] <= 0; csumx[i] <= 0; csumy[i] <= 0; cpeak[i] <= 0; end
                 end else ucnt <= ucnt + 1;
             end
@@ -202,7 +226,6 @@ module candidate_extract_stream #(
                         csumy[root_lbl-1] <= csumy[root_lbl-1] + row;
                         if (enh_bram[scan] > cpeak[root_lbl-1]) cpeak[root_lbl-1] <= enh_bram[scan];
                     end
-                    scan <= scan + 1;
                     if (col == W - 1) begin col <= 0; row <= row + 1; end
                     else col <= col + 1;
                 end else begin

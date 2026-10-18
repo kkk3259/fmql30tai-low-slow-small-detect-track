@@ -2,8 +2,14 @@
 //
 // 【状态】深内部（r>=3,c>=3）0 误差；左/上边界 2~3 像素回绕、右下边界缺失（因果窗口固有）。
 //   对检测无影响：目标在内部，且后续 CFAR 31x31 窗口本身就要丢 15 像素边界。
-//   结构：4 行缓存(lb0..lb3，各 W+1 深，tap 在 W-1) + 5 行 tap(row0..row4，各 5 深)。
+//   结构：4 条延迟行(lb0..lb3) + 5 行 tap(row0..row4，各 5 深)。
 //   DELAY = 2W+3（valid 延迟 2W+2 = 5x5 中心 2 行 + 2 列）；寄存输出对齐。
+//
+// 【2026-10 重构】lb0..lb3 原来是移位寄存器（W=640 时 4×641×8 = 20512 个触发器，
+//   两个 win5 实例共 41K FF，是综合后 88K 触发器的主因）。
+//   现改为"循环 RAM 延迟线"：深度 W+1、延迟 W 拍，四条行共用同一个写指针 wp，
+//   读地址 rp=(wp+1) mod (W+1) 恰好取出 W 拍前写入的值，与原移位寄存器逐拍等价
+//   （fill<W 期间读未写过的槽位，输出 PAD，等价原来的全 PAD 复位值）。
 module win5 #(
     parameter W = 32,
     parameter IS_MAX = 0,   // 0 = min（腐蚀），1 = max（膨胀）
@@ -19,39 +25,71 @@ module win5 #(
     input  wire o_ready
 );
     localparam DELAY = 2 * W + 3;
+    localparam DLY = W;              // 每条行缓存延迟拍数（与原移位寄存器 lb[W-1] 抽头一致）
+    localparam DEPTH = W + 1;        // 循环缓冲深度
+    localparam PW = $clog2(DEPTH);   // 指针位宽
+
     wire hs = i_valid && i_ready;
     assign i_ready = o_ready;
 
+    // 循环延迟线（4 条行缓存）：写指针 wp，读指针 rp 取出 DLY 拍前的数据
     reg [7:0] lb0 [0:W];
     reg [7:0] lb1 [0:W];
     reg [7:0] lb2 [0:W];
     reg [7:0] lb3 [0:W];
+
+    // 5x5 窗口的 5 行抽头（每行 5 深移位，只有 40 个触发器，保留寄存器实现）
     reg [7:0] row0 [0:4];
     reg [7:0] row1 [0:4];
     reg [7:0] row2 [0:4];
     reg [7:0] row3 [0:4];
     reg [7:0] row4 [0:4];
 
+    reg [PW-1:0] wp;      // 写指针 0..W
+    reg [PW-1:0] fill;    // 已填充拍数，饱和于 DLY
+
+    wire [PW-1:0] rp = (wp == DEPTH[PW-1:0] - 1'b1) ? {PW{1'b0}} : (wp + 1'b1);
+    wire full = (fill >= DLY[PW-1:0]);
+
+    wire [7:0] t0 = full ? lb0[rp] : PAD;
+    wire [7:0] t1 = full ? lb1[rp] : PAD;
+    wire [7:0] t2 = full ? lb2[rp] : PAD;
+    wire [7:0] t3 = full ? lb3[rp] : PAD;
+
     integer i;
+
+    // ---- 延迟线写块（独立 always，标准 1写1读 RAM 写法，便于综合推断 RAM）----
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (i = 0; i <= W; i = i + 1) begin lb0[i] <= PAD; lb1[i] <= PAD; lb2[i] <= PAD; lb3[i] <= PAD; end
-            for (i = 0; i < 5; i = i + 1) begin row0[i] <= PAD; row1[i] <= PAD; row2[i] <= PAD; row3[i] <= PAD; row4[i] <= PAD; end
+            wp   <= {PW{1'b0}};
+            fill <= {PW{1'b0}};
         end else if (hs) begin
-            lb3[0] <= lb2[W-1];
-            for (i = 1; i <= W; i = i + 1) lb3[i] <= lb3[i-1];
-            lb2[0] <= lb1[W-1];
-            for (i = 1; i <= W; i = i + 1) lb2[i] <= lb2[i-1];
-            lb1[0] <= lb0[W-1];
-            for (i = 1; i <= W; i = i + 1) lb1[i] <= lb1[i-1];
-            lb0[0] <= i_data;
-            for (i = 1; i <= W; i = i + 1) lb0[i] <= lb0[i-1];
+            lb0[wp] <= i_data;
+            lb1[wp] <= t0;
+            lb2[wp] <= t1;
+            lb3[wp] <= t2;
+            if (wp == DEPTH[PW-1:0] - 1'b1) wp <= {PW{1'b0}};
+            else                            wp <= wp + 1'b1;
+            if (fill < DLY[PW-1:0]) fill <= fill + 1'b1;
+        end
+    end
 
-            row4[0] <= lb3[W-1]; row4[1] <= row4[0]; row4[2] <= row4[1]; row4[3] <= row4[2]; row4[4] <= row4[3];
-            row3[0] <= lb2[W-1]; row3[1] <= row3[0]; row3[2] <= row3[1]; row3[3] <= row3[2]; row3[4] <= row3[3];
-            row2[0] <= lb1[W-1]; row2[1] <= row2[0]; row2[2] <= row2[1]; row2[3] <= row2[2]; row2[4] <= row2[3];
-            row1[0] <= lb0[W-1]; row1[1] <= row1[0]; row1[2] <= row1[1]; row1[3] <= row1[2]; row1[4] <= row1[3];
-            row0[0] <= i_data;   row0[1] <= row0[0]; row0[2] <= row0[1]; row0[3] <= row0[2]; row0[4] <= row0[3];
+    // ---- 5 行抽头移位（等价原 row0..row4 移位链）----
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            for (i = 0; i < 5; i = i + 1) begin
+                row0[i] <= PAD; row1[i] <= PAD; row2[i] <= PAD; row3[i] <= PAD; row4[i] <= PAD;
+            end
+        end else if (hs) begin
+            row4[0] <= t3;
+            row3[0] <= t2;
+            row2[0] <= t1;
+            row1[0] <= t0;
+            row0[0] <= i_data;
+            for (i = 1; i < 5; i = i + 1) begin
+                row0[i] <= row0[i-1]; row1[i] <= row1[i-1]; row2[i] <= row2[i-1];
+                row3[i] <= row3[i-1]; row4[i] <= row4[i-1];
+            end
         end
     end
 
@@ -95,7 +133,7 @@ module win5 #(
     reg o_valid_r;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin o_data_r <= 8'd0; o_valid_r <= 1'b0; end
-        else begin
+        else if (o_ready) begin
             o_data_r  <= result;
             o_valid_r <= valid_shift[DELAY-1];
         end

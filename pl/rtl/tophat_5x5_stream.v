@@ -38,26 +38,44 @@ module tophat_5x5_stream #(
     );
 
     // 原始灰度延迟（对齐 opening）
-    reg [7:0] gd [0:TD];
-    integer i;
+    // 【2026-10 重构】原为 gd[0:TD] 移位寄存器（W=640 时 TD=2567 → 20,544 个触发器）。
+    // 现改为循环 RAM 延迟线：深度 TD+2、延迟 TD+1 拍（等价原 gd[TD] 抽头：
+    // 原式 gd[TD]=x_{t-1-TD}），同一指针的读地址 rp=(wp+1) mod (TD+2) 取出该值；
+    // 填充不足 TD+1 拍时输出 0（等价原复位值全 0）。
+    localparam GD_D = TD + 2;            // 循环缓冲深度
+    localparam GD_LAT = TD + 1;          // 延迟拍数
+    localparam GPW = $clog2(GD_D);       // 指针位宽
+
+    reg [7:0] gd [0:GD_D-1];
+    reg [GPW-1:0] gwp;
+    reg [GPW-1:0] gfill;
+
+    wire hs = i_valid && i_ready;
+    wire [GPW-1:0] grp = (gwp == GD_D[GPW-1:0] - 1'b1) ? {GPW{1'b0}} : (gwp + 1'b1);
+    wire gfull = (gfill >= GD_LAT[GPW-1:0]);
+
+    // 独立 always 写块（标准 1写1读 RAM 写法，便于综合推断 RAM）
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (i = 0; i <= TD; i = i + 1) gd[i] <= 8'd0;
-        end else if (i_valid && i_ready) begin
-            gd[0] <= i_data;
-            for (i = 1; i <= TD; i = i + 1) gd[i] <= gd[i-1];
+            gwp   <= {GPW{1'b0}};
+            gfill <= {GPW{1'b0}};
+        end else if (hs) begin
+            gd[gwp] <= i_data;
+            if (gwp == GD_D[GPW-1:0] - 1'b1) gwp <= {GPW{1'b0}};
+            else                             gwp <= gwp + 1'b1;
+            if (gfill < GD_LAT[GPW-1:0]) gfill <= gfill + 1'b1;
         end
     end
 
-    wire [7:0] gray_c = gd[TD];
+    wire [7:0] gray_c = gfull ? gd[grp] : 8'd0;
     wire [7:0] th = (gray_c >= dilated) ? (gray_c - dilated) : 8'd0;
 
-    // 寄存输出（与 win5 对齐，标准流式）
+    // 寄存输出（与 win5 对齐，标准流式；带 o_ready 使能，受阻时必须保持数据）
     reg [7:0] o_data_r;
     reg o_valid_r;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin o_data_r <= 8'd0; o_valid_r <= 1'b0; end
-        else begin
+        else if (o_ready) begin
             o_data_r  <= th;
             o_valid_r <= dilated_valid;
         end
