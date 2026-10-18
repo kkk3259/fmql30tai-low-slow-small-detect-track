@@ -1,12 +1,14 @@
-// candidate_extract_stream.v —— 流式候选提取（两遍扫描 CCL + 并查集，综合友好）
+// candidate_extract_stream.v —— 流式候选提取（单趟扫描 CCL + 并查集）
 //
-// 【重构要点】替代 DFS 洪泛（组合逻辑随机访问 bin[nyu][nxu]，综合器推不出）。
-//   两遍扫描（8 连通，全程顺序访问 BRAM）：
-//     S_LOAD 存 bin/enh 两帧
-//     S_LABEL 逐行扫描，看左上/上/右上/左 4 邻居；无前景邻居→新标签，有→取最小并记录 union；标签存 label_bram
-//     S_UNION 并查集路径减半压缩（多轮）得到最终根
-//     S_ACCUM 逐像素读 label_bram 解析根，累加 area、sum_x、sum_y、peak
-//     S_SORT  选择排序按 peak 降序；S_OUT 输出 36 字节候选列表（与 candidate_extract.v 一致）
+// 【重构要点】替代原来的"两遍扫描 + 三块全帧 BRAM(bin/enh/label)"方案。
+//   单趟光栅扫描：每个像素到来时立即
+//     1) 看左上/上/右上/左 4 个因果邻居标签，无前景邻居→新标签，有→取最小并 union
+//     2) 直接把 area/sum_x/sum_y/peak 累加到该像素"被赋的标签"上
+//     3) 标签写入当前行标签数组（只需两行 W 个标签，不再需要全帧 label_bram）
+//   帧扫描结束后 S_MERGE 把每个标签的累加量并入其根标签，
+//   再 S_SORT（按 peak 降序选择排序）、S_OUT 输出 36 字节候选列表（与旧版逐字节一致）。
+//
+//   片上存储：0（本模块不再有任何全帧存储，只有 2×W 个标签 + MAX_COMP 组累加器）
 module candidate_extract_stream #(
     parameter W = 64,
     parameter H = 64,
@@ -31,14 +33,13 @@ module candidate_extract_stream #(
     localparam CH = $clog2(H + 1);
     localparam LW = $clog2(MAX_COMP + 1);   // 标签位宽（0=背景）
 
-    reg [0:0] bin_bram [0:N-1];
-    reg [7:0] enh_bram [0:N-1];
-    reg [LW-1:0] label_bram [0:N-1];     // Pass1 临时标签
+    // 当前行 / 上一行标签（行奇偶双缓冲，避免整行拷贝）
+    reg [LW-1:0] lbl_even [0:W-1];
+    reg [LW-1:0] lbl_odd  [0:W-1];
 
-    reg [LW-1:0] prev_lbl [0:W-1];       // 上一行标签
     reg [LW-1:0] left_lbl;               // 左邻居标签
     reg [LW-1:0] n_lbl;                  // 已用标签数（0 基，标签 = n_lbl+1）
-    reg [LW-1:0] parent [0:MAX_COMP-1];  // 并查集父指针（parent[i]=标签 i+1 的父，1 基）
+    reg [LW-1:0] parent [0:MAX_COMP-1];  // 并查集父指针（parent[i]=标签 i+1 的父，自身=根）
 
     reg [15:0] carea [0:MAX_COMP-1];
     reg [15:0] csumx [0:MAX_COMP-1];
@@ -50,22 +51,21 @@ module candidate_extract_stream #(
     reg [7:0]  n_comp;
     reg [5:0]  cnt;
 
-    reg [CNT_W-1:0] scan;
-    reg [CNT_W-1:0] bin_cnt, enh_cnt;
-    reg bin_loaded, enh_loaded;
+    reg [CNT_W-1:0] px_cnt;
     reg [CW-1:0] col;
     reg [CH-1:0] row;
-    reg [CNT_W-1:0] ucnt;
+    reg [6:0] mk;                  // S_MERGE 标签游标
     reg [2:0] state;
-    localparam S_LOAD = 0, S_LABEL = 1, S_UNION = 2, S_ACCUM = 3, S_SORT = 4, S_OUT = 5, S_DONE = 6;
+    localparam S_RUN = 0, S_MERGE = 1, S_POST = 2, S_SORT = 3, S_OUT = 4, S_DONE = 5;
 
     integer i;
 
-    // 邻居标签（8 连通：左上、上、右上、左）
-    wire [LW-1:0] nb_ul = (col > 0) ? prev_lbl[col - 1] : {LW{1'b0}};
-    wire [LW-1:0] nb_t  = prev_lbl[col];
-    wire [LW-1:0] nb_ur = (col < W - 1) ? prev_lbl[col + 1] : {LW{1'b0}};
-    wire [LW-1:0] nb_l  = left_lbl;
+    // ---- 因果邻居标签（8 连通：左上、上、右上、左）----
+    wire par = row[0];
+    wire [LW-1:0] prev_ul = (col > 0)     ? (par ? lbl_even[col - 1] : lbl_odd[col - 1]) : {LW{1'b0}};
+    wire [LW-1:0] prev_t  =                   (par ? lbl_even[col]     : lbl_odd[col]);
+    wire [LW-1:0] prev_ur = (col < W - 1) ? (par ? lbl_even[col + 1] : lbl_odd[col + 1]) : {LW{1'b0}};
+    wire [LW-1:0] nb_l    = left_lbl;
 
     function [LW-1:0] min4;
         input [LW-1:0] a, b, c, d;
@@ -79,14 +79,33 @@ module candidate_extract_stream #(
             min4 = m;
         end
     endfunction
-    wire [LW-1:0] min_nb = min4(nb_ul, nb_t, nb_ur, nb_l);
-    wire fg = bin_bram[scan];
-    // label_bram 写数据（组合逻辑，供独立写块使用）
-    wire [LW-1:0] label_wdata = fg ? (min_nb == {LW{1'b0}} ? (n_lbl < MAX_COMP - 1 ? n_lbl + 1'b1 : {LW{1'b0}}) : min_nb) : {LW{1'b0}};
 
-    // 根标签：parent 已压缩后 parent[l-1] 即根
-    wire [LW-1:0] lbl = label_bram[scan];
-    wire [LW-1:0] root_lbl = (lbl != 0) ? parent[lbl-1] : {LW{1'b0}};
+    function [LW-1:0] find_root;
+        input [LW-1:0] l;
+        reg [LW-1:0] x;
+        integer k;
+        begin
+            x = l;
+            if (x != 0 && x <= MAX_COMP) begin
+                for (k = 0; k < MAX_COMP; k = k + 1) begin
+                    if (parent[x-1] != 0 && parent[x-1] != x && parent[x-1] <= MAX_COMP)
+                        x = parent[x-1];
+                end
+            end
+            find_root = x;
+        end
+    endfunction
+
+    wire [LW-1:0] min_nb = min4(prev_ul, prev_t, prev_ur, nb_l);
+    // 本像素被赋的标签
+    wire [LW-1:0] new_lbl    = (min_nb != {LW{1'b0}}) ? min_nb
+                             : ((n_lbl < MAX_COMP - 1) ? n_lbl + 1'b1 : {LW{1'b0}});
+    wire [LW-1:0] assign_lbl = i_bin ? new_lbl : {LW{1'b0}};
+
+    // S_MERGE：标签 mk+1 的根
+    wire [LW-1:0] mk_lbl   = mk[LW-1:0] + 1'b1;
+    wire [LW-1:0] mk_root  = (mk < MAX_COMP) ? find_root(mk_lbl) : {LW{1'b0}};
+    wire          mk_child = (mk < MAX_COMP) && (mk_root != mk_lbl) && (carea[mk] != 0);
 
     // 输出字段选择（36 字节：n_cand + 5×(x_hi,x_lo,y_hi,y_lo,area_hi,area_lo,peak)）
     wire [5:0] out_idx = cnt[5:0];
@@ -112,7 +131,7 @@ module candidate_extract_stream #(
         endcase
     end
 
-    // 有效组件数（组合逻辑计数，避免 NBA 循环累加 bug）
+    // 有效组件数（组合计数）
     reg [7:0] n_comp_c;
     always @* begin
         n_comp_c = 8'd0;
@@ -123,132 +142,97 @@ module candidate_extract_stream #(
     end
 
     reg [3:0] si;
-    reg [6:0] sj;          // 需能计到 MAX_COMP（64）
-    reg [5:0] mi;          // 0..MAX_COMP-1
+    reg [6:0] sj;
+    reg [5:0] mi;
     reg [7:0] maxp;
     reg [1:0] sort_phase;
 
     reg [7:0] o_data_r;
     reg o_valid_r;
 
-    // ---- RAM 独立写块（标准 1写1读，供综合器推断 BRAM）----
-    // bin_bram：写 + bin_cnt 递增/回绕
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) bin_cnt <= 0;
-        else if (state == S_LOAD && i_bin_valid && !bin_loaded) begin
-            bin_bram[bin_cnt] <= i_bin;
-            if (bin_cnt == N - 1) bin_cnt <= 0;
-            else bin_cnt <= bin_cnt + 1;
-        end
-    end
-    // enh_bram：写 + enh_cnt 递增/回绕
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) enh_cnt <= 0;
-        else if (state == S_LOAD && i_enh_valid && !enh_loaded) begin
-            enh_bram[enh_cnt] <= i_enh;
-            if (enh_cnt == N - 1) enh_cnt <= 0;
-            else enh_cnt <= enh_cnt + 1;
-        end
-    end
-    // label_bram：写 + scan 递增/回绕（S_LABEL 写标签，S_ACCUM 只扫描，S_UNION 回绕到 0）
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) scan <= 0;
-        else if (state == S_LABEL && scan < N) begin
-            label_bram[scan] <= label_wdata;
-            scan <= scan + 1;
-        end else if (state == S_UNION) begin
-            scan <= 0;
-        end else if (state == S_ACCUM && scan < N) begin
-            scan <= scan + 1;
-        end
-    end
-
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (i = 0; i < W; i = i + 1) prev_lbl[i] <= 0;
-            for (i = 0; i < MAX_COMP; i = i + 1) begin parent[i] <= i + 1; carea[i] <= 0; csumx[i] <= 0; csumy[i] <= 0; cpeak[i] <= 0; cx[i] <= 0; cy[i] <= 0; end
+            for (i = 0; i < W; i = i + 1) begin lbl_even[i] <= 0; lbl_odd[i] <= 0; end
+            for (i = 0; i < MAX_COMP; i = i + 1) begin
+                parent[i] <= i + 1; carea[i] <= 0; csumx[i] <= 0; csumy[i] <= 0; cpeak[i] <= 0;
+                cx[i] <= 0; cy[i] <= 0;
+            end
             left_lbl <= 0; n_lbl <= 0; n_comp <= 0;
-            col <= 0; row <= 0; cnt <= 0; ucnt <= 0;
-            bin_loaded <= 0; enh_loaded <= 0;
-            state <= S_LOAD;
+            col <= 0; row <= 0; cnt <= 0; px_cnt <= 0; mk <= 0;
+            state <= S_RUN;
             o_data_r <= 0; o_valid_r <= 0;
         end else begin
             o_valid_r <= 1'b0;
             case (state)
-            S_LOAD: begin
-                if (i_bin_valid && !bin_loaded && bin_cnt == N - 1) bin_loaded <= 1'b1;
-                if (i_enh_valid && !enh_loaded && enh_cnt == N - 1) enh_loaded <= 1'b1;
-                if (bin_loaded && enh_loaded) begin state <= S_LABEL; col <= 0; end
-            end
-            S_LABEL: begin
-                if (scan < N) begin
-                    if (fg) begin
-                        if (min_nb == 0) begin
-                            if (n_lbl < MAX_COMP - 1) begin
-                                left_lbl <= n_lbl + 1;
-                                prev_lbl[col] <= n_lbl + 1;
-                                n_lbl <= n_lbl + 1;
-                            end else begin left_lbl <= 0; prev_lbl[col] <= 0; end
+            S_RUN: begin
+                if (i_bin_valid) begin
+                    // 1) 行缓存写标签
+                    if (par) lbl_odd[col] <= assign_lbl;
+                    else     lbl_even[col] <= assign_lbl;
+                    left_lbl <= assign_lbl;
+
+                    // 2) 标签管理与 union
+                    if (i_bin && assign_lbl != 0) begin
+                        if (min_nb == {LW{1'b0}}) begin
+                            if (n_lbl < MAX_COMP - 1) n_lbl <= n_lbl + 1'b1;
                         end else begin
-                            left_lbl <= min_nb;
-                            prev_lbl[col] <= min_nb;
-                            if (nb_ul != 0 && nb_ul != min_nb) parent[nb_ul-1] <= min_nb;
-                            if (nb_t  != 0 && nb_t  != min_nb) parent[nb_t -1] <= min_nb;
-                            if (nb_ur != 0 && nb_ur != min_nb) parent[nb_ur-1] <= min_nb;
-                            if (nb_l  != 0 && nb_l  != min_nb) parent[nb_l -1] <= min_nb;
+                            if (prev_ul != 0 && prev_ul != min_nb) parent[prev_ul-1] <= min_nb;
+                            if (prev_t  != 0 && prev_t  != min_nb) parent[prev_t -1] <= min_nb;
+                            if (prev_ur != 0 && prev_ur != min_nb) parent[prev_ur-1] <= min_nb;
+                            if (nb_l    != 0 && nb_l    != min_nb) parent[nb_l   -1] <= min_nb;
                         end
+                        // 3) 立即累加到被赋标签
+                        carea[assign_lbl-1] <= carea[assign_lbl-1] + 16'd1;
+                        csumx[assign_lbl-1] <= csumx[assign_lbl-1] + {{(16-CW){1'b0}}, col};
+                        csumy[assign_lbl-1] <= csumy[assign_lbl-1] + {{(16-CH){1'b0}}, row};
+                        if (i_enh > cpeak[assign_lbl-1]) cpeak[assign_lbl-1] <= i_enh;
+                    end
+
+                    // 4) 光栅推进
+                    if (px_cnt == N - 1) begin
+                        state <= S_MERGE; mk <= 0;
                     end else begin
-                        left_lbl <= 0;
-                        prev_lbl[col] <= 0;
+                        px_cnt <= px_cnt + 1'b1;
+                        if (col == W - 1) begin col <= 0; row <= row + 1'b1; left_lbl <= 0; end
+                        else col <= col + 1'b1;
                     end
-                    if (col == W - 1) begin col <= 0; left_lbl <= 0; end
-                    else col <= col + 1;
-                end else begin
-                    state <= S_UNION; ucnt <= 0;
                 end
             end
-            S_UNION: begin
-                // 路径减半：parent[i] = parent[parent[i]-1]
+            S_MERGE: begin
+                // 把子标签的累加量并入根标签（根标签编号恒小于子标签，故按升序处理一次即可）
+                if (mk_child) begin
+                    carea[mk_root-1] <= carea[mk_root-1] + carea[mk];
+                    csumx[mk_root-1] <= csumx[mk_root-1] + csumx[mk];
+                    csumy[mk_root-1] <= csumy[mk_root-1] + csumy[mk];
+                    if (cpeak[mk] > cpeak[mk_root-1]) cpeak[mk_root-1] <= cpeak[mk];
+                    carea[mk] <= 0; csumx[mk] <= 0; csumy[mk] <= 0; cpeak[mk] <= 0;
+                end
+                if (mk >= MAX_COMP - 1) begin
+                    state <= S_POST;
+                end else mk <= mk + 7'd1;
+            end
+            S_POST: begin
+                // 与旧版 S_ACCUM 尾部一致：有效组件算重心，无效组件清零（peak 清 0 让排序落到底部）
+                n_comp <= n_comp_c;
                 for (i = 0; i < MAX_COMP; i = i + 1) begin
-                    if (parent[i] != 0 && parent[i] != i + 1)
-                        parent[i] <= parent[parent[i]-1];
-                end
-                if (ucnt >= MAX_COMP) begin
-                    state <= S_ACCUM; col <= 0; row <= 0;
-                    for (i = 0; i < MAX_COMP; i = i + 1) begin carea[i] <= 0; csumx[i] <= 0; csumy[i] <= 0; cpeak[i] <= 0; end
-                end else ucnt <= ucnt + 1;
-            end
-            S_ACCUM: begin
-                if (scan < N) begin
-                    if (bin_bram[scan] && root_lbl != 0) begin
-                        carea[root_lbl-1] <= carea[root_lbl-1] + 16'd1;
-                        csumx[root_lbl-1] <= csumx[root_lbl-1] + col;
-                        csumy[root_lbl-1] <= csumy[root_lbl-1] + row;
-                        if (enh_bram[scan] > cpeak[root_lbl-1]) cpeak[root_lbl-1] <= enh_bram[scan];
+                    if (carea[i] >= MIN_AREA && carea[i] <= MAX_AREA) begin
+                        cx[i] <= (csumx[i] + carea[i]/16'd2) / carea[i];
+                        cy[i] <= (csumy[i] + carea[i]/16'd2) / carea[i];
+                    end else begin
+                        cx[i] <= 0; cy[i] <= 0; cpeak[i] <= 0;
                     end
-                    if (col == W - 1) begin col <= 0; row <= row + 1; end
-                    else col <= col + 1;
-                end else begin
-                    n_comp <= n_comp_c;
-                    for (i = 0; i < MAX_COMP; i = i + 1) begin
-                        if (carea[i] >= MIN_AREA && carea[i] <= MAX_AREA) begin
-                            cx[i] <= (csumx[i] + carea[i]/16'd2) / carea[i];
-                            cy[i] <= (csumy[i] + carea[i]/16'd2) / carea[i];
-                        end else begin
-                            cx[i] <= 0; cy[i] <= 0; cpeak[i] <= 0;
-                        end
-                    end
-                    state <= S_SORT; si <= 0; sort_phase <= 0;
                 end
+                state <= S_SORT; si <= 0; sort_phase <= 0;
             end
             S_SORT: begin
                 if (sort_phase == 2'd0) begin
                     sj <= si; mi <= si; maxp <= cpeak[si];
+                    // 重心与面积标定（原 S_ACCUM 尾部的收尾计算搬到这里之前完成）
                     sort_phase <= 2'd1;
                 end else if (sort_phase == 2'd1) begin
                     if (sj < MAX_COMP) begin
                         if (cpeak[sj] > maxp) begin maxp <= cpeak[sj]; mi <= sj; end
-                        sj <= sj + 4'd1;
+                        sj <= sj + 7'd1;
                     end else begin
                         cx[si] <= cx[mi]; cx[mi] <= cx[si];
                         cy[si] <= cy[mi]; cy[mi] <= cy[si];
@@ -267,7 +251,7 @@ module candidate_extract_stream #(
                 o_data_r <= out_val;
                 if (o_ready) begin
                     if (out_idx == 6'd35) state <= S_DONE;
-                    else cnt <= cnt + 1;
+                    else cnt <= cnt + 1'b1;
                 end
             end
             S_DONE: state <= S_DONE;

@@ -35,15 +35,15 @@ module tb_ccl_stream;
         rst_n = 1;
         @(posedge clk);
 
-        // 并行加载 bin + enh（独立 valid，同时给）
+        // 并行加载 bin + enh（独立 valid，同时给；negedge 更新避免与 DUT 的 posedge 采样竞争）
         for (idx = 0; idx < 4096; idx = idx + 1) begin
             i_bin = (bin_mem[idx] > 0) ? 1'b1 : 1'b0;
             i_enh = enh_mem[idx];
             bin_valid = 1'b1;
             enh_valid = 1'b1;
-            @(posedge clk);
+            @(negedge clk);
         end
-        @(posedge clk);
+        @(negedge clk);
         bin_valid = 1'b0;
         enh_valid = 1'b0;
 
