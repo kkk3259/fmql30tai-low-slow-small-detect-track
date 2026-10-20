@@ -1,0 +1,62 @@
+// tb_postproc.v —— IP3 后处理测试平台
+`timescale 1ns/1ps
+module tb_postproc;
+    reg clk, rst_n;
+    reg [7:0] i_data;
+    reg i_valid;
+    wire [7:0] o_data;
+    wire o_valid;
+    reg o_ready;
+
+    reg [7:0] in_mem [0:35];
+
+    postproc_axis uut (
+        .clk(clk), .rst_n(rst_n),
+        .i_data(i_data), .i_valid(i_valid),
+        .o_data(o_data), .o_valid(o_valid), .o_ready(o_ready)
+    );
+
+    integer idx, out_idx, out_file, idle;
+
+    initial clk = 0;
+    always #5 clk = ~clk;
+
+    initial begin
+        $dumpfile("tb_postproc.vcd");
+        $dumpvars(0, tb_postproc);
+        if ($fopen("input_postproc.hex","r") == 0) begin
+            $display("ERROR: 缺 input_postproc.hex，请先运行 pl/tools/gen_postproc_stimulus.py");
+            $finish;
+        end
+        $readmemh("input_postproc.hex", in_mem);
+
+        rst_n = 0; i_valid = 0; o_ready = 1;
+        repeat (2) @(posedge clk);
+        rst_n = 1;
+        @(posedge clk);
+
+        for (idx = 0; idx < 36; idx = idx + 1) begin
+            i_data = in_mem[idx];
+            i_valid = 1'b1;
+            @(posedge clk);
+        end
+        i_valid = 1'b0;
+
+        out_idx = 0; idle = 0;
+        out_file = $fopen("output_postproc.hex", "w");
+        while (out_idx < 36) begin
+            @(posedge clk);
+            if (o_valid) begin
+                $fwrite(out_file, "%02X\n", o_data);
+                out_idx = out_idx + 1;
+                idle = 0;
+            end else begin
+                idle = idle + 1;
+                if (idle > 10000) begin $display("WATCHDOG out_idx=%0d", out_idx); $finish; end
+            end
+        end
+        $fclose(out_file);
+        $display("IP3 收集到 %0d 个输出", out_idx);
+        #50 $finish;
+    end
+endmodule

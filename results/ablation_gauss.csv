@@ -1,0 +1,13 @@
+﻿series,radius_px,amp_gray,gauss_k,Pd_percent,false_alarm
+radius_sweep,1.0,15,0,35.0,26
+radius_sweep,1.0,15,3,0.0,0
+radius_sweep,1.5,15,0,93.6,26
+radius_sweep,1.5,15,3,47.9,0
+radius_sweep,3.0,15,0,100.0,26
+radius_sweep,3.0,15,3,100.0,0
+amp_sweep,1.5,9,0,12.1,26
+amp_sweep,1.5,9,3,0.0,0
+amp_sweep,1.5,11,0,48.6,26
+amp_sweep,1.5,11,3,1.4,0
+amp_sweep,1.5,25,0,100.0,26
+amp_sweep,1.5,25,3,100.0,0
