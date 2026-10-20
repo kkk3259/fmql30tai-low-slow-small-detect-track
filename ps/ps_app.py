@@ -119,8 +119,9 @@ def crop_roi(gray, cx, cy, size=ROI_SIZE):
     return roi, (x0, y0)          # (offset_x, offset_y) 属于接口 I3
 
 
-# ---------------------------------------------------------------- 判别后端（双平台）
-# 2026-10-14：FMQL45T900（现在）无 NPU → 用 cpu/placeholder；FMQL30TAI（最终）→ 用 npu
+# ---------------------------------------------------------------- 判别后端
+# 目标平台 FMQL30TAI 有 NPU（ZG330）→ 优先用 npu；
+# 在无 NPU 的开发机/PC 上回退到 cpu（ONNX Runtime）或 placeholder（全通过）。
 # 用环境变量 ROIJUDGE_BACKEND 控制：auto / npu / cpu / placeholder
 ROIJUDGE_BACKEND = os.environ.get("ROIJUDGE_BACKEND", "auto")
 
@@ -135,7 +136,7 @@ def detect_backend():
         return "npu"
     except Exception:
         pass
-    # 其次：ONNX Runtime（45T900 上 CPU 推理用）
+    # 其次：ONNX Runtime（无 NPU 的开发机 / PC 上做 CPU 推理）
     try:
         import onnxruntime  # noqa: F401
         return "cpu"
@@ -156,7 +157,7 @@ class RoIJudge(object):
         self.enabled = enabled
         self.sess = None
         self.input_name = None
-        # ---- 双平台后端（初始化时探测一次，避免每帧 import 探测）----
+        # ---- 判别后端（初始化时探测一次，避免每帧 import 探测）----
         self.backend = detect_backend()
         if enabled and model_path and os.path.exists(model_path):
             try:
@@ -173,7 +174,7 @@ class RoIJudge(object):
             print("[判别] 后端 = {}（{}）".format(
                 self.backend,
                 {"npu": "30TAI / Icraft",
-                 "cpu": "45T900 / ONNX Runtime（无模型时占位）",
+                 "cpu": "ONNX Runtime / CPU（无模型时占位）",
                  "placeholder": "占位：全部通过"}.get(self.backend, self.backend)))
 
     def __call__(self, roi):
@@ -181,17 +182,17 @@ class RoIJudge(object):
         if not self.enabled:
             return 1.0                     # --no-classify：完全关掉判别（全部通过）
         if self.sess is None:
-            # ---- 双平台后端分派（backend 在 __init__ 里探测并缓存，避免每帧 import）----
+            # ---- 后端分派（backend 在 __init__ 里探测并缓存，避免每帧 import）----
             backend = self.backend
             try:
                 if backend == "npu":
                     # 30TAI：Icraft 推理（拿到板后替换此处）
                     return float(self._npu_infer(roi))            # ★替换点4 真实现
                 elif backend in ("cpu", "onnx"):
-                    # 45T900 / PC：CPU 推理（ONNX Runtime）
+                    # 无 NPU 时：CPU 推理（ONNX Runtime）
                     return float(self._cpu_infer(roi))
             except NotImplementedError as e:
-                # 当前平台没有 NPU（如 FMQL45T900）→ 不崩，回退占位
+                # 当前环境没有 NPU 时 → 不崩，回退占位
                 self.backend = "placeholder"
                 print("[判别] 该平台无 NPU，回退占位：{}".format(e))
             except Exception as e:
@@ -203,7 +204,7 @@ class RoIJudge(object):
         raise NotImplementedError("30TAI 上接入 Icraft；当前平台无 NPU")
 
     def _cpu_infer(self, roi):
-        """45T900 / PC：CPU 推理（ONNX Runtime）
+        """无 NPU 时：CPU 推理（ONNX Runtime）
 
         模型统一由 --model 参数传入（存于 self.sess）；
         没有模型时返回 1.0（占位），保证链路不中断。

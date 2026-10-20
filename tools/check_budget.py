@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-tools/check_budget.py —— PL 资源预算检查（双平台纪律工具）
+tools/check_budget.py —— PL 资源预算检查（目标平台 FMQL30TAI）
 
 为什么需要它：
-  现在开发用的 FMQL45T900 资源是最终平台 FMQL30TAI 的 2.8 倍
-    FMQL45T900：350K LC / 218,600 LUT / 900 DSP / 19.2 Mb BRAM
-    FMQL30TAI ：125K LC /  78,600 LUT / 400 DSP /  9.3 Mb BRAM
-  如果不卡预算，会出现"在 45T900 上能跑、搬到 30TAI 放不下"。
+  目标平台 FMQL30TAI 的 PL 资源：
+    125K LC / 78,600 LUT / 400 DSP / 9.3 Mb BRAM
+  每次综合后用它核对，超预算就要优化，否则上不了板。
 
 本工具把你实际综合出来的资源占用换算成【占 30TAI 的百分比】，
 超过 100% 直接报警 —— 这是"保证能迁移"的核心纪律。
@@ -34,13 +33,7 @@ BUDGET = {
     "DSP":     400,
     "BRAM_Mb": 9.3,
 }
-# 参考：现在开发用的 45T900 资源（仅用于显示余量，不作判定）
-DEV_BOARD = {
-    "LC":      350000,
-    "LUT":     218600,
-    "DSP":     900,
-    "BRAM_Mb": 19.2,
-}
+# 参考：目标平台 FMQL30TAI 的资源（判定基准）
 
 
 def parse_report(path):
@@ -140,8 +133,8 @@ def main():
         print("  {:<8} {:>12.1f} {:>12.1f} {:>13.1f}% {:>10}".format(key, used, bud, pct, flag))
 
     print("")
-    print("  参考：开发板 FMQL45T900 的资源 = 350K LC / 218,600 LUT / 900 DSP / 19.2 Mb BRAM")
-    print("       （是 30TAI 的约 2.8 倍 —— 在它上面开发必须按 30TAI 卡预算）")
+    print("  判定基准：FMQL30TAI 的 PL 资源 = 125K LC / 78,600 LUT / 400 DSP / 9.3 Mb BRAM")
+
     print("")
     if bad:
         print("  ❌ 结论：{} 项超出 30TAI 预算 —— 必须优化后再迁移，否则上不了 30TAI".format(len(bad)))
