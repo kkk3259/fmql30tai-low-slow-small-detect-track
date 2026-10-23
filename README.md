@@ -41,9 +41,9 @@
 | **PL 模块（P）** | ✅ **IP1/IP2/IP3/IP4 全部实现** | 逐像素/逐字段比对（IP1 达 0 误差）；`MAX_CAND` 已随寻优调至 5（见 `docs/11`）|
 | **开发板** | ✅ **系统已跑通** | **FMQL30TAI-悟净开发板 Lite**；Linux 5.4.52 aarch64 / 4 核 / 1 GB DDR / 64GB SD，串口+SSH+网络全通 |
 | **★ PS 侧上板** | ✅ **已完成** | **板上实测：真实 720P 630 帧 5.92 fps；纯算法 16.7 fps**；跟踪成功率 **97.0 %（611/630），与 PC 逐帧一致** |
-| **★ NPU 摸底** | ✅ **已完成（含硬件通路诊断）** | 板载 13 库 + 装好 Icraft 3.36.0 运行时（`icraft-run` / `icraft-serve` / Python 包）；模型加载成功、ZG330 后端绑定成功；**但 AXI 地址 `0x40000000` 起 64 KB 扫描零响应**（见 `docs/11` 第三章）|
+| **★ NPU 摸底** | ✅ **已完成（2026-10-23 打通）** | **硬件已验证可用**：官方参考设计 `sdicamera+yolov5+hdmi` 执行 **`Device initialization successful`**，读回 `device: 25122301`（AI-Mate 版本）/ `icore: FMSHZGV3TECH-AID-24160628`，`npu=0x40000000`、`dma=0x80000000` 均正常响应（见 `docs/11` 第十章）|
 | **NPU 模型（A）** | ✅ **已交付** | YOLOv11n 单类（drone），DUT test **mAP50 0.920 / R 0.859**；INT8 量化后 `deploy/*_ZG.raw`（4.79 MB）|
-| **NPU 上板部署** | ❌ **硬件通路阻塞** | **根因**：当前位流「单路PLIN+pHDMI」不含 ZG330 的 AXI 从设备；设备树无 `reserved-memory`（`0x80000000` 是 0xAA poison）。**官方示例 30TAI 位流标注 `TODO`** → 需企业提供含 ZG330 的位流 + 配套设备树 |
+| **NPU 上板部署** | 🟡 **硬件通了，剩版本对齐** | **2026-10-23 已证伪此前「硬件通路不通」的结论**：AI-Mate 寄存器窗口在 **`0x40000000~0x400000E3`**（`+0x1C` 读出 `0x25122301`），`0x400C0000` 是 **custom op** 区不是 NPU。`PL_LED1/J1` 闪烁证明 PL DDR3 初始化成功。**剩余**：官方预编译 demo（Icraft 3.33.1）与随包模型（3.36.0）版本错位 → `apply()` 报 `InternalError`；已定位官方 3.36.0 配套包（含 aarch64 静态库 + CMake），正在板上重编 |
 | **★ 官方资源盘点** | ✅ **2.97 GB 已全部下载** | 8 个目录全覆盖：Icraft 3.36.1/3.39.0 全套、Docker 镜像、两套 runtimeapp 源码（313 MB×2）、LITE 位流包、Decoder DLL×3（见 `docs/11` 第七章）|
 | **★ VPU 硬编码** | ✅ **已验证可用** | `ffmpeg -c:v h264_v4l2m2m` / `hevc_v4l2m2m` 均可调 VPU（Linlon v5276，双核）；H.264/H.265 双向全格式 → 可把 88.89 ms 编码瓶颈降到 5~10 ms |
 | **工具链** | ✅ **已装并跑通全流程** | **Procise 2025.1.1**（`D:\FudanMicro\Procise`）已完成 elaborate → synthesize → place → route → **bitgen** 全链路验证（`blink_top.bit` 5.98 MB）；器件 **JFMQL30TAI676H**；**不需要 License**（Procise 不校验 MAC/不联网激活）。Icraft 板上 3.36.0 |
@@ -166,8 +166,8 @@ D:\lowslow\venv\Scripts\python.exe ps\ps_app.py --src 你的视频.mp4 `
 | [09-答辩要点](docs/09-答辩要点.md) | 核心论述 / 预设问答 / 追问应对 / 一页速览 |
 | **[10-赛题合规性核对](docs/10-赛题合规性核对.md)** | ⚠️ **对照官方选题指南逐条核对**：1 个硬缺口 + 2 个待补项 |
 | **[13-PL上板进展与卡点](docs/13-PL上板进展与卡点.md)** | ⭐ **PL 侧现状（P 整理）**：综合资源账本、上板三条缺口、与 S 待对齐的三件事 |
-| **[11-板上实测记录](docs/11-板上实测记录.md)** | ⭐ **上板实锤（807 行 / 9 章）**：①烧写踩坑 ②系统信息 ③**NPU 完整摸底（含 AXI 硬件通路诊断）** ④PS 侧实测（合成 150 帧 / 真实 630 帧）⑤瓶颈分析 ⑥**板卡能力盘点（VPU/PL/DMA）** ⑦**官方资源盘点（2.97 GB）** ⑧下一步 ⑨数据文件 |
-| **[12-官方FPGA工程与开发流程](docs/12-官方FPGA工程与开发流程.md)** | ⭐⭐⭐ **P 必读**：官方管脚约束全文（**PL 时钟 C8/C7 @200MHz**、复位 F8、HDMI、SDI Lite 版 R6/R5）、FPGA 工程结构（含 `AI_Mate.edif` NPU 网表）、**custom op 标准接口**（`User_Reg_*` + 512 位 `User_Ddr_*`）、IP 补丁安装步骤、生成 BOOT.bin 流程、**`vtc: true` 无 SDI 出 HDMI 画面** |
+| **[11-板上实测记录](docs/11-板上实测记录.md)** | ⭐ **上板实锤（10 章）**：①烧写踩坑 ②系统信息 ③NPU 摸底过程（旧结论已标注推翻）④PS 侧实测（合成 150 帧 / 真实 630 帧）⑤瓶颈分析 ⑥板卡能力盘点（VPU/PL/DMA）⑦官方资源盘点（2.97 GB）⑧下一步 ⑨数据文件 **⑩★ NPU 打通全过程（2026-10-23：AXI 寄存器窗口、PL_LED1=DDR3 自检、Icraft 版本矩阵、官方 demo 实录、按键/LED 表）** |
+| **[12-官方FPGA工程与开发流程](docs/12-官方FPGA工程与开发流程.md)** | ⭐⭐⭐ **P 必读**：官方管脚约束全文（**PL 时钟 C8/C7 @200MHz**、复位 F8、HDMI、SDI Lite 版 R6/R5）、FPGA 工程结构（含 `AI_Mate.edif` NPU 网表）、**custom op 标准接口**（`User_Reg_*` + 512 位 `User_Ddr_*`）、IP 补丁安装步骤、生成 BOOT.bin 流程、**`vtc: true` 无 SDI 出 HDMI 画面**、**⑩ Icraft 版本配套矩阵 + 板端编译方案** |
 | [weekly/周报-W40](docs/weekly/周报-W40.md) | 本周进度与数据（含真实数据验证）|
 | [report/ 报告生成链](report/README.md) | 作品的报告如何复现（脚本 + 官方模板 + 插图源文件）|
 | [weekly/周报-W40](docs/weekly/周报-W40.md) | 本周进度与数据（含真实数据验证）|
