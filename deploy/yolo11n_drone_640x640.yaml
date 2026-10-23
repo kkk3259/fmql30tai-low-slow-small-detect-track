@@ -1,0 +1,52 @@
+# yolo11n_drone（截断版，单类 drone）板端运行配置
+# 对齐官方 examples/1_single_input+ai/PLin+SingleNet+HDMI/configs/ZG/sdicamera+yolov5+hdmi.yaml 格式
+# 与官方示例的差异：
+#   - detpost: false —— 我们的模型已剪掉 DFL/Sigmoid/Concat（截断头），解码在 CPU 侧做
+#     （参考实现：仓库 deploy/cpu_decode_demo.py，已与 FP32 模型数值对拍验证）
+#   - anchors 字段不需要（YOLO11 为 anchor-free），解码参数见《模型侧交付清单.md》
+#   - view_except_op_ids 仅 2 个：op0=输入节点、op275=输出节点（其余 252 个 op 全部在 ZG330）
+
+sys:
+  Version: __3.31__
+  device: axi://zg330aiu?npu=0x40000000&dma=0x80000000
+  mmuMode: true
+  speedMode: false
+  compressFtmp: false
+  ocm_option: -1
+  profile: false
+  run_backend: zg330
+  dump_output: false
+  dump_format: SFB
+  log_path: ../io/output/ftmp
+  SKIP_CAMERA_ERROR: false
+  DEBUG: true
+  DEBUG_FLAGS: 1
+
+pipeline:
+  camera:
+    vtc: false
+    width: 1920
+    height: 1080
+    fps: 60
+  display:
+    type: hdmi
+    width: 1920
+    height: 1080
+    fps: 60
+  icore:
+    model: yolo11n_drone_trunc
+    jsons:
+    - ./yolo11n_drone_trunc_ZG.json
+    raws:
+    - ./yolo11n_drone_trunc_ZG.raw
+    net_w: 640
+    net_h: 640
+    view_except_op_ids: [0, 275]
+    names: names/drone.names
+    conf: 0.25
+    iou_thresh: 0.45
+    multilabel: false
+    number_of_class: 1
+    anchors: []          # anchor-free；CPU 解码用 strides [8,16,32] + grid 中心 (i+0.5,j+0.5)
+    fpga_nms: false
+    detpost: false       # 截断头：DFL/sigmoid/NMS 全部 CPU 侧，见 cpu_decode_demo.py
