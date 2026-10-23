@@ -442,11 +442,11 @@ examples/1_single_input+ai/PLin+SingleNet+HDMI/src/
 
 ---
 
-## 十、⭐ Icraft 版本配套与板端编译（2026-10-23 补）
+## 九、⭐ Icraft 版本配套与板端编译（2026-10-23 补）
 
 > 本章是 NPU 打通当天新增。核心结论：**官方 demo 程序的 Icraft 版本与它自带的模型版本不一致，必须配套才能跑。**
 
-### 10.1 ⭐ Icraft 版本符号矩阵（踩坑根源）
+### 9.1 ⭐ Icraft 版本符号矩阵（踩坑根源）
 
 **`icraft::xir::Network::lazyLoadParamsFromFile` 三个重载在各版本的存在情况（用二进制符号字符串实测）：**
 
@@ -465,7 +465,7 @@ examples/1_single_input+ai/PLin+SingleNet+HDMI/src/
 symbol lookup error: undefined symbol: _ZN6icraft3xir7Network22lazyLoadParamsFromFileERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEb
 ```
 
-### 10.2 ⭐ 三个官方包的版本对应关系
+### 9.2 ⭐ 三个官方包的版本对应关系
 
 | 来源 | 预编译程序 | 附带 deb | 附带模型 | 配套？ |
 |---|---|---|---|---|
@@ -482,7 +482,7 @@ symbol lookup error: undefined symbol: _ZN6icraft3xir7Network22lazyLoadParamsFro
 - iCraft 版本: 3.36.0
 ```
 
-### 10.3 ⭐ 板端编译方案（官方假设交叉编译，需改）
+### 9.3 ⭐ 板端编译方案（官方假设交叉编译，需改）
 
 **官方 `CMakeLists.txt` 的 UNIX 分支：**
 
@@ -535,7 +535,7 @@ elseif(TARGET_CHIP_UPPER STREQUAL "ZG")
     set(BACKEND_LIB_NAME "zg330backend")
 ```
 
-### 10.4 ⭐ 官方 yaml 的关键字段（我们之前没注意）
+### 9.4 ⭐ 官方 yaml 的关键字段（我们之前没注意）
 
 ```yaml
 sys:
@@ -566,7 +566,7 @@ if (argc < 2) { std::cerr << "Usage: " << argv[0] << " <config yaml>"; return 1;
 config = YAML::LoadFile(argv[1]);      ← 不接受 --config
 ```
 
-### 10.5 ⭐ 官方 demo 的 NPU 初始化路径（源码原文）
+### 9.5 ⭐ 官方 demo 的 NPU 初始化路径（源码原文）
 
 ```cpp
 // sdicamera+yolov5+hdmi.cpp
@@ -586,10 +586,14 @@ config = YAML::LoadFile(argv[1]);      ← 不接受 --config
 
 ---
 
-## 九、官方联系渠道
+## 十、官方联系渠道
 
 **赛题指南第 7 页原文：**
 
 > **技术交流：关注大赛官方公众号及复旦微赛事官方交流 QQ 群：`790072144`（复旦微嵌入式 FPGA QQ 群）**
 
 **⇒ 这是唯一官方对接渠道。此前一直在找邮箱，是走偏了。**
+
+---
+
+> **文档编号说明**：本章（九）为 2026-10-23 NPU 打通当天新增，插在「剩余待办」之后、「官方联系渠道」之前；原第九章顺延为第十章。

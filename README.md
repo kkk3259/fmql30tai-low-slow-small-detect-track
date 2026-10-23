@@ -122,7 +122,7 @@ D:\lowslow\venv\Scripts\python.exe ps\ps_app.py --src 你的视频.mp4 `
 | `ps/` | **PS 侧应用与集成骨架**（`ps_app.py`：7 个处理环节，5 个可替换点） | **S** |
 | `baseline/` | 软件基线 v0/v1/v2（对比基准 + 硬件开发的"标准答案"） | **S** |
 | `tools/` | 工具脚本：真值标注 `mark_gt.py`、参数扫描 `sweep_synth.py`、逐环诊断 `diag_signal.py`、
-  数据集转换 `dataset2seq.py`、低小慢序列生成 `make_lowslow_seq.py`、交叉复核 `verify_ip1.py` | **S** |
+  数据集转换 `dataset2seq.py`、低小慢序列生成 `make_lowslow_seq.py`、交叉复核 `verify_ip1.py`、**板端 NPU 自检 `probe_ai_mate.py`（只读扫 AXI，读 AI-Mate 版本号判定硬件通路）** | **S** |
 | `docs/` | 接口规范、周报、环境/器材清单、AI 使用记录 | **S** |
 | `results/` | 测试数据与结果视频（命名带自己前缀） | 全员 |
 
