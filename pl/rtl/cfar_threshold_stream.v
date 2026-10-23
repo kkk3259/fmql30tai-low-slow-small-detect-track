@@ -32,11 +32,16 @@
 //   输出行 row∈[15,H+15)、列 col∈[15,W+15) 恰好 N=H×W 个；之后 state→S_DONE。
 //
 // 【存储（640×360 → W15=655, H15=375, DLY=20,305, CENTER_OFF=9,840）】
-//     rb1 20,306×8（延迟 DLY，供盒1 移出值）
+//     rb1 20,306×8（延迟 DLY，供两个盒的移出值）
 //     rb2  9,841×8（延迟 CENTER_OFF，供中心像素 x(u)）
-//     rb3 20,306×16（平方流延迟 DLY，供盒2 移出值）
 //     cs1   655×13、cs2 655×21
-//   合计 ≈ 566 Kbit（原两趟全帧方案 7.5 Mbit，折合 16 万 LUT，装不进器件）。
+//   合计 ≈ 241 Kbit（原两趟全帧方案 7.5 Mbit，折合 16 万 LUT，装不进器件）。
+//
+// 【2026-10-23 布局失败后减负】原设计还有 rb3 = 20,306×16（平方流延迟线），
+//   但 (x(t-DLY))² 恒等于 x²(t-DLY)，另存一条 16 bit 平方流是冗余的 →
+//   删 rb3，读出 rb1 后现算平方。LUTRAM 799 Kbit → 474 Kbit（−41%），仿真逐位一致。
+//   背景：640×360 版 Place 报 PLACE-0021 "place error: Global Placement failed"
+//   （legalize 阶段 network simplex infeasible），根因是 LUTRAM 占用过高压满 SLICEM 列。
 //
 // 【RAM 写法约束（Verific）】写必须在独立 always 块里、不能写进状态机 case 分支，
 //   否则报 ELAB-E-353 "Failed to dissolve the memory into bits ... too large"。
@@ -97,9 +102,11 @@ module cfar_threshold_stream #(
     // 图像位置需要上游给数；PAD 位置自行推进
     wire adv = (state == S_RUN) && (is_img ? i_valid : 1'b1);
 
-    // ---- 三条环形延迟线（全 1 写 1 读）----
-    reg [7:0]  rb1 [0:DEP_A-1];   // cur_px   → 盒1 移出值（延迟 DLY）
-    reg [15:0] rb3 [0:DEP_A-1];   // cur_px²  → 盒2 移出值（延迟 DLY）
+    // ---- 两条环形延迟线（全 1 写 1 读）----
+    // 盒2 的移出值 = 盒1 移出值取平方（同一像素、同一延迟），所以不再单独存
+    // 16 bit 平方流延迟线 rb3（省 20,306×16 = 325 Kbit LUTRAM；
+    // 代价是多一个 8×8 乘法器，实测进 CU48E1/DSP，不占 LUT）。
+    reg [7:0]  rb1 [0:DEP_A-1];   // cur_px   → 两个盒的移出值（延迟 DLY）
     reg [7:0]  rb2 [0:DEP_B-1];   // cur_px   → 中心像素 x(u)（延迟 CENTER_OFF）
 
     reg [PA-1:0] wpa, filla;
@@ -110,8 +117,8 @@ module cfar_threshold_stream #(
     wire full_a = (filla >= DLY[PA-1:0]);            // 延迟 DLY 有效
     wire full_b = (fillb >= CENTER_OFF[PB-1:0]);     // 延迟 CENTER_OFF 有效
 
-    wire [7:0]  d1_old = full_a ? rb1[rpa] : 8'd0;   // cur_px(r-31, c)
-    wire [15:0] d2_old = full_a ? rb3[rpa] : 16'd0;  // 平方流(r-31, c)
+    wire [7:0]  d1_old = full_a ? rb1[rpa] : 8'd0;   // cur_px(t-DLY)，即 x(r-31, c)
+    wire [15:0] d2_old = d1_old * d1_old;            // 同一像素的平方（等价于原 rb3 读出）
     wire [7:0]  x_mid  = full_b ? rb2[rpb] : 8'd0;   // x(r-15, c-15) = 窗口中心
 
     // ---- 列和数组（1 写 1 读；不复位，row!=0 门控首次读为 0）----
@@ -177,7 +184,6 @@ module cfar_threshold_stream #(
             wpa <= 0; filla <= 0;
         end else if (adv) begin
             rb1[wpa] <= cur_px;
-            rb3[wpa] <= sq_px;
             if (wpa == DEP_A[PA-1:0] - 1'b1) wpa <= {PA{1'b0}};
             else                             wpa <= wpa + 1'b1;
             if (filla < DEP_A[PA-1:0]) filla <= filla + 1'b1;
