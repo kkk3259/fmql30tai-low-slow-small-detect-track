@@ -27,7 +27,7 @@
 
 ---
 
-## 当前进度（2026-10-22）
+## 当前进度（2026-10-23）
 
 | 环节 | 状态 | 关键指标 |
 |---|---|---|
@@ -46,8 +46,9 @@
 | **NPU 上板部署** | ❌ **硬件通路阻塞** | **根因**：当前位流「单路PLIN+pHDMI」不含 ZG330 的 AXI 从设备；设备树无 `reserved-memory`（`0x80000000` 是 0xAA poison）。**官方示例 30TAI 位流标注 `TODO`** → 需企业提供含 ZG330 的位流 + 配套设备树 |
 | **★ 官方资源盘点** | ✅ **2.97 GB 已全部下载** | 8 个目录全覆盖：Icraft 3.36.1/3.39.0 全套、Docker 镜像、两套 runtimeapp 源码（313 MB×2）、LITE 位流包、Decoder DLL×3（见 `docs/11` 第七章）|
 | **★ VPU 硬编码** | ✅ **已验证可用** | `ffmpeg -c:v h264_v4l2m2m` / `hevc_v4l2m2m` 均可调 VPU（Linlon v5276，双核）；H.264/H.265 双向全格式 → 可把 88.89 ms 编码瓶颈降到 5~10 ms |
-| **工具链** | ⏳ 待装 | **Procise** 安装包已下载（2.3 GB，含 Vulture HWDT）；Icraft 已在板上装好 3.36.0、3.39.0 已备 |
-| **PL 综合上板** | ⏳ **未开始** | 13 个 `.v` 已写但未综合；`pl/constr/board_lite.xdc` 全注释（缺 PL 系统时钟引脚）；Procise License 未申请（MAC `ae:59:f4:2d:3a:99`）|
+| **工具链** | ✅ **已装并跑通全流程** | **Procise 2025.1.1**（`D:\FudanMicro\Procise`）已完成 elaborate → synthesize → place → route → **bitgen** 全链路验证（`blink_top.bit` 5.98 MB）；器件 **JFMQL30TAI676H**；**不需要 License**（Procise 不校验 MAC/不联网激活）。Icraft 板上 3.36.0 |
+| **★ PL 综合**（P） | ✅ **已完成（640×360）** | LUT **44,610** + LUTRAM **13,536**（866,304 bit 折合）= **58,146 / 78,600 = 74 %**；FF 19,474（12 %）；块 RAM **0**（有意：全用 LUTRAM，见 `docs/12` 第三节）；synthesize 664 s |
+| **PL 上板**（P） | ⏳ **待下载联调** | 位流可生成（`synth/board_ip2.tcl` 一次出 `.bit` + `.bin`）；三个缺口见 `docs/12`：①JTAG 接线与驱动（U19 针序已查到 → `pl/constr/jtag_wiring.md`）②PS↔PL 数据通路与位流加载约定（板上位流由 FSBL 从 `BOOT.bin` 内嵌加载）③IP1/IP3/IP4 仍为全帧版，未流式化 |
 
 ### 真实数据的关键发现
 
@@ -164,6 +165,7 @@ D:\lowslow\venv\Scripts\python.exe ps\ps_app.py --src 你的视频.mp4 `
 | [08-作品报告（完整版）](docs/08-作品报告（完整版）.docx) | 参赛作品报告（10 表格 / 8 插图）|
 | [09-答辩要点](docs/09-答辩要点.md) | 核心论述 / 预设问答 / 追问应对 / 一页速览 |
 | **[10-赛题合规性核对](docs/10-赛题合规性核对.md)** | ⚠️ **对照官方选题指南逐条核对**：1 个硬缺口 + 2 个待补项 |
+| **[13-PL上板进展与卡点](docs/13-PL上板进展与卡点.md)** | ⭐ **PL 侧现状（P 整理）**：综合资源账本、上板三条缺口、与 S 待对齐的三件事 |
 | **[11-板上实测记录](docs/11-板上实测记录.md)** | ⭐ **上板实锤（807 行 / 9 章）**：①烧写踩坑 ②系统信息 ③**NPU 完整摸底（含 AXI 硬件通路诊断）** ④PS 侧实测（合成 150 帧 / 真实 630 帧）⑤瓶颈分析 ⑥**板卡能力盘点（VPU/PL/DMA）** ⑦**官方资源盘点（2.97 GB）** ⑧下一步 ⑨数据文件 |
 | **[12-官方FPGA工程与开发流程](docs/12-官方FPGA工程与开发流程.md)** | ⭐⭐⭐ **P 必读**：官方管脚约束全文（**PL 时钟 C8/C7 @200MHz**、复位 F8、HDMI、SDI Lite 版 R6/R5）、FPGA 工程结构（含 `AI_Mate.edif` NPU 网表）、**custom op 标准接口**（`User_Reg_*` + 512 位 `User_Ddr_*`）、IP 补丁安装步骤、生成 BOOT.bin 流程、**`vtc: true` 无 SDI 出 HDMI 画面** |
 | [weekly/周报-W40](docs/weekly/周报-W40.md) | 本周进度与数据（含真实数据验证）|

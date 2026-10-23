@@ -2,7 +2,7 @@
 
 > **资料来源**：`D:\Downloads\2026嵌赛FPGA开发\2026嵌赛FPGA开发\20260916\`（微云分享 `share.weiyun.com/ZcPwQ9gq` 下载，2.11 GB / 9 个文件）
 > **整理日期**：2026-10-23
-> **重大意义**：这套资料补齐了此前"必须向企业索取"的全部材料 —— **只剩 Procise License 一项仍缺**。
+> **重大意义**：这套资料补齐了此前"必须向企业索取"的全部材料 —— **不再有缺口（Procise 不校验 License，实测已跑通 elaborate→synthesize→place→route→bitgen 全流程）**。
 
 ---
 

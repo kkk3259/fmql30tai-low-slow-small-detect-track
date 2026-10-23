@@ -19,6 +19,14 @@ tools/check_budget.py —— PL 资源预算检查（目标平台 FMQL30TAI）
 
   # ③ 读 Procise 报告（格式不同，尽量解析；不行就用 ① 手动粘）
   python tools/check_budget.py --report path/to/procise_report.rpt
+
+⚠️ 本项目（P 这条 Procise 路线）注意两点（2026-10-23 补充）：
+  1. Procise 不产出 Vivado 那种 utilization .rpt；实际做法是读综合网表
+     `synth/area_hier.py <edif>`（按模块/信号名统计 LUT/FF/LUTRAM/CARRY）。
+  2. 本设计的存储**全部落在 LUTRAM**（块 RAM 用量为 0），1 个 LUT 约 64 bit
+     LUTRAM，所以报数时要把 LUTRAM bit 除 64 折成 LUT 当量再加到 LUT 上，
+     否则会严重低估占用（640×360 实测：LUT 44,610 + LUTRAM 866,304 bit(=13,536)
+     = 58,146 / 78,600 = 74%）。
 """
 import argparse
 import io
