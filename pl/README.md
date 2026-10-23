@@ -29,7 +29,7 @@ FPGA 可编程逻辑部分的 Verilog 源码、约束、仿真与综合脚本。
 |---|---|---|
 | `rtl/win5.v` | 5×5 窗口行缓存（循环 RAM 延迟线 + 5 行抽头） | 2 实例 × 4×641×8 |
 | `rtl/tophat_5x5_stream.v` | 开运算：erode(IS_MAX=0,PAD=255) → dilate(IS_MAX=1,PAD=0) | gd 环形线 2569×8 |
-| `rtl/cfar_threshold_stream.v` | 单趟融合 CA-CFAR：`thr = mean + K·MAD + FLOOR`（WIN=31, K=5, FLOOR=3），31×31 双滑动盒**因果对齐** | dbuf1/dbuf2 20771×8 + mbuf 10066×8 ≈ **0.5 Mbit** |
+| `rtl/cfar_threshold_stream.v` | 单趟 CA-CFAR，**真实标准差**：`thr = mean + K·sd + FLOOR`（WIN=31, K=4, FLOOR=3）。判决写成 `L² > k²·(A·S2−S1²)`（L = x·A−S1−FLOOR·A），**既不开方也没有除法**；S1、S2 两个滑动盒共用同一个 31×31 窗口 | rb1 20306×8 + rb2 9841×8 + rb3 20306×16 ≈ **0.57 Mbit** |
 | `rtl/candidate_extract_stream.v` | 单趟连通域：两行标签 + 并查集 + 即时累加 → 36 字节候选表 | 无（仅两行标签 640×7×2） |
 | `rtl/ip2_top_stream.v` | 三级串联，`i_ready` 反压贯通到顶层 | — |
 | `rtl/ip2_pattern_gen.v` | 板级自测图案发生器（渐变背景 + 4 个 3×3 亮点 + 1 个 80×80 大块） | — |
@@ -49,7 +49,7 @@ FPGA 可编程逻辑部分的 Verilog 源码、约束、仿真与综合脚本。
 
 ```
 W=640, H=360, MAX_CAND=5         // 640×360 @ MAX_COMP=64
-CFAR: WIN=31, K=5, FLOOR=3
+CFAR: WIN=31, K=4, FLOOR=3         // 真实 std，平方比较判决（不开方）
 CCL : MAX_COMP=64, MIN_AREA=2, MAX_AREA=200
 ```
 
@@ -65,7 +65,7 @@ CCL : MAX_COMP=64, MIN_AREA=2, MAX_AREA=200
 2. **CFAR 内部光栅是"扩展"的**：`W30=W+30, H30=H+30`（每行左右各补 15 个虚拟 PAD 列）。所以 CFAR 在 PAD 位置**拉低 `i_ready`**，反压必须一路回到顶层，否则上游会丢像素。
 3. **CFAR 的因果对齐**（最难的一段，改之前务必看代码注释）：
    - `diff(t) = |x(t−CENTER_OFF) − mean(t)|`，`CENTER_OFF = 15·W30+15`
-   - 第二个盒子（MAD）的输出中心比第一个再低 15 行/15 列 ⇒ **两个盒子用不同的裁剪除数**（`area1` 用 `row−15`，`area2` 用 `row−30`）
+   - 两个盒子（S1 与 S2）**共用同一个 31×31 窗口**，所以只有一套裁剪面积 `area1`（按 `row−15` 裁剪）—— 相比早期 MAD 版少了一整套除数、延迟线和第二个裁剪器
    - `x(C)` 从 dbuf1 的第三个读口取（延迟 `2·CENTER_OFF`），`mean(C)` 从 mbuf 取（延迟 `CENTER_OFF`）
 4. **BRAM 用量为 0 是设计选择**：本项目存储是 1 写 3 读 / 1 写 2 读，块 RAM 最多 2 口，映射不了 → 全部推断成 **LUTRAM（DMEM128D1/DMEM256S1）**，代价 13,536 LUT 当量，好处是 9.3 Mbit 块 RAM 全空。
 
@@ -100,12 +100,16 @@ cd D:\firstharness\repo\pl\tools
 | 项 | 差异 | 说明 |
 |---|---|---|
 | `tophat` | 186 / 1024 | 其中 **185** 是 OpenCV `MORPH_TOPHAT` 的 `BORDER_REFLECT_101` 边界语义差异（旧版同样 185），另 1 处是首像素启动 |
-| `cfar64` | 4 / 4096 | idx 2545/2607/2671/2672，边界裁剪窗口近似 |
-| `cfar128` | 2 / 9216 | idx 8772/8892 |
+| `cfar64` | **0** / 4096 | 与 `gen_cfar_std_ref.py` 生成的整数 std 参考逐位一致 |
+| `cfar128` | **0** / 9216 | 同上 |
 | `ccl` | **0** / 36 字节 | — |
 | `chain`（128×72 全链） | **0** | — |
 
-> 逐版本等价性另有一套"新 vs 旧黄金版"并排共仿真（`synth/equiv/tb_chain_equiv.v`）：三级输出 `mis=0`、握手 `hold_err=0 drop_err=0` → `VERDICT IDENTICAL`。
+> `.hex` 激励/参考都被 `pl/sim/.gitignore` 忽略，跑回归前先重新生成：
+> `python tools/gen_cfar_stimulus.py`（写 `sim/input_cfar.hex` + `sim/ref_cfar.hex`）、`python tools/gen_ip2_stimulus.py`、`python tools/gen_ccl_stimulus.py`、`python tools/gen_integration.py`，然后 `python tools/run_sim.py`。
+
+> 说明：`synth/equiv/tb_chain_equiv.v`（新 vs 旧 HEAD 并排共仿真）只用于证明**流式重构本身**等价（win5/tophat/CCL 与 CFAR 两趟→单趟），曾达 `VERDICT IDENTICAL`。
+> CFAR 判决从「MAD 近似」改成「真实 std」之后，与旧 MAD 黄金版**不再逐位一致**（阈值常数变了），新的等价基准是 `pl/tools/gen_cfar_std_ref.py` 生成的整数 std 参考。
 
 ---
 
@@ -155,8 +159,9 @@ source D:/firstharness/synth/board_ip2.tcl    ;# rtl_analyze → synthesize → 
 ## 8. 已知差异 / 待办
 
 1. **边界语义**：CFAR 用"裁剪窗口"（边缘窗口变小），与 OpenCV `REFLECT_101` 只有最外一圈不同；目标在内部时不影响检测。
-2. **MAD 近似 std**：用整数 MAD 替代标准差（`K=4 → 5`），避开开方，可综合。
+2. **真实 std，但不开方**：判决等价于 `(x·A−S1−FLOOR·A)² > k²·(A·S2−S1²)`，与 PS 侧 `k=4.0` 严格一致；既不实例化开方器也不做除法（早期用 MAD 近似，差一个 1.4826 常数，已废弃）。
 3. **并列排序**：peak 相同时候选顺序未定义（比对时按"峰值→x→y"规范排序）。
 4. **无 AXI 接口**：现在是纯流式 valid/ready，接 PS 需要再包一层 AXI4-Stream（或 AXI-Lite 寄存器 + DMA）。
 5. **IP1/IP3/IP4 未流式化**，上板链路打通后需要同样改造。
 6. **`i_bin` 位宽警告**：`ip2_top_stream.v:35` 把 8 bit `o_data` 接到 1 bit `i_bin`，iverilog/Verific 都会报 pruning warning，功能无影响（`candidate_extract_stream` 只用 bit0 之外还看 `i_enh`）。
+7. **CFAR 判决是单周期组合长路径（未做时序验证）**：31 输入加法 → 11×26 乘 → 减 → 18×18 乘 → 比较。100 MHz 下可能不收敛，若 `place/route` 的 Timing Summary 报负 slack，解法是给判决加 2 级流水（乘积与 `L²` 各打一拍，同时把 `x_out`/`out_gate` 延迟 2 拍对齐），不改变延迟线上的因果结构。

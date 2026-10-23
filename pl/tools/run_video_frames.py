@@ -31,29 +31,9 @@ def ref_chain(gray):
     yy, xx = np.mgrid[0:H, 0:W].astype(np.int32)
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
     th = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
-    img_i = th.astype(np.int32)
-    HALF = 15
-    integ = cv2.integral(th)
-    mu = np.zeros((H, W), np.int32)
-    for r in range(H):
-        for c in range(W):
-            x1 = max(c - HALF, 0); x2 = min(c + HALF, W - 1)
-            y1 = max(r - HALF, 0); y2 = min(r + HALF, H - 1)
-            area = (x2 - x1 + 1) * (y2 - y1 + 1)
-            s = integ[y2 + 1][x2 + 1] - integ[y1][x2 + 1] - integ[y2 + 1][x1] + integ[y1][x1]
-            mu[r, c] = s // area
-    abs_dev = np.abs(img_i - mu)
-    integ2 = cv2.integral(abs_dev.astype(np.uint8))
-    mad = np.zeros((H, W), np.int32)
-    for r in range(H):
-        for c in range(W):
-            x1 = max(c - HALF, 0); x2 = min(c + HALF, W - 1)
-            y1 = max(r - HALF, 0); y2 = min(r + HALF, H - 1)
-            area = (x2 - x1 + 1) * (y2 - y1 + 1)
-            s = integ2[y2 + 1][x2 + 1] - integ2[y1][x2 + 1] - integ2[y2 + 1][x1] + integ2[y1][x1]
-            mad[r, c] = s // area
-    thr = mu + 5 * mad + 3
-    binary = (img_i > thr).astype(np.uint8) * 255
+    # ---- CFAR：真实标准差（与 cfar_threshold_stream.v 同一整数判决）----
+    from gen_cfar_std_ref import cfar_std
+    binary = cfar_std(th.reshape(-1).astype(np.int64), W, H)[0].astype(np.uint8) * 255
     n, lab, stats, cents = cv2.connectedComponentsWithStats(binary, connectivity=8)
     cands = []
     for i in range(1, n):
