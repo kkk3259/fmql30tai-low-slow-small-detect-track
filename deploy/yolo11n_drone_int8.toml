@@ -13,46 +13,46 @@ pre_scale = [ 255.0, 255.0, 255.0]
 pre_mean = [ 0.0, 0.0, 0.0]
 channel_swap = [ 0, 1, 2]
 image_channel_order = "rgb"
-network = "D:/icraft_work/yolo11n_drone_trunc_640_opset17.onnx"
-jr_path = "D:/icraft_work/out/"
+network = "./yolo11n_drone_trunc_640_opset17.onnx"
+jr_path = "./out/"
 target = "zhuge"
 
 [optimize]
 target = "zhuge"
-json = "D:/icraft_work/out/yolo11n_drone_trunc_parsed.json"
-raw = "D:/icraft_work/out/yolo11n_drone_trunc_parsed.raw"
-jr_path = "D:/icraft_work/out/"
+json = "./out/yolo11n_drone_trunc_parsed.json"
+raw = "./out/yolo11n_drone_trunc_parsed.raw"
+jr_path = "./out/"
 
 [quantize]
 forward_mode = "image"
 saturation = "kld"
-forward_dir = "D:/icraft_work/qtset"
-forward_list = "D:/icraft_work/qtset/dut.txt"
+forward_dir = "./calib"
+forward_list = "./calib/dut.txt"
 qdtype = "int8"
-json = "D:/icraft_work/out/yolo11n_drone_trunc_optimized.json"
-raw = "D:/icraft_work/out/yolo11n_drone_trunc_optimized.raw"
-jr_path = "D:/icraft_work/out/"
+json = "./out/yolo11n_drone_trunc_optimized.json"
+raw = "./out/yolo11n_drone_trunc_optimized.raw"
+jr_path = "./out/"
 per = "channel"
 target = "zhuge"
 no_transinput = true
 
 [adapt]
 target = "zhuge"
-json = "D:/icraft_work/out/yolo11n_drone_trunc_quantized.json"
-raw = "D:/icraft_work/out/yolo11n_drone_trunc_quantized.raw"
-jr_path = "D:/icraft_work/out/"
+json = "./out/yolo11n_drone_trunc_quantized.json"
+raw = "./out/yolo11n_drone_trunc_quantized.raw"
+jr_path = "./out/"
 
 [generate]
-json = "D:/icraft_work/out/yolo11n_drone_trunc_adapted.json"
-raw = "D:/icraft_work/out/yolo11n_drone_trunc_adapted.raw"
-jr_path = "D:/icraft_work/out/"
-log_path = "D:/icraft_work/out/logs/"
+json = "./out/yolo11n_drone_trunc_adapted.json"
+raw = "./out/yolo11n_drone_trunc_adapted.raw"
+jr_path = "./out/"
+log_path = "./out/logs/"
 
 [run]
 log_time = true
 log_io = true
 dump_format = "SFB"
-json = "D:/icraft_work/out/yolo11n_drone_trunc_ZG.json"
-raw = "D:/icraft_work/out/yolo11n_drone_trunc_ZG.raw"
-input = "D:/icraft_work/qtset/dut/00001.jpg"
-log_path = "D:/icraft_work/out/logs/"
+json = "./out/yolo11n_drone_trunc_ZG.json"
+raw = "./out/yolo11n_drone_trunc_ZG.raw"
+input = "./calib/dut/00001.jpg"
+log_path = "./out/logs/"

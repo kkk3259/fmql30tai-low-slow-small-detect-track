@@ -321,7 +321,19 @@ fpai_demo_fpga/
 
 > **custom op 的寄存器地址空间为 `0x400C'0000 ~ 0x400F'FFFF`**
 
-**⚠️ 此前 AXI 探测只扫了 `0x40000000 ~ 0x4000FFFF`，完全没覆盖这个区间 —— 必须重扫。**
+**⚠️⚠️ 2026-10-23 重要更正（原判断有误）**
+
+**这句话说的是「**custom op**」的地址空间，**不是 AI_Mate（NPU）的寄存器地址**。两者是两个不同的从设备：**
+
+| 从设备 | 地址段 | 实测结果 |
+|---|---|---|
+| **AI_Mate（NPU）** | **`0x40000000 ~ 0x400000E3`**（约 224 B）| **✅ 实测有响应**：`0x4000001C = 0x25122301`（AI-Mate 版本号）|
+| custom op | `0x400C0000 ~ 0x400FFFFF` | 读回全 `0xFFFFFFFF`（当前位流未挂 custom op）|
+| AI_Mate 的 DMA 视图 | `0x80000000` | 由 `libicraft` 内部管理，PS 直接 `/dev/mem` 读写不可用 |
+
+**⇒ 早期把 `0x400C0000` 当成 NPU 地址去扫，结果读回全 F，误判「位流里没有 NPU」。这是 2026-10-22 结论错误的直接原因。**
+
+**⇒ 正确做法：NPU 用 `npu=0x40000000`（官方 yaml 的 `device:` 参数里明确写了），custom op 才用 `0x400C0000`。**
 
 ### 5.5 custom op 使用流程（以 adder 为例）
 
@@ -423,17 +435,165 @@ examples/1_single_input+ai/PLin+SingleNet+HDMI/src/
 |---|---|---|---|
 | 1 | **解压 `JFM_Kits.zip` 到英文路径，装 IP 补丁** | P | 1.18 GB，解压后设置 `JFM_PATH` |
 | 2 | **解压 `BIT.rar` 确认位流** | S/P | 特别是 `30tai_lite_detpost/` |
-| 3 | **板子开机后重扫 AXI `0x400C0000`** | S | 之前扫错范围了 |
+| 3 | ~~**板子开机后重扫 AXI `0x400C0000`**~~ | — | **已完成（2026-10-23）**：`0x400C0000` 是 custom op 区，NPU 在 `0x40000000`，见下文第十章 |
 | 4 | **照 `adder_op` 把 IP1 改成 custom op 接口** | P | 先做最小验证 |
-| 5 | **Procise License 申请** | P | MAC `ae:59:f4:2d:3a:99`，走 QQ 群 `790072144` |
-| 6 | **试 `vtc: true` 模式（无 SDI 出 HDMI 画面）** | S | 需要先有编译好的 `sdicamera+yolov5+hdmi` 可执行程序 |
+| 5 | ~~**Procise License 申请**~~ | — | **不需要**（P 已确认装完即可用）|
+| 6 | ~~**试 `vtc: true` 模式**~~ | — | **方法已确认**（见 4.6），待编译出可执行程序 |
 
 ---
 
-## 九、官方联系渠道
+## 九、⭐ Icraft 版本配套与板端编译（2026-10-23 补）
+
+> 本章是 NPU 打通当天新增。核心结论：**官方 demo 程序的 Icraft 版本与它自带的模型版本不一致，必须配套才能跑。**
+
+### 9.1 ⭐ Icraft 版本符号矩阵（踩坑根源）
+
+**`icraft::xir::Network::lazyLoadParamsFromFile` 三个重载在各版本的存在情况（用二进制符号字符串实测）：**
+
+| 版本 | `midware::path` | `std::filesystem::path` | **`std::string`** |
+|---|---|---|---|
+| **3.33.1** | ✅ | ✅ | **✅ ← 官方预编译 demo 需要这个** |
+| 3.36.0 | ✗ | ✅ | **✗** |
+| 3.36.1 | ✗ | ✅ | **✗** |
+| 3.39.0 | ✗ | ✅ | **✗** |
+
+**⇒ 3.36 之后 `std::string` 重载被删除，只保留 `std::filesystem::path`。**
+
+**⇒ 用 3.36+ 运行时跑 3.33.1 编译的程序，会报：**
+
+```
+symbol lookup error: undefined symbol: _ZN6icraft3xir7Network22lazyLoadParamsFromFileERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEb
+```
+
+### 9.2 ⭐ 三个官方包的版本对应关系
+
+| 来源 | 预编译程序 | 附带 deb | 附带模型 | 配套？ |
+|---|---|---|---|---|
+| **微云 `fpai_demo_app.rar`**（2026-09-16）| **3.33.1**（2026-03-25）| 3.33.1 | **3.36.0**（2026-04-07）| ❌ **官方打包错位** |
+| **`fpai_demo_package_26040701`**（2026-04-07）| 无 | **3.36.0** | **3.36.0** | ✅ 配套，需自己编译 |
+| `30TAI_3.39.0`（2026-08-28）| 无 | 3.39.0 | — | 最新，但无配套 demo |
+
+**⇒ `fpai_demo_package_26040701` 的 README 写得很清楚：**
+
+```
+- 版本: 26040701
+- 平台: ZG
+- AI Mate 版本: 25122301        ← 与板上读到的 device: 25122301 一致
+- iCraft 版本: 3.36.0
+```
+
+### 9.3 ⭐ 板端编译方案（官方假设交叉编译，需改）
+
+**官方 `CMakeLists.txt` 的 UNIX 分支：**
+
+```cmake
+elseif(UNIX)
+    SET(CMAKE_SYSTEM_NAME Linux)
+    SET(CMAKE_SYSTEM_PROCESSOR aarch64)
+    SET(CMAKE_C_COMPILER /usr/bin/aarch64-linux-gnu-gcc)      ← 假设在 x86 上交叉编译
+    SET(CMAKE_CXX_COMPILER /usr/bin/aarch64-linux-gnu-g++)
+    link_directories(${DEPS_DIR}/thirdparty/a)                ← aarch64 静态库
+    link_libraries(avformat avdevice avfilter avcodec avutil swscale swresample
+                   opencv_imgcodecs opencv_imgproc opencv_core ...
+                   fmt pthread dl zlib yaml-cpp ssl crypto atomic)
+    find_package(Icraft-BuyiBackend REQUIRED)
+    find_package(Icraft-HostBackend REQUIRED)
+    find_package(icraft-zg330backend REQUIRED)
+```
+
+**⚠️ 板子上是 native aarch64，没有 `aarch64-linux-gnu-gcc` → 必须注释掉那两行 `SET(CMAKE_C*_COMPILER ...)`。**
+
+**端到端流程：**
+
+```bash
+# 1) 板子编译环境（已确认）
+cmake 3.16.3 / g++ 9.4.0 / gcc / make      ← 齐备
+# 系统库 yaml-cpp / opencv / ffmpeg / spdlog ← 全缺，但用官方静态库即可
+
+# 2) 从 fpai_demo_package_26040701_PLIN_pHDMI.zip 解压 deps/ + examples/
+#    deps/thirdparty/a/ 含 50+ 个 aarch64 静态库：
+#      libavcodec.a 193 MB / libavfilter.a 54 MB / libavformat.a 40 MB
+#      libopencv_core.a 9 MB / libopencv_imgproc.a 8 MB / libyaml-cpp.a 3.9 MB
+
+# 3) 装配套运行时
+dpkg -i --force-downgrade Icraft_3.36.0_onchip.deb CustomOp_3.36.0_onchip.deb
+
+# 4) 编译（注释掉交叉编译器后）
+cd examples/1_single_input+ai/PLin+SingleNet+HDMI
+cmake -S . -B build/ZG -DTARGET_CHIP=ZG
+cmake --build build/ZG -j4
+
+# 5) 运行（注意：不接受 --config，直接传路径）
+./build/ZG/sdicamera+yolov5+hdmi configs/ZG/sdicamera+yolov5+hdmi.yaml
+```
+
+**`-DTARGET_CHIP=ZG` 的作用（CMakeLists 原文）：**
+
+```cmake
+elseif(TARGET_CHIP_UPPER STREQUAL "ZG")
+    add_compile_definitions(USE_ZG330_BACKEND)     ← 编译期宏，决定走哪个后端分支
+    set(BACKEND_LIB_NAME "zg330backend")
+```
+
+### 9.4 ⭐ 官方 yaml 的关键字段（我们之前没注意）
+
+```yaml
+sys:
+  Version: __3.31__
+  device: axi://zg330aiu?npu=0x40000000&dma=0x80000000
+  mmuMode: true
+  speedMode: false
+  compressFtmp: false
+  ocm_option: -1
+  run_backend: zg330          # ★ 缺省是 "buyi"（demo 源码第 118 行），必须显式写！
+pipeline:
+  camera:
+    vtc: true                 # ★ 改 true 可无 SDI 摄像头（内部测试图）
+    width: 1920
+    height: 1080
+  icore:
+    jsons: [./imodel/ZG/yolov5s_plin_352x640_ZG.json]
+    raws:  [./imodel/ZG/yolov5s_plin_352x640_ZG.raw]
+    view_except_op_ids: [0,671,663,692,605]    # 官方 5 个；A 的模型是 [0,275]
+    detpost: true
+    fpga_nms: false
+```
+
+**⚠️ demo 程序的参数解析（源码第 92 行）：**
+
+```cpp
+if (argc < 2) { std::cerr << "Usage: " << argv[0] << " <config yaml>"; return 1; }
+config = YAML::LoadFile(argv[1]);      ← 不接受 --config
+```
+
+### 9.5 ⭐ 官方 demo 的 NPU 初始化路径（源码原文）
+
+```cpp
+// sdicamera+yolov5+hdmi.cpp
+182 | auto device = Device::Open(fpai_cfg.device_url.c_str());
+183 | auto fpai_device = device.cast<FPAIDevice>();
+185 | fpai_device.mmuModeSwitch(fpai_cfg.mmu_mode);     // 仅 USE_BUYI_BACKEND 分支
+446 | Device::Close(device);
+
+// yolov5_npu_actor.hpp（ZG330 分支）
+202 | auto net_viewed = network_groups_[cam_index].viewExcept(yolov5_cfg_.view_except_op_ids);
+207 | auto net_sess = initSession("zg330", net_viewed, this->device_,
+208 |                             fpai_cfg_.ocm_option, ..., fpai_cfg_.speed_mode, fpai_cfg_.compress_ftmp);
+211 | net_sess.apply();                                 // ★ 部署到硬件，版本错位时崩在这里
+```
+
+**⇒ 官方**不用 `icraft-run` 命令行**，而是 C++ `Device::Open()`。之前用 `icraft-run --backends "ZG330;Host"` 段错误，是因为 `Host` 后端在 aarch64 上走的是另一条初始化路径。**
+
+---
+
+## 十、官方联系渠道
 
 **赛题指南第 7 页原文：**
 
 > **技术交流：关注大赛官方公众号及复旦微赛事官方交流 QQ 群：`790072144`（复旦微嵌入式 FPGA QQ 群）**
 
 **⇒ 这是唯一官方对接渠道。此前一直在找邮箱，是走偏了。**
+
+---
+
+> **文档编号说明**：本章（九）为 2026-10-23 NPU 打通当天新增，插在「剩余待办」之后、「官方联系渠道」之前；原第九章顺延为第十章。
