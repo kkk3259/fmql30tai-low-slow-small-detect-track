@@ -1,70 +1,59 @@
-# pl/constr —— 引脚约束（当前为**骨架**，尚未可用）
+# pl/constr —— 引脚与时序约束（**已可用**，2026-10-23）
 
-> ⚠️ **重要**：本目录当前**不含可直接使用的约束文件**。
-> 上板前必须补齐 **PL 系统时钟引脚**等关键项（见下）。
+> ✅ 本目录现在**有可直接使用的 Procise 约束文件**：`board_lite.fdc`。
+> 之前"缺 PL 系统时钟引脚 / 不知道 Procise 用什么格式"的问题**已全部解决**（来源见下）。
 
 ## 目录内容
 
 | 文件 | 说明 |
 |---|---|
-| `pin_map.md` | **引脚映射表**（格式无关，是所有约束的"事实来源"）|
-| `board_lite.xdc` | **XDC 语法骨架**（已填入手册能确证的引脚；缺失项标 `TODO`）|
+| `board_lite.fdc` | **Procise 约束文件（可用）**：时钟 + 复位 + 4 个 LED |
+| `jtag_wiring.md` | **U19（PL_JTAG）20 针针序 + DLC10 接线表**（下载位流用） |
+| `pin_map.md` | 引脚映射表（格式无关的"事实来源"，含待补项） |
 
-## 为什么是"骨架"而不是"完整约束"
+## 已确证的引脚（全部来自官方资料，非猜测）
 
-整理时逐条核对了《悟净开发板 Lite（轻量版）硬件使用手册 V1.0》（32 页），结论是：
-
-> **手册正文的文字不足以生成完整可用的约束文件。**
-
-**手册能确证的**（已写入 `pin_map.md` / `board_lite.xdc`）：
-
-| 类别 | 数量 | 可信度 |
-|---|---|---|
-| PL 按键 `PL_KEY1/2` | 2 条 | ✅ 高（给了芯片引脚名 + BGA 位号）|
-| MIPI CSI 接口 | 10 条 | ✅ 高（同上）|
-| PL LED `PL_LED1~4` | 4 条 | ⚠️ 中（只有 `J1/M6/H7/J8`，**没给芯片引脚名**，无法交叉核对）|
-
-**手册正文缺失的**（必须补齐）：
-
-| # | 缺失项 | 影响 | 优先级 |
+| 信号 | 球号 | 电平 | 依据 |
 |---|---|---|---|
-| **1** | **PL 系统时钟引脚** | **没有它无法综合/上板** | 🔴 **最高** |
-| **2** | 全局复位引脚 | 可先用内部上电复位顶上 | 🟡 高 |
-| **3** | HEADER 14×2 的 16 路 GPIO | 手册原文"如下图所示"，正文无表 | 🟡 中 |
-| **4** | XADC 通道引脚号 | 本项目未用 XADC | 🟢 低 |
-| **5** | 各 BANK 的 IO 电平（IOSTANDARD）| 只写 PACKAGE_PIN 不写电平会导致综合报错 | 🔴 **高** |
+| **PL 系统时钟 200 MHz** | **`C8`（P）/ `C7`（N）** | `DIFF_SSTL15` | 官方示例工程 `fpai_demo_fpga/constrs_1/impl_constraints.xdc`：`create_clock -period 5.000 [get_ports sys_clk_p]` + `PACKAGE_PIN C8/C7` |
+| 复位/按键 `sys_rst` | `F8` | `LVCMOS15` | 同上（`PACKAGE_PIN F8 [get_ports sys_rst]`）；手册 `PL_KEY1 = IO_L11P_T1_SRCC_34 = F8` |
+| LED1~4 | `J1` / `M6` / `H7` / `J8` | `LVCMOS15`（J1、M6 已由官方约束确认；H7/J8 按同 BANK 推定） | 官方约束 + 手册 `PL_LED1~4` |
+| HDMI（本项目未用） | `AC17` / `AA15` / `Y16` / `W16` | `TMDS_33` | 官方约束 |
 
-**根因**：手册自己写明"所有的参数说明**来自于开发板原理图**"，而**原理图在第 32 页、以图片形式给出**，PDF 文本提取不到。
+> 板上另有一颗 **100 MHz 单端晶振**（`SIT8008BI-21-Y1E-100.000000` → 网络名 `PL_100MHz`），但**官方 demo 用的是 200 MHz 差分时钟**，其球号在我们的资料里没有出现；因此本项目统一用 **C8/C7 200 MHz + RTL 内 ÷2 得 100 MHz**（`ip2_board_top.v` 里就是 `IBUFDS → BUFG → ÷2 → BUFG`）。
 
-## ✅ 补齐路径（按推荐顺序）
+## Procise 约束格式（已确认）
 
-| 顺序 | 途径 | 说明 |
-|---|---|---|
-| **1** ⭐ | **向学长索取他竞赛时用的约束文件** | **本板卡是学长用过的** → 他手上极可能有现成的 `.xdc`/`.fdc`，**最快也最可靠** |
-| **2** | **看手册第 32 页原理图** | 直接查看图片，读出时钟等网络名与 BGA 位号 |
-| **3** | **参考 Procise 自带的官方示例工程** | 官方 demo 里通常已定义系统时钟引脚 |
-| **4** | **问厂家技术支持** | 渠道见 `docs/03-器材清点与采购` 附录 |
+Procise 用 **`.fdc`**，语法与 Xilinx XDC 基本一致：
 
-## ⚠️ 两条硬规则
-
-1. **不要猜引脚位号** —— 引脚分配错误会导致 IO 冲突，甚至损伤器件；
-2. **不确定的约束不要让它生效** —— 本骨架里**所有语句都是注释状态**，就是为了避免"半成品约束"被工具执行。
-
-## ⚠️ 还需确认：Procise 的约束文件格式
-
-本骨架按 **Xilinx XDC 语法**书写，依据是手册 4.1：
-
-> "JFMQL30TAI676H……**对标 Xilinx 的 XC7Z030FFG676-2I 芯片**"
-
-**但 Procise 实际使用 `.xdc`、`.fdc` 还是其他格式，需以官方文档/示例工程为准。**
-若格式不同，请按官方语法改写 —— **引脚位号可照搬本目录的映射表**。
-
-## 使用步骤（补齐后）
-
-```text
-1. 从上述途径拿到系统时钟引脚 + 各 BANK 电平
-2. 填进 board_lite.xdc（把 TODO 替换掉、按需取消注释）
-3. 确认 XDC 里的端口名（sys_clk / rst_n / led / key）与顶层 Verilog 一致
-4. 在 Procise 工程里引用本约束文件
-5. 综合 → 实现 → 生成位流 → 下载
+```tcl
+create_clock -name sys_clk -period 5.000 -waveform {0.0 2.50000} [get_ports {clk_p}]
+set_property PACKAGE_PIN C8 [get_ports {clk_p}]
+set_property IOSTANDARD DIFF_SSTL15 [get_ports {clk_p}]
+set_property PACKAGE_PIN J1 [get_ports {led[0]}]
+set_property IOSTANDARD LVCMOS15 [get_ports {led[0]}]
+set_property PULLTYPE PULLUP [get_ports {rst_n}]
 ```
+
+**关键：`.fdc` 必须和 `.v` 一起用 `add_design_file` 加进工程**（官方手册示例：`add_design_file -file led_flow/led_flow.v led_flow/led_flow.fdc`）。
+
+> 注：Procise 手册的 IOSTANDARD 列表里只列了 `DIFF_SSTL15_DCI/_R/_T_DCI`，但**裸 `DIFF_SSTL15` 实测可用**（`blink_top` 已跑通全流程并 bitgen 出位流）。
+
+## 用法
+
+```tcl
+add_design_file -file { .../pl/rtl/*.v  D:/firstharness/repo/pl/constr/board_lite.fdc }
+set_top -top ip2_board_top
+load_design -stage_elaborate -no_hier
+rtl_analyze
+synthesize
+place
+route
+bitgen ip2_board_top.bit
+```
+
+完整脚本见 `synth/board_ip2.tcl`（会同时出 `.bit` 和 `.bin`）。
+
+## 历史
+
+- `board_lite.xdc`（XDC 语法骨架、全部语句注释）**已于 2026-10-23 删除**：它的作用是在拿不到时钟引脚时占位，现已被 `board_lite.fdc` 取代；留着会被人照着改而掉坑。需要看历史请用 `git log -- pl/constr/board_lite.xdc`。
