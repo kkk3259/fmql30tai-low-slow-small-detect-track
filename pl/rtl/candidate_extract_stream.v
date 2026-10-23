@@ -55,6 +55,7 @@ module candidate_extract_stream #(
     reg [CW-1:0] col;
     reg [CH-1:0] row;
     reg [6:0] mk;                  // S_MERGE 标签游标
+    reg [6:0] pi;                  // S_POST 标签游标
     reg [2:0] state;
     localparam S_RUN = 0, S_MERGE = 1, S_POST = 2, S_SORT = 3, S_OUT = 4, S_DONE = 5;
 
@@ -158,7 +159,7 @@ module candidate_extract_stream #(
                 cx[i] <= 0; cy[i] <= 0;
             end
             left_lbl <= 0; n_lbl <= 0; n_comp <= 0;
-            col <= 0; row <= 0; cnt <= 0; px_cnt <= 0; mk <= 0;
+            col <= 0; row <= 0; cnt <= 0; px_cnt <= 0; mk <= 0; pi <= 0;
             state <= S_RUN;
             o_data_r <= 0; o_valid_r <= 0;
         end else begin
@@ -208,21 +209,25 @@ module candidate_extract_stream #(
                     carea[mk] <= 0; csumx[mk] <= 0; csumy[mk] <= 0; cpeak[mk] <= 0;
                 end
                 if (mk >= MAX_COMP - 1) begin
-                    state <= S_POST;
+                    state <= S_POST; pi <= 0;
                 end else mk <= mk + 7'd1;
             end
             S_POST: begin
                 // 与旧版 S_ACCUM 尾部一致：有效组件算重心，无效组件清零（peak 清 0 让排序落到底部）
-                n_comp <= n_comp_c;
-                for (i = 0; i < MAX_COMP; i = i + 1) begin
-                    if (carea[i] >= MIN_AREA && carea[i] <= MAX_AREA) begin
-                        cx[i] <= (csumx[i] + carea[i]/16'd2) / carea[i];
-                        cy[i] <= (csumy[i] + carea[i]/16'd2) / carea[i];
-                    end else begin
-                        cx[i] <= 0; cy[i] <= 0; cpeak[i] <= 0;
-                    end
+                // 【面积优化】改成每拍处理 1 个标签（pi 游标），全模块只保留 2 个除法器。
+                //   原来 for 循环在一个周期内展开 MAX_COMP 份除法器，是综合后 LUT 的主因。
+                if (pi == 0) n_comp <= n_comp_c;
+                if (carea[pi] >= MIN_AREA && carea[pi] <= MAX_AREA) begin
+                    cx[pi] <= (csumx[pi] + carea[pi]/16'd2) / carea[pi];
+                    cy[pi] <= (csumy[pi] + carea[pi]/16'd2) / carea[pi];
+                end else begin
+                    cx[pi] <= 0; cy[pi] <= 0; cpeak[pi] <= 0;
                 end
-                state <= S_SORT; si <= 0; sort_phase <= 0;
+                if (pi >= MAX_COMP - 1) begin
+                    state <= S_SORT; si <= 0; sort_phase <= 0;
+                end else begin
+                    pi <= pi + 7'd1;
+                end
             end
             S_SORT: begin
                 if (sort_phase == 2'd0) begin

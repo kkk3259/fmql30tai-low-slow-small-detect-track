@@ -1,0 +1,74 @@
+# =============================================================================
+# board_lite.fdc —— 悟净 Lite（JFMQL30TAI676H）PL 引脚 + 时钟约束
+# =============================================================================
+# 格式：Procise 用 【.fdc】 而不是 Vivado 的 .xdc，但语法一致：
+#     set_property PACKAGE_PIN <球号> [get_ports {<端口名>}]
+#     set_property IOSTANDARD <电平>  [get_ports {<端口名>}]
+#     create_clock -name <名字> -period <ns> -waveform {0 <半周期>} [get_ports {<端口名>}]
+# 用法（Procise Shell）：add_design_file -file <rtl>.v board_lite.fdc
+#   即 .fdc 和 .v 一起加，不需要单独的加约束命令。
+#
+# ★ 引脚来源（已交叉验证两处，可信）：
+#   A) FMSH 官方工程 fpai_demo_fpga\constrs_1\impl_constraints.xdc
+#      （D:\firstharness\dl\xdc\impl_constraints.xdc，从 20260916 资料包解出）
+#   B) 《悟净开发板 Lite 硬件使用手册》正文表格
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# 1) 系统时钟：200MHz 差分振荡器，P = C8 / N = C7
+# -----------------------------------------------------------------------------
+# 官方工程原文（A）：
+#     create_clock -period 5.000 [get_ports sys_clk_p]
+#     set_property IOSTANDARD DIFF_SSTL15 [get_ports sys_clk_p]
+#     set_property IOSTANDARD DIFF_SSTL15 [get_ports sys_clk_n]
+#     set_property PACKAGE_PIN C8 [get_ports sys_clk_p]
+#     set_property PACKAGE_PIN C7 [get_ports sys_clk_n]
+# 5.000ns 周期 = 200MHz，对应手册原理图里的
+#     SIT9121AI-2D2-XE200.000000K -> PL_DDR_EXT_CLK_P/N
+# 即 PL 侧可用的最高精度时钟源；板载 100MHz 单端晶振（PL_100MHz）的球号手册未给，
+# 因此统一用这个 200MHz 差分时钟，RTL 里再二分频得到 100MHz。
+#
+# 用法：顶层端口写  input clk_p, clk_n ，
+#       RTL 里例化 IBUFDS + BUFG 得到内部时钟。
+set_property PACKAGE_PIN C8 [get_ports {clk_p}]
+set_property PACKAGE_PIN C7 [get_ports {clk_n}]
+set_property IOSTANDARD DIFF_SSTL15 [get_ports {clk_p}]
+set_property IOSTANDARD DIFF_SSTL15 [get_ports {clk_n}]
+create_clock -name sys_clk -period 5.000 -waveform {0.0 2.50000} [get_ports {clk_p}]
+
+
+# -----------------------------------------------------------------------------
+# 2) 复位：PL_KEY1 = F8（官方工程里同脚名为 sys_rst，LVCMOS15）
+# -----------------------------------------------------------------------------
+# 按键按下接地 -> 低有效；bank 34 上拉。
+# RTL 内部另有"上电复位"（计数器 16 拍低电平），即使不按键也能正确启动。
+set_property PACKAGE_PIN F8 [get_ports {rst_n}]
+set_property IOSTANDARD LVCMOS15 [get_ports {rst_n}]
+set_property PULLTYPE PULLUP [get_ports {rst_n}]
+
+
+# -----------------------------------------------------------------------------
+# 3) PL LED × 4（BANK13，1.5V）：LED1=J1  LED2=M6  LED3=H7  LED4=J8
+# -----------------------------------------------------------------------------
+# J1/M6 已由官方工程（A）确认：IOSTANDARD LVCMOS15 + PACKAGE_PIN J1 / M6
+# H7/J8 来自手册表格（B）。
+set_property PACKAGE_PIN J1 [get_ports {led[0]}]
+set_property PACKAGE_PIN M6 [get_ports {led[1]}]
+set_property PACKAGE_PIN H7 [get_ports {led[2]}]
+set_property PACKAGE_PIN J8 [get_ports {led[3]}]
+set_property IOSTANDARD LVCMOS15 [get_ports {led[0]}]
+set_property IOSTANDARD LVCMOS15 [get_ports {led[1]}]
+set_property IOSTANDARD LVCMOS15 [get_ports {led[2]}]
+set_property IOSTANDARD LVCMOS15 [get_ports {led[3]}]
+
+
+# -----------------------------------------------------------------------------
+# 4) PL 按键 × 2：PL_KEY1 = F8（已用于复位）/ PL_KEY2 = E7（备用）
+# -----------------------------------------------------------------------------
+# PL_KEY1 = IO_L11P_T1_SRCC_34 = F8   ← 已在第 2 节用作 rst_n
+# PL_KEY2 = IO_L11N_T1_SRCC_34 = E7   ← 备用，可作为"手动触发"输入
+# 若 RTL 里没有 key_n 端口，把这两行注释掉即可（否则约束会报找不到端口）。
+# set_property PACKAGE_PIN E7 [get_ports {key_n}]
+# set_property IOSTANDARD LVCMOS15 [get_ports {key_n}]
+# set_property PULLTYPE PULLUP [get_ports {key_n}]
