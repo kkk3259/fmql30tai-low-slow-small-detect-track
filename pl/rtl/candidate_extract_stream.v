@@ -33,9 +33,9 @@ module candidate_extract_stream #(
     localparam CH = $clog2(H + 1);
     localparam LW = $clog2(MAX_COMP + 1);   // 标签位宽（0=背景）
 
-    // 当前行 / 上一行标签（行奇偶双缓冲，避免整行拷贝）
-    reg [LW-1:0] lbl_even [0:W-1];
-    reg [LW-1:0] lbl_odd  [0:W-1];
+    // 行标签缓存见下方 lbl_ram（1 写 2 读的双口 RAM）。
+    // 原实现是 lbl_even/lbl_odd 两个 W 项寄存器数组 + 三个 W:1 组合 mux，
+    // 实测吃掉约 2.6 万 LUT（占整设计 60%），是布局失败的直接原因。
 
     reg [LW-1:0] left_lbl;               // 左邻居标签
     reg [LW-1:0] n_lbl;                  // 已用标签数（0 基，标签 = n_lbl+1）
@@ -63,9 +63,25 @@ module candidate_extract_stream #(
 
     // ---- 因果邻居标签（8 连通：左上、上、右上、左）----
     wire par = row[0];
-    wire [LW-1:0] prev_ul = (col > 0)     ? (par ? lbl_even[col - 1] : lbl_odd[col - 1]) : {LW{1'b0}};
-    wire [LW-1:0] prev_t  =                   (par ? lbl_even[col]     : lbl_odd[col]);
-    wire [LW-1:0] prev_ur = (col < W - 1) ? (par ? lbl_even[col + 1] : lbl_odd[col + 1]) : {LW{1'b0}};
+
+    // ---- 行标签缓存：1 写 2 异步读的 LUTRAM，两块 bank 按行奇偶分 ----
+    //   写地址 {bank, col}（本行，同步写）；读地址 {~bank, col}/{ ~bank, col+1}（上一行，异步读）
+    //   用动态读写才能被推成 RAM；写成寄存器数组的话读口会变成 W:1 大 mux。
+    localparam AW = $clog2(2 * W);
+    localparam [AW-1:0] W_AW = W;
+    reg [LW-1:0] lbl_ram [0:2*W-1];
+    reg [LW-1:0] prev_t_d;                     // prev_t 打一拍 = prev_ul
+
+    wire [CW-1:0] col_r    = (col == W - 1) ? col : (col + 1'b1);
+    wire [AW-1:0] wr_addr  = (par     ? W_AW : {AW{1'b0}}) + {{(AW-CW){1'b0}}, col};
+    wire [AW-1:0] rd_addr_t = ((~par) ? W_AW : {AW{1'b0}}) + {{(AW-CW){1'b0}}, col};
+    wire [AW-1:0] rd_addr_r = ((~par) ? W_AW : {AW{1'b0}}) + {{(AW-CW){1'b0}}, col_r};
+
+    // 第 0 行没有“上一行”，把读口整体屏蔽为 0（RAM 本身不复位，靠这个门控避免读 X）
+    wire row_has_prev = (row != 0);
+    wire [LW-1:0] prev_ul = (row_has_prev && col > 0)     ? prev_t_d : {LW{1'b0}};
+    wire [LW-1:0] prev_t  = row_has_prev                  ? lbl_ram[rd_addr_t] : {LW{1'b0}};
+    wire [LW-1:0] prev_ur = (row_has_prev && col < W - 1) ? lbl_ram[rd_addr_r] : {LW{1'b0}};
     wire [LW-1:0] nb_l    = left_lbl;
 
     function [LW-1:0] min4;
@@ -151,9 +167,15 @@ module candidate_extract_stream #(
     reg [7:0] o_data_r;
     reg o_valid_r;
 
+    // ---- 行标签 RAM 的写口：必须是独立 always 块（写进状态机 case 里 Procise 就不认 RAM）----
+    always @(posedge clk) begin
+        if (state == S_RUN && i_bin_valid)
+            lbl_ram[wr_addr] <= assign_lbl;
+    end
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (i = 0; i < W; i = i + 1) begin lbl_even[i] <= 0; lbl_odd[i] <= 0; end
+            prev_t_d <= 0;
             for (i = 0; i < MAX_COMP; i = i + 1) begin
                 parent[i] <= i + 1; carea[i] <= 0; csumx[i] <= 0; csumy[i] <= 0; cpeak[i] <= 0;
                 cx[i] <= 0; cy[i] <= 0;
@@ -167,10 +189,9 @@ module candidate_extract_stream #(
             case (state)
             S_RUN: begin
                 if (i_bin_valid) begin
-                    // 1) 行缓存写标签
-                    if (par) lbl_odd[col] <= assign_lbl;
-                    else     lbl_even[col] <= assign_lbl;
+                    // 1) 行缓存写标签（写口在下面独立的 always 块里，否则推不成 RAM）
                     left_lbl <= assign_lbl;
+                    prev_t_d <= prev_t;              // 供下一列作 prev_ul
 
                     // 2) 标签管理与 union
                     if (i_bin && assign_lbl != 0) begin
