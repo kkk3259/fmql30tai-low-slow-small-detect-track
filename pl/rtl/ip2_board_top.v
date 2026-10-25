@@ -35,14 +35,17 @@ module ip2_board_top (
         .O (clk200)
     );
 
-    // ---- 200MHz / 2 = 100MHz（50% 占空比）----
-    reg div = 1'b0;
+    // ---- 200MHz / 4 = 50MHz（50% 占空比）----
+    // 【2026-10-26 降频】100MHz 版实测 setup 差 -7.385ns（等效最高约 57MHz），
+    //   100MHz 不收敛；降到 50MHz 后余量约 +2.6ns。
+    //   帧时间 4.9ms -> 9.8ms，仍是 PS 软件 57.87ms 的 5.9 倍。
+    reg [1:0] div = 2'd0;
     always @(posedge clk200) begin
-        div <= ~div;
+        div <= div + 2'd1;
     end
 
     BUFG u_bufg100 (
-        .I (div),
+        .I (div[1]),
         .O (clk)
     );
 
