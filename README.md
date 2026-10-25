@@ -43,12 +43,13 @@
 | **★ PS 侧上板** | ✅ **已完成** | **板上实测：真实 720P 630 帧 5.92 fps；纯算法 16.7 fps**；跟踪成功率 **97.0 %（611/630），与 PC 逐帧一致** |
 | **★ NPU 摸底** | ✅ **已完成（2026-10-23 打通）** | **硬件已验证可用**：官方参考设计 `sdicamera+yolov5+hdmi` 执行 **`Device initialization successful`**，读回 `device: 25122301`（AI-Mate 版本）/ `icore: FMSHZGV3TECH-AID-24160628`，`npu=0x40000000`、`dma=0x80000000` 均正常响应（见 `docs/11` 第十章）|
 | **NPU 模型（A）** | ✅ **已交付** | YOLOv11n 单类（drone），DUT test **mAP50 0.920 / R 0.859**；INT8 量化后 `deploy/*_ZG.raw`（4.79 MB）|
-| **NPU 上板部署** | 🟡 **硬件通了，剩版本对齐** | **2026-10-23 已证伪此前「硬件通路不通」的结论**：AI-Mate 寄存器窗口在 **`0x40000000~0x400000E3`**（`+0x1C` 读出 `0x25122301`），`0x400C0000` 是 **custom op** 区不是 NPU。`PL_LED1/J1` 闪烁证明 PL DDR3 初始化成功。**剩余**：官方预编译 demo（Icraft 3.33.1）与随包模型（3.36.0）版本错位 → `apply()` 报 `InternalError`；已定位官方 3.36.0 配套包（含 aarch64 静态库 + CMake），正在板上重编 |
+| **★ NPU 上板推理** | ✅ **已跑通（2026-10-23 深夜）** | **自研 YOLOv11n 在 ZG330 上完成推理**：`icraft-run` exit 0，255 个 op 全执行；**NPU 硬件耗时 7.955 ± 0.004 ms**（6 次，极差 0.1%），其中主干 6.091 ms（89 个 Conv2d 占 5.483 ms）、io_process 1.865 ms；输入 `1×640×640×3` / 输出 `box[1,64,8400]+cls[1,1,8400]` 与交付说明完全一致。**关键修复**：运行时装 **Icraft 3.39.0**（与模型导出工具链一致）+ `--backends "ZG330,axi://zg330aiu?npu=0x40000000&dma=0x80000000;Host"`（`ZG330` 后必须跟设备 URL，见 `docs/11` 10.12）。**剩余**：端到端视频帧率、后处理集成 |
 | **★ 官方资源盘点** | ✅ **2.97 GB 已全部下载** | 8 个目录全覆盖：Icraft 3.36.1/3.39.0 全套、Docker 镜像、两套 runtimeapp 源码（313 MB×2）、LITE 位流包、Decoder DLL×3（见 `docs/11` 第七章）|
 | **★ VPU 硬编码** | ✅ **已验证可用** | `ffmpeg -c:v h264_v4l2m2m` / `hevc_v4l2m2m` 均可调 VPU（Linlon v5276，双核）；H.264/H.265 双向全格式 → 可把 88.89 ms 编码瓶颈降到 5~10 ms |
 | **工具链** | ✅ **已装并跑通全流程** | **Procise 2025.1.1**（`D:\FudanMicro\Procise`）已完成 elaborate → synthesize → place → route → **bitgen** 全链路验证（`blink_top.bit` 5.98 MB）；器件 **JFMQL30TAI676H**；**不需要 License**（Procise 不校验 MAC/不联网激活）。Icraft 板上 3.36.0 |
-| **★ PL 综合**（P） | ✅ **已完成（640×360）** | LUT **44,610** + LUTRAM **13,536**（866,304 bit 折合）= **58,146 / 78,600 = 74 %**；FF 19,474（12 %）；块 RAM **0**（有意：全用 LUTRAM，见 `docs/12` 第三节）；synthesize 664 s |
-| **PL 上板**（P） | ⏳ **待下载联调** | 位流可生成（`synth/board_ip2.tcl` 一次出 `.bit` + `.bin`）；三个缺口见 `docs/12`：①JTAG 接线与驱动（U19 针序已查到 → `pl/constr/jtag_wiring.md`）②PS↔PL 数据通路与位流加载约定（板上位流由 FSBL 从 `BOOT.bin` 内嵌加载）③IP1/IP3/IP4 仍为全帧版，未流式化 |
+| **★ PL 综合**（P） | ✅ **通过（640×360，71.0 %）** | 最新（`docs/15`）：LUT 站点 43,292 + LUTRAM 12,480 = **55,772 / 78,600 = 71.0 %**；FF 19,453（12.4 %）；**CU48E1（DSP）5 / 400**（CFAR 改"真实标准差 + 不开方"后乘法器全落 DSP）；块 RAM **0**（全用 LUTRAM，见 `docs/15` §3）|
+| **PL 布局/上板**（P） | 🟡 **布局已减负（−41%）、AXI 全链路仿真打通；待上板验证** | **① 布局失败已减负**：根因 LUTRAM 只能落 SLICEM 列（占 63.5% 局部爆，非总面积），删冗余 16 bit 平方流延迟线后 **LUTRAM 798,720 → 473,824 bit（−41%），占 SLICEM → 37.7%，LUT 当量 → 64.6%**，仿真逐位一致。<br>**② AXI 全链路打通（2026-10-25，P 提交 `a69adc0`）**：新增 `ip2_pix_fifo.v` 片内帧缓冲（深度 2^18 ≥ 640×360），`ip2_axi_top` 改为 `F_RST→F_FILL→F_FEED` 状态机；**修复 `cand_buf` 在 `F_WRITE` 被 `chain_rst_n` 误清零**（这是 LED 候选数饱和到 7 的功能层原因）；仿真 **`VERDICT AXI-TOP-OK`，候选表 36 B 与 Python 参考完全一致**。<br>**③ 仍待解决**：100 MHz 工作域在已发布位流里**从未被约束**（仓库内 `board_lite.fdc` 只有 1 条 `create_clock`，无 `create_generated_clock`；P 的改动在本地未提交）。详见 `docs/14` §5/§6.1、`docs/15` §8 |
+| **★ 摄像头（S）** | 🛒 **已下单，未到货** | **X001（Sony IMX291 星光级，1/2.7"）6 mm 版，¥312**；USB 2.0 UVC 免驱、MJPG 720P@30 / 1080P@30、M12 螺纹镜头**可换**、曝光可手动。**采集必须用 MJPG + 1280×720**（YUYV 在 1080P 下只有 5 fps；720P 除以 2 正好是算法的 640×360）。详见 `docs/16` |
 
 ### 真实数据的关键发现
 
@@ -168,6 +169,9 @@ D:\lowslow\venv\Scripts\python.exe ps\ps_app.py --src 你的视频.mp4 `
 | **[13-PL上板进展与卡点](docs/13-PL上板进展与卡点.md)** | ⭐ **PL 侧现状（P 整理）**：综合资源账本、上板三条缺口、与 S 待对齐的三件事 |
 | **[11-板上实测记录](docs/11-板上实测记录.md)** | ⭐ **上板实锤（10 章）**：①烧写踩坑 ②系统信息 ③NPU 摸底过程（旧结论已标注推翻）④PS 侧实测（合成 150 帧 / 真实 630 帧）⑤瓶颈分析 ⑥板卡能力盘点（VPU/PL/DMA）⑦官方资源盘点（2.97 GB）⑧下一步 ⑨数据文件 **⑩★ NPU 打通全过程（2026-10-23：AXI 寄存器窗口、PL_LED1=DDR3 自检、Icraft 版本矩阵、官方 demo 实录、按键/LED 表）** |
 | **[12-官方FPGA工程与开发流程](docs/12-官方FPGA工程与开发流程.md)** | ⭐⭐⭐ **P 必读**：官方管脚约束全文（**PL 时钟 C8/C7 @200MHz**、复位 F8、HDMI、SDI Lite 版 R6/R5）、FPGA 工程结构（含 `AI_Mate.edif` NPU 网表）、**custom op 标准接口**（`User_Reg_*` + 512 位 `User_Ddr_*`）、IP 补丁安装步骤、生成 BOOT.bin 流程、**`vtc: true` 无 SDI 出 HDMI 画面**、**⑩ Icraft 版本配套矩阵 + 板端编译方案** |
+| **[14-PS-PL接口约定](docs/14-PS-PL接口约定.md)** | ⭐⭐⭐ **PS↔PL 唯一接口契约（P 起草，S 已确认）**：udmabuf 帧缓冲分区、输出区布局（候选表 36 B + 状态字 + 邮箱）、按帧触发协议、cache 同步流程、时序预算（5.2 ms/帧 ≈ 11×）。**改动此文件必须双方签字** |
+| **[15-布局失败与LUTRAM减负](docs/15-布局失败与LUTRAM减负.md)** | ⭐⭐⭐ **P 的 PLACE-0021 分析**：根因是 LUTRAM 只能落 SLICEM 列（占用 63.5 % 局部爆），非总面积不足；已删冗余延迟线减负 41 %（798,720→473,824 bit），仿真逐位一致；附 4 条备选降载方案 |
+| **[16-摄像头选型与接入](docs/16-摄像头选型与接入.md)** | ⭐ **已下单 X001（IMX291 + 6mm，¥312）**：完整参数表、**三条强制采集参数**（必须 MJPG / 1280×720 / 关自动曝光）、v4l2+ffmpeg+OpenCV 三种调用方式、视场角与探测距离测算、**YOLO 路径必须 letterbox** 的提醒、到货验证清单 |
 | [weekly/周报-W40](docs/weekly/周报-W40.md) | 本周进度与数据（含真实数据验证）|
 | [report/ 报告生成链](report/README.md) | 作品的报告如何复现（脚本 + 官方模板 + 插图源文件）|
 | [weekly/周报-W40](docs/weekly/周报-W40.md) | 本周进度与数据（含真实数据验证）|

@@ -117,3 +117,45 @@ wire [15:0] d2_old = d1_old * d1_old;
 - "把除法器从 128 个并行降到 2 个（S_POST 逐标签流水），LUT 从 112 K 降到 44 K"。
 - "用平方比较代替开方：`(A·x − S1 − floor·A)² > k²·(A·S2 − S1²)`，5 个乘法器全部落进 DSP"。
 - "布局失败的根因是 LUTRAM 只能落 SLICEM 列，不是总面积不够"——这是很少有人在答辩里讲清楚的细节。
+
+---
+
+## 8. 后续进展（2026-10-25，S 依据 P 提交 `a69adc0` 补记）
+
+> 本节由 S 依据 P 的提交说明与仓库实际文件补记，**未改动上文 P 的原始分析**。
+
+### 8.1 LED 候选数饱和到 7 —— 根因已定位（两处）
+
+P 在 `a69adc0` 中定位到 **`cand_buf` 在 `F_WRITE` 状态被 `chain_rst_n` 误清零**，已修复。
+叠加 `docs/14` §6.1 的时序分析，LED 现象有两层原因：
+
+| 层 | 原因 | 状态 |
+|---|---|---|
+| **① 功能 bug** | `cand_buf`（36 B 候选表）在 `F_WRITE` 被 `chain_rst_n` 误清零 → 候选表数据被破坏 | ✅ **已修复**（仿真 `VERDICT AXI-TOP-OK`，候选表 36 B 与 Python 参考完全一致）|
+| **② 时序风险** | 100 MHz 工作域在已发布位流里**从未被约束、没被分析**；CFAR 改"真实 std"后判决路径是「31 输入加法树 → 11×26 与 18×18 乘法 → 40 bit 比较」单周期组合，很可能远超 10 ns | ⚠️ **未验证**（仓库内 `board_lite.fdc` 仍无 `create_generated_clock`）|
+
+### 8.2 AXI 全链路打通（新增文件）
+
+| 文件 | 作用 |
+|---|---|
+| **`pl/rtl/ip2_pix_fifo.v`**（新增，71 行）| 读主机 → IP2 链的**片内帧缓冲**，深度 `2^18 ≥ 640×360`，保证像素流连续 |
+| `pl/rtl/ip2_axi_top.v`（+67 行）| 改为 `F_RST → F_FILL`（整帧搬入）`→ F_FEED`（连续喂）状态机；修复 `cand_buf` 误清零 |
+| `pl/tb/tb_axi_top.v`（+52 行）| 修复 iverilog `always@(*)` 数组敏感表爆炸（改用 function）|
+| **`pl/tb/tb_board_frames640.v`**（新增，89 行）| 板上整帧用例的 testbench |
+| **`pl/tb/tb_board_pattern640.v`**（新增，88 行）| 板上图案用例的 testbench |
+| **`pl/constr/board_leds.md`**（新增，75 行）| **LED 丝印 ↔ 引脚实测对照**（D18=J1 心跳、D20=M6 bit0、D19=H7 bit1、D21=J8 bit2；高电平点亮）|
+
+**⇒ 仿真结论：`VERDICT AXI-TOP-OK`，候选表 36 B 与 Python 参考完全一致。**
+
+### 8.3 ⚠️ 仓库与本地不一致（需 P 确认）
+
+`docs/14` §6.1 写"`create_generated_clock` 已写进 `pl/constr/board_lite.fdc`"，但 **S 在 2026-10-25 查证**：
+
+```
+pl/constr/board_lite.fdc   4364 B   2026-10-23 10:28:06
+内含时序约束仅 1 条：create_clock -name sys_clk -period 5.000 ... [get_ports {clk_p}]
+无 create_generated_clock / set_input_delay / set_output_delay / set_false_path
+pl/synth/  目录在仓库内不存在
+```
+
+**⇒ P 的改动在本地（`D:\firstharness\synth\`），尚未提交 gitee。请 P 补提交，否则其他人无法复现"带时序约束的位流"。**

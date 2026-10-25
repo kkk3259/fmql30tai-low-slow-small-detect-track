@@ -2,8 +2,8 @@
 
 FPGA 可编程逻辑部分的 Verilog 源码、约束、仿真与综合脚本。
 
-> 更新时间：**2026-10-23**　｜　状态：**IP2 三级流式重构完成，640×360 综合通过（LUT 74%），位流可生成**
-> 报告素材见 [`docs/06-FPGA实现与验证.md`](../docs/06-FPGA实现与验证.md)；进展与卡点见 [`docs/13-PL上板进展与卡点.md`](../docs/13-PL上板进展与卡点.md)
+> 更新时间：**2026-10-25**（S 依据 P 提交 `a69adc0` 补记）　｜　状态：**IP2 三级流式重构完成；综合 71.0%（LUT 55,772 / 78,600）；AXI 全链路仿真打通（`VERDICT AXI-TOP-OK`）；待时序收敛 + 上板验证**
+> 报告素材见 [`docs/06-FPGA实现与验证.md`](../docs/06-FPGA实现与验证.md)；进展与卡点见 [`docs/13-PL上板进展与卡点.md`](../docs/13-PL上板进展与卡点.md)、[`docs/15-布局失败与LUTRAM减负.md`](../docs/15-布局失败与LUTRAM减负.md)
 
 ---
 
@@ -12,12 +12,15 @@ FPGA 可编程逻辑部分的 Verilog 源码、约束、仿真与综合脚本。
 | 项 | 状态 |
 |---|---|
 | IP2 三级（Top-Hat / CFAR / CCL）流式+行缓存重构 | ✅ 完成，与旧版**逐位一致**（共仿真 `VERDICT IDENTICAL`） |
-| 640×360 综合（Procise，JFMQL30TAI676H） | ✅ 通过：LUT 当量 **58,146 / 78,600 = 74.0%**，BRAM 0，DSP 0 |
-| 位流生成 | ✅ `blink_top.bit`(5.98 MB) 已验证可出；`ip2_board_top` 待跑 |
-| 板级自测顶层（不接 PS，自出图案 + LED 指示） | ✅ 写好并仿真通过 |
+| 640×360 综合（Procise，JFMQL30TAI676H） | ✅ 通过：LUT 站点 43,292 + LUTRAM 12,480 = **55,772 / 78,600 = 71.0%**；FF 19,453（12.4%）；**CU48E1（DSP）5 / 400**；块 RAM 0（数据源 `docs/15` §2） |
+| 布局（Place） | 🟡 曾失败 `PLACE-0021 network simplex infeasible`（根因 LUTRAM 压满 SLICEM 列），减负 41% 后待重跑（见 `docs/15`） |
+| 时序（100 MHz 工作域） | ❌ **已发布位流里从未约束、没被分析**；仓库内 `board_lite.fdc` 仍只有 1 条 `create_clock`（见 `docs/14` §5/§6.1） |
+| 位流生成 | ✅ `blink_top.bit` 5.98 MB、`ip2_board_top.bit` 均可出；**板上 LED 候选数饱和到 7（仿真 4）** —— 功能层根因 `cand_buf` 被 `chain_rst_n` 误清零**已修复**，待上板复验 |
+| 板级自测顶层（不接 PS，自出图案 + LED 指示） | ✅ 写好并仿真通过；LED 丝印↔引脚映射见 `constr/board_leds.md`（实测） |
+| **PS↔PL 数据通路（AXI4）** | ✅ **已实现**：`ip2_axi_master_rd/wr.v` + `ip2_axi_top.v` + `ip2_pix_fifo.v`（片内帧缓冲 2^18 ≥ 640×360）；接口契约见 `docs/14` |
+| AXI 全链路仿真 | ✅ **`VERDICT AXI-TOP-OK`**，候选表 36 B 与 Python 参考完全一致（`tb_axi_top.v`） |
 | IP1 预处理 / IP3 NMS / IP4 ROI | ⚠️ 仍是"存全图"版本，**未参与本轮 640 综合、未流式化** |
-| PS↔PL 数据通路（AXI4-Stream / DMA） | ❌ 未做，需要 PS 侧接口约定 |
-| 摄像头接入 | ❌ 未做 |
+| 摄像头接入 | ❌ 未做（本项目不由摄像头直连 PL，图像经 PS 采集后写入 udmabuf，见 `docs/16` §8） |
 
 ---
 
