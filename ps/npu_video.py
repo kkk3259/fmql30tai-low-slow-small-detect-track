@@ -225,20 +225,75 @@ class IcraftBackend:
     ⚠️ 在确认①之前，请用 --dry-run 验证后处理与画图逻辑。
     """
 
-    def __init__(self, json_path, raw_path, device_url=None):
+    def __init__(self, json_path, raw_path, device_url=None,
+                 pyrtutils_dir="/root/pywork"):
         self.json_path = json_path
         self.raw_path = raw_path
         self.device_url = device_url or (
             "axi://zg330aiu?npu=0x40000000&dma=0x80000000")
+        self._pyrtutils_dir = pyrtutils_dir      # 板端 pyrtutils 所在目录
         self._session = None
+        self._network = None
+        self._netinfo = None
+        self._device = None
+        self._numpy2Tensor = None
+        self._xrt = None
+        self._buf_box = None
+        self._buf_cls = None
 
     def open(self):
-        raise NotImplementedError(
-            "NPU 推理后端待接入。请在板上先验证：\n"
-            "  python3 -c \"import icraft; print(icraft.__file__)\"\n"
-            "  python3 -c \"import zg330backend as m; print(dir(m))\"\n"
-            "若可用，在这里初始化 session 并把 below infer() 实现为一次前向；\n"
-            "若不可用，改走 C++（见本类 docstring 的路径②③）。")
+        """
+        初始化 NPU（2026-10-25 板上实测通过）。
+
+        依赖：/root/pywork 下的 pyrtutils（官方 Python 工具包）+ icraft 3.39.0
+        实测全链路见 docs/11 §10.13；视频流水线见 §10.14。
+        """
+        try:
+            if self._pyrtutils_dir not in sys.path:
+                sys.path.insert(0, self._pyrtutils_dir)
+            from modelzoo_utils.pyrtutils import (          # noqa: PLC0415
+                Netinfo, initSession, loadNetwork,
+            )
+            from icraft import xrt                      # noqa: PLC0415
+        except Exception as exc:                        # noqa: BLE001
+            raise RuntimeError(
+                "无法导入 pyrtutils / icraft（当前环境没有板端依赖）。\n"
+                "  依赖目录: %s\n"
+                "  原始异常: %s\n"
+                "  · 若在 PC 上：请用 --dry-run\n"
+                "  · 若在板端：确认 pyrtutils 已上传、icraft 版本与系统库一致（3.39.0）"
+                % (self._pyrtutils_dir, exc)) from exc
+
+        self._xrt = xrt
+
+        self._network = loadNetwork(self.json_path, self.raw_path)
+        self._netinfo = Netinfo(self._network)
+        self._device = xrt.Device.Open(self.device_url)
+        # ★ ocm_option 只能 0/1/2/3/4，传 -1（官方 yaml 写法）会抛异常
+        self._session = initSession(
+            "zg330", self._network, self._device,
+            ocm_option=4,
+            mmuMode=bool(self._netinfo.mmu),
+            open_speedmode=False,
+            open_compressFtmp=False,
+        )
+        # ★ apply() 失败时必须主动释放设备：否则 device 处于半初始化状态，
+        #   后续运行会报 "DMA Read time out"，只能重启板子恢复。
+        try:
+            self._session.enableTimeProfile(True)
+            self._session.apply()
+        except Exception:
+            self.close()
+            raise
+
+        # 预分配输出缓冲（每帧复用）
+        self._buf_box = np.zeros(1 * 64 * 8400 * 4, np.uint8)
+        self._buf_cls = np.zeros(1 * 1 * 8400 * 4, np.uint8)
+
+        # numpy2Tensor 也来自 pyrtutils
+        import modelzoo_utils.pyrtutils as _pyrtutils    # noqa: PLC0415
+        self._numpy2Tensor = _pyrtutils.numpy2Tensor
+        return self
 
     def infer(self, img_rgb_640):
         """
@@ -246,10 +301,35 @@ class IcraftBackend:
         返回：(box_raw, cls_raw) —— (1,64,8400) 和 (1,1,8400) 的 float32
 
         ⚠️ 不要在这里做 /255 归一化：模型已折入量化。
+        ⚠️ forward 之后**必须** device.reset(1)，否则从第二次起返回首次缓存，
+           或直接崩 sync failed in op_id:2018（详见 docs/11 §10.14.3 坑①）。
         """
-        raise NotImplementedError
+        if self._session is None:
+            raise RuntimeError("IcraftBackend 未 open()")
+
+        ten = self._numpy2Tensor(
+            np.ascontiguousarray(img_rgb_640).reshape(1, 640, 640, 3), self._network)
+        out = self._session.forward([ten])
+
+        # ★ 输出 Tensor 不能 np.array()（报 memchunk is of ADDR type），必须 read()
+        out[0].read(memoryview(self._buf_box), 0, self._buf_box.size)
+        out[1].read(memoryview(self._buf_cls), 0, self._buf_cls.size)
+
+        self._device.reset(1)      # ★ 必须
+
+        return (self._buf_box.view(np.float32).copy(),
+                self._buf_cls.view(np.float32).copy())
 
     def close(self):
+        if self._session is not None:
+            try:
+                self._device.reset(1)
+            except Exception:          # noqa: BLE001
+                pass
+            try:
+                self._xrt.Device.Close(self._device)
+            except Exception:          # noqa: BLE001
+                pass
         self._session = None
 
 
@@ -313,8 +393,10 @@ def run(src, out, backend, max_frames=0, show_hud=True):
     n, t_pre, t_inf, t_post = 0, 0.0, 0.0, 0.0
     t_start = time.time()
 
-    backend.open()
+    # ★ backend.open() 必须在 try 内：若 session.apply() 中途抛异常（如 DMA 超时），
+    #   放在外面会导致 finally 不执行 → 设备句柄泄漏 → 下次运行 DMA 通道卡死（需重启板子）。
     try:
+        backend.open()
         while True:
             ok, frame = cap.read()
             if not ok:
@@ -345,7 +427,10 @@ def run(src, out, backend, max_frames=0, show_hud=True):
             if max_frames and n >= max_frames:
                 break
     finally:
-        backend.close()
+        try:
+            backend.close()
+        except Exception as exc:      # noqa: BLE001
+            print("[warn] backend.close() 失败: %s" % exc)
         cap.release()
         writer.release()
 

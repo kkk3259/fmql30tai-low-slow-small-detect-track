@@ -13,7 +13,7 @@ from PIL import Image
 
 ROOT = r"C:\Users\孔令浩1\Desktop\竞赛创新项目\嵌赛"
 SRC_DOCX = r"D:\lowslow\out_report.docx"          # fill_report.py 的输出（含表格、无图）
-IMG_DIR = os.path.join(ROOT, "报告插图")
+IMG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "figs")
 OUT_DOCX = r"D:\lowslow\out_report_img.docx"
 
 FONT = '<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" w:cs="Times New Roman"/>'
@@ -27,10 +27,11 @@ FIGMAP = {
     "图 2": ("图2_硬件系统连接框图.png", "图 2  硬件系统连接框图（FMQL30TAI 异构平台与外围设备）"),
     "图 5": ("图5_软件处理流程图.png", "图 5  软件处理流程（7 个处理环节与 5 个关键数据接口）"),
     "图 6": ("图6_PL检测链路模块框图.png", "图 6  PL 检测链路模块框图（Top-Hat → CFAR → 候选提取）"),
-    "图 9": ("图9_检测与跟踪效果.png", "图 9  软件基线实际运行效果（左：原始图；中：检测/跟踪叠加；右：二值化结果）"),
+    "图 9": ("图9_检测与跟踪效果.png", "图 9  软件基线实际运行效果（真实 720P；左：原始图；中：检测/跟踪叠加；右：二值化结果）"),
+    "图 9b": ("图9b_NPU检测效果.png", "图 9b  NPU（ZG330 + YOLOv11n）检测效果：640×640 端到端推理，检测框经坐标反算回原图"),
     "图 10": ("图10_检出率曲线.png", "图 10  检出率随目标尺寸与对比度变化曲线（合成序列 9 组实测）"),
     "图 11": ("图11_PL仿真波形.png", "图 11  IP2 检测链路仿真波形（Verilog 仿真实测，三级流水线节拍）"),
-    "图 12": ("图12_技术路线图.png", "图 12  系统技术路线（问题定义 → 三层异构架构 → 处理链路 → 关键设计决策与量化边界）"),
+    "图 12": ("图12_技术路线图.png", "图 12  系统技术路线。注：图中「跟踪成功率 98.7%」为合成序列结果，真实 720P 为 97.0%（611/630），以正文为准；「PL 粗筛 + NPU 精判」为分级架构设计目标，当前 NPU 以 640×640 端到端检测承担判别环节，候选 ROI 分类器为后续工作"),
 }
 
 NOPIC = {
@@ -98,7 +99,7 @@ def main():
     sizes, used = {}, set(re.findall(r'Id="([^"]+)"', rels))
     new_rels, new_media, rid_of = [], [], {}
     n = 100
-    for i, key in enumerate(sorted(FIGMAP, key=lambda k: int(re.search(r"\d+", k).group()))):
+    for i, key in enumerate(sorted(FIGMAP, key=lambda k: (int(re.search(r"(\d+)", k).group(1)), re.search(r"(\d+)([a-z]?)", k).group(2)))):
         fn, _ = FIGMAP[key]
         p = os.path.join(IMG_DIR, fn)
         if not os.path.exists(p):
@@ -122,21 +123,23 @@ def main():
     # ---- ② 收集替换任务（字符串级，不重排文档）----
     jobs = []
     P = re.compile(r"<w:p\b(?:(?!<w:p\b).)*?</w:p>", re.S)
-    for key in sorted(FIGMAP, key=lambda k: -int(re.search(r"\d+", k).group())):
-        num = int(re.search(r"\d+", key).group())
-        pat = re.compile(r"^【图\s*%d：" % num)
+    for key in sorted(FIGMAP, key=lambda k: (-int(re.search(r"(\d+)", k).group(1)), re.search(r"(\d+)([a-z]?)", k).group(2))):
+        m_ = re.search(r"(\d+)([a-z]?)", key)
+        num, suf = int(m_.group(1)), m_.group(2)
+        pat = re.compile(r"^【图\s*%d%s：" % (num, suf))
         for m in P.finditer(doc):
             p = m.group(0)
             if pat.match(text_of(p).strip()):
                 rid, target = rid_of[key]
                 _, cx2, cy2 = sizes[key]
-                repl = img_para(rid, cx2, cy2, 500 + num, "rpt%d" % num) + caption_para(FIGMAP[key][1])
+                repl = img_para(rid, cx2, cy2, 500 + num * 2 + (1 if suf else 0), "rpt%d%s" % (num, suf)) + caption_para(FIGMAP[key][1])
                 jobs.append((p, repl, key))
                 print("  OK 插入 %s -> %s" % (key, FIGMAP[key][1][:34]))
                 break
     for key in NOPIC:
-        num = int(re.search(r"\d+", key).group())
-        pat = re.compile(r"^【图\s*%d：" % num)
+        m_ = re.search(r"(\d+)([a-z]?)", key)
+        num, suf = int(m_.group(1)), m_.group(2)
+        pat = re.compile(r"^【图\s*%d%s：" % (num, suf))
         for m in P.finditer(doc):
             p = m.group(0)
             if pat.match(text_of(p).strip()):
