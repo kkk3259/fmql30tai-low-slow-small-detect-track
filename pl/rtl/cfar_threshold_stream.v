@@ -155,20 +155,56 @@ module cfar_threshold_stream #(
     wire [11:0] area_raw = cnt_r * cnt_c;
     wire [A_W-1:0] area_c = (area_raw == 12'd0) ? 11'd1 : area_raw[A_W-1:0];
 
-    // ---- 判决：(x·A - S1 - FLOOR·A)² > K²·(A·S2 - S1²) ----
-    wire [19:0] xa   = {12'd0, x_mid} * area_c;      // x·A       ≤ 245,055
-    wire [19:0] fa   = FLOOR * area_c;               // FLOOR·A   ≤ 2,883
-    wire [19:0] l_bound = {2'd0, ws1} + fa;          // S1 + FLOOR·A
-    wire        l_pos  = (xa > l_bound);             // L > 0
-    wire [19:0] l_mag  = l_pos ? (xa - l_bound) : 20'd0;
-    wire [37:0] l_sq   = l_mag * l_mag;              // L²       ≤ 6.01e10
+    // ---- 判决流水线（4 级；为 100 MHz 时序而拆）----------------------------
+    // 判决式：(x·A - S1 - FLOOR·A)² > K²·(A·S2 - S1²)
+    //   原实现把「31 项加法树 → 乘法 → 减法 → 平方 → 比较」全压在一个时钟里，
+    //   100 MHz（10 ns）绝对不可能收敛（两级 20 位乘法器串联）。
+    //   现拆成 4 级，每级之间一个寄存器：
+    //     L0 组合 : 31 项加法树 → ws1 / ws2（本拍）
+    //     L1 寄存器: ws1²、A·ws2、x·A、FLOOR·A          （每项只是一次乘法）
+    //     L2 寄存器: A·S2−S1²、K²·var（K=4 → 左移 4）、L 与 |L|（只是减法）
+    //     L3 寄存器: detect = (L>0) && (L² > K²·var)     （一次乘法 + 比较）
+    //   x_mid（o_enh）与 out_gate（o_valid）同步延迟 4 拍对齐。
+    reg [WS1_W-1:0] q1_ws1;
+    reg [WS2_W-1:0] q1_ws2;
+    reg [A_W-1:0]   q1_area;
+    reg  [7:0]      q1_x;
+    reg             q1_gate;
 
-    wire [36:0] a_s2   = area_c * ws2;               // A·S2     ≤ 6.01e10
-    wire [35:0] s1_sq  = ws1 * ws1;                  // S1²
-    wire [36:0] var_n  = (a_s2 >= {1'b0, s1_sq}) ? (a_s2 - {1'b0, s1_sq}) : 37'd0;
-    wire [40:0] lim    = var_n * KSQ;                // K²·(A·S2 - S1²)
+    reg [35:0]      q2_s1sq;   // ws1²
+    reg [36:0]      q2_as2;    // A·ws2
+    reg [19:0]      q2_xa;     // x·A
+    reg [19:0]      q2_fa;     // FLOOR·A
+    reg [WS1_W-1:0] q2_ws1;    // 与 q2_xa 对齐的 S1
+    reg  [7:0]      q2_x;
+    reg             q2_gate;
 
-    wire detect = l_pos && ({3'd0, l_sq} > lim);
+    reg [40:0]      q3_lim;    // K²·(A·S2 − S1²)
+    reg [19:0]      q3_lmag;   // |L|
+    reg             q3_lpos;   // L > 0
+    reg  [7:0]      q3_x;
+    reg             q3_gate;
+
+    reg             q4_det;
+    reg  [7:0]      q4_x;
+    reg             q4_gate;
+
+    // L1 组合：乘法
+    wire [35:0] q2_s1sq_w = q1_ws1 * q1_ws1;
+    wire [36:0] q2_as2_w  = q1_area * q1_ws2;
+    wire [19:0] q2_xa_w   = {12'd0, q1_x} * q1_area;
+    wire [19:0] q2_fa_w   = FLOOR * q1_area;
+
+    // L2 组合：减法 / 移位
+    wire [36:0] q3_var_w  = (q2_as2 >= {1'b0, q2_s1sq}) ? (q2_as2 - {1'b0, q2_s1sq}) : 37'd0;
+    wire [40:0] q3_lim_w  = q3_var_w * KSQ;             // K²·var（K=4 → 常数乘法，综合成移位）
+    wire [19:0] q3_lb_w   = {2'd0, q2_ws1} + q2_fa;     // S1 + FLOOR·A
+    wire        q3_lpos_w = (q2_xa > q3_lb_w);
+    wire [19:0] q3_lmag_w = q3_lpos_w ? (q2_xa - q3_lb_w) : 20'd0;
+
+    // L3 组合：平方 + 比较
+    wire [37:0] q4_lsq_w  = q3_lmag * q3_lmag;
+    wire        q4_det_w  = q3_lpos && ({3'd0, q4_lsq_w} > q3_lim);
 
     // 输出位置 u=(row-15,col-15)：row∈[15,H+15)、col∈[15,W+15) 恰好 H×W 个
     wire out_gate = (row >= HALF) && (col >= HALF) &&
@@ -177,6 +213,56 @@ module cfar_threshold_stream #(
     reg [7:0] o_data_r;
     reg [7:0] o_enh_r;
     reg o_valid_r;
+
+    // ---- 判决流水线寄存器：每拍都推进（帧尾把在途结果排空），只在 adv 采新值 ----
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            q1_ws1 <= 0; q1_ws2 <= 0; q1_area <= 0; q1_x <= 0; q1_gate <= 1'b0;
+            q2_s1sq <= 0; q2_as2 <= 0; q2_xa <= 0; q2_fa <= 0;
+            q2_ws1 <= 0; q2_x <= 0; q2_gate <= 1'b0;
+            q3_lim <= 0; q3_lmag <= 0; q3_lpos <= 1'b0; q3_x <= 0; q3_gate <= 1'b0;
+            q4_det <= 1'b0; q4_x <= 0; q4_gate <= 1'b0;
+            o_data_r <= 8'd0; o_enh_r <= 8'd0; o_valid_r <= 1'b0;
+        end else begin
+            if (adv) begin
+                q1_ws1  <= ws1;
+                q1_ws2  <= ws2;
+                q1_area <= area_c;
+                q1_x    <= x_mid;
+                q1_gate <= out_gate;
+            end else begin
+                // 空隙：整组清零（否则 q1 保持旧值，下一拍 q2 会重复采到同一个样本，
+                // 导致流水线错位）
+                q1_ws1  <= 0;
+                q1_ws2  <= 0;
+                q1_area <= 0;
+                q1_x    <= 0;
+                q1_gate <= 1'b0;      // 空隙填 0，保证 o_valid 恰好 H×W 拍
+            end
+
+            q2_s1sq <= q2_s1sq_w;
+            q2_as2  <= q2_as2_w;
+            q2_xa   <= q2_xa_w;
+            q2_fa   <= q2_fa_w;
+            q2_ws1  <= q1_ws1;
+            q2_x    <= q1_x;
+            q2_gate <= q1_gate;
+
+            q3_lim  <= q3_lim_w;
+            q3_lmag <= q3_lmag_w;
+            q3_lpos <= q3_lpos_w;
+            q3_x    <= q2_x;
+            q3_gate <= q2_gate;
+
+            q4_det  <= q4_det_w;
+            q4_x    <= q3_x;
+            q4_gate <= q3_gate;
+
+            o_data_r  <= q4_det ? 8'd255 : 8'd0;
+            o_enh_r   <= q4_x;
+            o_valid_r <= q4_gate;
+        end
+    end
 
     // ---- 环形线写块（独立 always，供综合器推断 RAM）----
     always @(posedge clk or negedge rst_n) begin
@@ -215,9 +301,7 @@ module cfar_threshold_stream #(
         if (!rst_n) begin
             for (i = 0; i < WIN; i = i + 1) begin f1[i] <= 0; f2[i] <= 0; end
             col <= 0; row <= 0; cnt <= 0; state <= S_RUN;
-            o_data_r <= 8'd0; o_enh_r <= 8'd0; o_valid_r <= 1'b0;
         end else begin
-            o_valid_r <= 1'b0;
             if (adv) begin
                 f1[0] <= ncs1;
                 f2[0] <= ncs2;
@@ -227,10 +311,6 @@ module cfar_threshold_stream #(
                     for (i = 1; i < WIN; i = i + 1) begin f1[i] <= f1[i-1]; f2[i] <= f2[i-1]; end
                 end
 
-                o_data_r  <= detect ? 8'd255 : 8'd0;
-                o_enh_r   <= x_mid;
-                o_valid_r <= out_gate;
-
                 if (cnt == N_EXT - 1) state <= S_DONE;
                 else begin
                     cnt <= cnt + 1;
@@ -238,7 +318,6 @@ module cfar_threshold_stream #(
                     else                     col <= col + 1;
                 end
             end
-            if (state == S_DONE) o_valid_r <= 1'b0;
         end
     end
 
