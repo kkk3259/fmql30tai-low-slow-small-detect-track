@@ -193,10 +193,13 @@ module ip2_axi_top #(
     // ------------------------------------------------------------------
     localparam F_IDLE = 3'd0,   // 等 start
                F_RST  = 3'd1,   // 整链复位 32 拍
-               F_FEED = 3'd2,   // 喂 230,400 个像素
-               F_WAIT = 3'd3,   // 等 CCL 吐完 36 字节
-               F_WRITE= 3'd4,   // AXI 写回
-               F_FIN  = 3'd5;
+               F_FILL = 3'd2,   // 读主机把整帧搬进片内帧缓冲（链保持复位）
+               F_FEED = 3'd3,   // 链路连续吃掉整帧（无空拍）
+               F_WAIT = 3'd4,   // 等 CCL 吐完 36 字节
+               F_WRITE= 3'd5,   // AXI 写回
+               F_FIN  = 3'd6;
+
+    localparam AW_F = 18;       // 帧缓冲深度 2^18 = 262144 ≥ 230400
 
     reg [2:0]  fst;
     reg [5:0]  ocount;          // 已收候选表字节数
@@ -224,7 +227,28 @@ module ip2_axi_top #(
     wire        ch_o_valid;
     wire        ch_i_ready;
 
-    assign rd_ready = ch_i_ready;                       // 反压回传到 AXI 读口
+    // ---- 帧缓冲（RD 主机 → IP2 链）----
+    // 必需：IP2 是连续像素流假设，AXI 读主机在 burst 边界/反压恢复处会有
+    // 几拍 valid 空隙，直接用会让 5×5/31×31 窗口几何错位
+    // （实测：像素 9216/9216 全对，候选表却错 3~8 字节）。
+    // 深度取 2^18 = 262144 ≥ 640×360，先整帧装满再让链路连续吃。
+    wire [7:0]   fifo_data;
+    wire         fifo_valid;
+    wire         fifo_full;
+    wire [AW_F:0] fifo_level;
+    // 只有 F_FEED 才允许链路从帧缓冲取数；F_FILL 期间链路在复位，
+    // 若让它出队会把缓冲提前抽干（frame_loaded 永远不满足 → 卡死）。
+    wire         chain_en  = (fst == F_FEED);
+    wire         fifo_pop  = fifo_valid && ch_i_ready && chain_en;
+
+    assign rd_ready = !fifo_full;                       // 只受帧缓冲满反压
+
+    ip2_pix_fifo #(.DEPTH(262144), .AW(AW_F)) u_pixfifo (
+        .clk(clk), .rst_n(rst_n),
+        .wr_en(rd_valid), .wr_data(rd_data), .wr_full(fifo_full),
+        .rd_data(fifo_data), .rd_valid(fifo_valid), .rd_ready(ch_i_ready && chain_en),
+        .level(fifo_level)
+    );
 
     ip2_axi_master_rd #(.FIFO_AW(6), .BURST(32)) u_rd (
         .clk(clk), .rst_n(rst_n),
@@ -242,8 +266,8 @@ module ip2_axi_top #(
 
     ip2_top_stream #(.W(W), .H(H), .MAX_CAND(MAX_CAND)) u_chain (
         .clk(clk), .rst_n(chain_rst_n),
-        .i_data(rd_data),
-        .i_valid(rd_valid && (fst == F_FEED)),
+        .i_data(fifo_data),
+        .i_valid(fifo_valid && chain_en),
         .i_ready(ch_i_ready),
         .o_data(ch_o_data), .o_valid(ch_o_valid), .o_ready(1'b1)
     );
@@ -266,12 +290,18 @@ module ip2_axi_top #(
     assign rd_start = (fst == F_RST) && (rstc == 5'd31);
     assign wr_start = (fst == F_WAIT) && (ocount >= 6'd36) && !wr_busy && !wr_done;
 
+    // 帧缓冲是否已装满（读主机把 NPIX 个像素全部搬进 FIFO/帧缓存）
+    wire frame_loaded = rd_done && (fifo_level >= NPIX[AW_F-1:0]);
+
     // 候选表收集：CCL 在 S_DONE 里 o_valid 一直高，只收前 36 字节
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             ocount   <= 6'd0;
             cand_buf <= 288'd0;
-        end else if (!chain_rst_n) begin
+        end else if (fst == F_RST) begin
+            // 注意：这里只能用 F_RST 清，不能用 !chain_rst_n。
+            // chain_rst_n 在 F_WRITE/F_FIN 也是 0，用它会把刚收好的 36 字节
+            // 在写回之前清掉（表现为候选表全 0、只有状态字正常）。
             ocount   <= 6'd0;
             cand_buf <= 288'd0;
         end else if (ch_o_valid && (ocount < 6'd36)) begin
@@ -280,11 +310,12 @@ module ip2_axi_top #(
         end
     end
 
-    // 已喂像素计数
+    // 已喂像素计数：必须数「链路真正吃进」的像素（FIFO 出队），
+    // 不能数读主机侧的 rd_valid —— 加了 FIFO 之后两者不再等价。
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)               pcount <= 32'd0;
         else if (!chain_rst_n)    pcount <= 32'd0;
-        else if (rd_valid && ch_i_ready) pcount <= pcount + 32'd1;
+        else if (fifo_pop)        pcount <= pcount + 32'd1;
     end
 
     always @(posedge clk or negedge rst_n) begin
@@ -310,10 +341,24 @@ module ip2_axi_top #(
             F_RST: begin
                 done_flag <= 1'b0;
                 if (rstc == 5'd31) begin
-                    fst  <= F_FEED;
+                    fst  <= F_FILL;
                     rstc <= 5'd0;
                 end else begin
                     rstc <= rstc + 5'd1;
+                end
+            end
+            F_FILL: begin
+                // 等读主机把整帧搬进片内帧缓冲（FIFO 深度 = 一帧像素数），
+                // 这样链路开始吃数据后永不出现空拍 —— IP2 的 5×5/31×31
+                // 窗口几何要求连续像素，一个空拍就整帧错位。
+                wdog <= wdog + 32'd1;
+                if (rd_error) err_flag <= 1'b1;
+                if (frame_loaded) begin
+                    fst  <= F_FEED;
+                    wdog <= 32'd0;
+                end else if (wdog > 32'd12_000_000) begin
+                    err_flag <= 1'b1;      // 读帧超时
+                    fst      <= F_FIN;
                 end
             end
             F_FEED: begin

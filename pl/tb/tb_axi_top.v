@@ -130,9 +130,20 @@ module tb_axi_top;
     assign m_rdata   = rd_word;
     assign m_rresp   = 2'b00;
 
-    always @(*) begin
-        for (kk = 0; kk < 8; kk = kk + 1)
-            rd_word[kk*8 +: 8] = mem[rd_base + {8'd0, rd_beat} * 8 + kk[23:0]];
+    // 注意：这里【不能】用 always @(*) + 数组索引。
+    // iverilog 对 always @(*) 里带变量下标的数组读取会把 mem 的
+    // 全部 1310720 个元素都加进敏感表，编译直接卡死（实测 >7 分钟无输出）。
+    // 改用 function + 连续赋值：既是组合逻辑，又不会枚举数组敏感度。
+    function [63:0] mem_word(input [23:0] base, input [7:0] beat);
+        integer t;
+        begin
+            for (t = 0; t < 8; t = t + 1)
+                mem_word[t*8 +: 8] = mem[base + beat * 8 + t[23:0]];
+        end
+    endfunction
+
+    always @(rd_base or rd_beat) begin
+        rd_word <= mem_word(rd_base, rd_beat);
     end
 
     always @(posedge clk or negedge rst_n) begin
@@ -321,5 +332,40 @@ module tb_axi_top;
         #50_000_000;
         $display("RESULT GLOBAL-TIMEOUT");
         $finish;
+    end
+
+    // ------------------------------------------------------------------
+    // 像素流抽查：链路到底吃进了什么（FIFO 出队口）vs 内存原图
+    // ------------------------------------------------------------------
+    integer acnt;
+    integer amis;
+    integer bubbles;
+    initial begin
+        acnt = 0;
+        amis = 0;
+        bubbles = 0;
+        wait (rst_n === 1'b1);
+        forever begin
+            @(posedge clk);
+            // 链路正在喂帧、却拿不到有效像素 → 这个空拍会破坏窗口几何
+            if (dut.fst == 3'd2 && !dut.fifo_valid && acnt < NPIX) bubbles = bubbles + 1;
+            if (dut.fifo_pop) begin
+                if (acnt < 8)
+                    $display("  POP[%0d] got=%02X exp=%02X %s", acnt,
+                             dut.fifo_data,
+                             (acnt < NPIX) ? in_mem[acnt] : 8'h00,
+                             (dut.fifo_data === in_mem[acnt]) ? "ok" : "MISMATCH");
+                if (dut.fifo_data !== in_mem[acnt]) begin
+                    amis = amis + 1;
+                    if (amis <= 8)
+                        $display("  POPMIS idx=%0d got=%02X exp=%02X", acnt,
+                                 dut.fifo_data, in_mem[acnt]);
+                end
+                acnt = acnt + 1;
+                if (acnt == NPIX)
+                    $display("  === 链路吃进: %0d 个, 不一致 %0d 个, 中途空拍 %0d 次 ===",
+                             acnt, amis, bubbles);
+            end
+        end
     end
 endmodule
