@@ -115,16 +115,123 @@ def start_server(port):
 
 
 # ---------------------------------------------------------------- 相机 / 回放
-def open_camera(idx, width, height):
-    cap = cv2.VideoCapture(idx)
-    if not cap.isOpened():
-        cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
-    if not cap.isOpened():
+# 取流策略（按 S 在板上实测的结论定制）：
+#   OpenCV 解一帧 720P MJPG 要 60.7 ms（只剩 16.5 fps），而同一条流用 ffmpeg
+#   解能到 30 fps。我们只要 640×360 灰度，所以最省的是让 UVC 直接吐 YUYV：
+#   原生 YUYV 640×360 采集 + 灰度化约 2~3 ms，完全不需要解码。
+#   阶梯：YUYV@目标尺寸 → MJPG@目标尺寸 → MJPG@1280x720(缩放) → ffmpeg 管道
+class CameraSource(object):
+    def __init__(self, idx, width, height, fourcc="auto", fps=30):
+        self.cap = None
+        self.ff = None
+        self.info = ""
+        self._open(idx, width, height, fourcc, fps)
+
+    def _try_cv2(self, idx, w, h, cc):
+        for backend in (cv2.CAP_V4L2, cv2.CAP_ANY):
+            cap = cv2.VideoCapture(idx, backend)
+            if not cap.isOpened():
+                continue
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*cc))
+            cap.set(cv2.CAP_PROP_FPS, 30)
+            try:
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)      # 只留最新帧，降延迟
+            except Exception:
+                pass
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                gw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or w
+                gh = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or h
+                self.info = "%s %dx%d" % (cc, gw, gh)
+                return cap
+            cap.release()
         return None
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))   # 多数 UVC 上更省带宽
-    return cap
+
+    def _open(self, idx, w, h, fourcc, fps):
+        if fourcc and fourcc.upper() != "AUTO":
+            order = [(w, h, fourcc.upper())]
+        else:
+            order = [(w, h, "YUYV"), (w, h, "MJPG"), (1280, 720, "MJPG")]
+        for (ww, hh, cc) in order:
+            cap = self._try_cv2(idx, ww, hh, cc)
+            if cap is not None:
+                self.cap = cap
+                print("[demo] 相机(cv2) %s" % self.info)
+                return
+        for (ww, hh) in [(w, h), (1280, 720)]:
+            obj = _open_ffmpeg(idx, ww, hh, fps)
+            if obj is not None:
+                self.ff = obj
+                self.info = "ffmpeg mjpeg %dx%d" % (ww, hh)
+                print("[demo] 相机(ffmpeg) %s" % self.info)
+                return
+        raise RuntimeError("相机打不开：cv2 与 ffmpeg 都失败（ls /dev/video* 看看）")
+
+    def read_gray(self):
+        """返回 640×360 uint8 灰度；失败返回 None。"""
+        if self.cap is not None:
+            ok, frame = self.cap.read()
+            if not ok or frame is None:
+                return None
+            g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        elif self.ff is not None:
+            g = self.ff.read_gray()
+            if g is None:
+                return None
+        else:
+            return None
+        if g.shape[1] != W or g.shape[0] != H:
+            g = cv2.resize(g, (W, H), interpolation=cv2.INTER_AREA)
+        return np.ascontiguousarray(g, dtype=np.uint8)
+
+    def release(self):
+        if self.cap is not None:
+            self.cap.release()
+        if self.ff is not None:
+            self.ff.release()
+
+
+class _FfmpegPipe(object):
+    """ffmpeg 把 /dev/videoN 的 MJPG 解成 gray rawvideo 走管道读。"""
+
+    def __init__(self, idx, w, h, fps):
+        import subprocess
+        self.w, self.h = w, h
+        self.size = w * h
+        cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error",
+               "-f", "v4l2", "-input_format", "mjpeg",
+               "-video_size", "%dx%d" % (w, h), "-framerate", str(fps),
+               "-i", "/dev/video%d" % idx,
+               "-pix_fmt", "gray", "-f", "rawvideo", "-"]
+        self.p = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=self.size)
+
+    def read_gray(self):
+        buf = self.p.stdout.read(self.size)
+        if not buf or len(buf) < self.size:
+            return None
+        return np.frombuffer(buf, dtype=np.uint8).reshape(self.h, self.w).copy()
+
+    def release(self):
+        try:
+            self.p.kill()
+        except Exception:
+            pass
+
+
+def _open_ffmpeg(idx, w, h, fps):
+    import shutil
+    if shutil.which("ffmpeg") is None:
+        return None
+    try:
+        obj = _FfmpegPipe(idx, w, h, fps)
+    except Exception:
+        return None
+    if obj.read_gray() is None:
+        obj.release()
+        return None
+    return obj
 
 
 def load_replay(directory):
@@ -159,8 +266,11 @@ def draw_overlay(bgr, cands, stat, src_size):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--camera", type=int, default=0)
-    ap.add_argument("--width", type=int, default=1280)
-    ap.add_argument("--height", type=int, default=720)
+    ap.add_argument("--width", type=int, default=640, help="向相机请求的宽度（我们只要 640×360）")
+    ap.add_argument("--height", type=int, default=360, help="向相机请求的高度")
+    ap.add_argument("--fps", type=int, default=30)
+    ap.add_argument("--fourcc", default="auto",
+                    help="auto（默认：YUYV→MJPG→ffmpeg）/ YUYV / MJPG")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--no-pl", action="store_true", help="不接 PL，只看相机")
     ap.add_argument("--replay", default=None, help="不用相机，循环读这个目录里的图")
@@ -187,7 +297,7 @@ def main():
             mode = "camera only"
 
     # ---- 图像源
-    cap = None
+    src = None
     frames = []
     if args.replay:
         frames = load_replay(args.replay)
@@ -197,11 +307,12 @@ def main():
         print("[demo] 回放 %d 张图: %s" % (len(frames), args.replay))
         mode = mode + "+replay"
     else:
-        cap = open_camera(args.camera, args.width, args.height)
-        if cap is None:
-            print("[demo] ✗ 打不开相机 %d（USB 插好了吗？ls /dev/video*）" % args.camera)
+        try:
+            src = CameraSource(args.camera, args.width, args.height,
+                               args.fourcc, args.fps)
+        except Exception as e:
+            print("[demo] ✗ 打不开相机 %d：%s" % (args.camera, e))
             return 2
-        print("[demo] 相机 %d 打开: %dx%d" % (args.camera, args.width, args.height))
 
     srv = start_server(args.port)
     print("[demo] 服务已起：请在笔记本浏览器打开  http://<板子IP>:%d" % args.port)
@@ -218,16 +329,16 @@ def main():
                     k += 1
                     continue
                 time.sleep(1.0 / 30)
+                gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+                gray = cv2.resize(gray, (W, H), interpolation=cv2.INTER_AREA)
+                gray = np.ascontiguousarray(gray, dtype=np.uint8)
             else:
-                ok, bgr = cap.read()
-                if not ok:
+                gray = src.read_gray()
+                if gray is None:
                     print("[demo] ⚠ 读相机失败，重试")
                     time.sleep(0.05)
                     continue
-
-            gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-            gray = cv2.resize(gray, (W, H), interpolation=cv2.INTER_AREA)
-            gray = np.ascontiguousarray(gray, dtype=np.uint8)
+            bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)   # 只为画彩色框
 
             cands, ms = [], 0.0
             if pl is not None:
@@ -257,8 +368,8 @@ def main():
     except KeyboardInterrupt:
         print("\n[demo] 退出")
     finally:
-        if cap is not None:
-            cap.release()
+        if src is not None:
+            src.release()
         if pl is not None:
             pl.close()
         srv.shutdown()
