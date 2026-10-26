@@ -33,9 +33,9 @@ module candidate_extract_stream #(
     localparam CH = $clog2(H + 1);
     localparam LW = $clog2(MAX_COMP + 1);   // 标签位宽（0=背景）
 
-    // 当前行 / 上一行标签（行奇偶双缓冲，避免整行拷贝）
-    reg [LW-1:0] lbl_even [0:W-1];
-    reg [LW-1:0] lbl_odd  [0:W-1];
+    // 行标签缓存见下方 lbl_ram（1 写 2 读的双口 RAM）。
+    // 原实现是 lbl_even/lbl_odd 两个 W 项寄存器数组 + 三个 W:1 组合 mux，
+    // 实测吃掉约 2.6 万 LUT（占整设计 60%），是布局失败的直接原因。
 
     reg [LW-1:0] left_lbl;               // 左邻居标签
     reg [LW-1:0] n_lbl;                  // 已用标签数（0 基，标签 = n_lbl+1）
@@ -56,6 +56,18 @@ module candidate_extract_stream #(
     reg [CH-1:0] row;
     reg [6:0] mk;                  // S_MERGE 标签游标
     reg [6:0] pi;                  // S_POST 标签游标
+
+    // ---- S_POST 串行除法器（每拍 1 位移位相减）----
+    // 【2026-10-26 重写】原写法 `cx[pi] <= (csumx[pi]+carea[pi]/2)/carea[pi]`
+    //   是单周期 16/8 位变量除法，综合出 104 级逻辑、-12.2ns（50MHz 下过不去）。
+    //   改成串行：每个标签算 cx 17 拍 + cy 17 拍，64 个标签 ≈ 2400 拍
+    //   （50MHz 下 48us，相对一帧 23 万拍可忽略）。
+    //   dv_step: 0=装载cx 1..17=迭代cx 18=写cx/装载cy 19..35=迭代cy 36=写cy
+    reg [5:0]  dv_step;
+    reg [18:0] dv_rem;
+    reg [16:0] dv_num;             // 被除数（csum + 面积/2，最大 127800+100 < 2^17）
+    reg [16:0] dv_q;
+    reg [7:0]  dv_div;
     reg [2:0] state;
     localparam S_RUN = 0, S_MERGE = 1, S_POST = 2, S_SORT = 3, S_OUT = 4, S_DONE = 5;
 
@@ -63,9 +75,25 @@ module candidate_extract_stream #(
 
     // ---- 因果邻居标签（8 连通：左上、上、右上、左）----
     wire par = row[0];
-    wire [LW-1:0] prev_ul = (col > 0)     ? (par ? lbl_even[col - 1] : lbl_odd[col - 1]) : {LW{1'b0}};
-    wire [LW-1:0] prev_t  =                   (par ? lbl_even[col]     : lbl_odd[col]);
-    wire [LW-1:0] prev_ur = (col < W - 1) ? (par ? lbl_even[col + 1] : lbl_odd[col + 1]) : {LW{1'b0}};
+
+    // ---- 行标签缓存：1 写 2 异步读的 LUTRAM，两块 bank 按行奇偶分 ----
+    //   写地址 {bank, col}（本行，同步写）；读地址 {~bank, col}/{ ~bank, col+1}（上一行，异步读）
+    //   用动态读写才能被推成 RAM；写成寄存器数组的话读口会变成 W:1 大 mux。
+    localparam AW = $clog2(2 * W);
+    localparam [AW-1:0] W_AW = W;
+    reg [LW-1:0] lbl_ram [0:2*W-1];
+    reg [LW-1:0] prev_t_d;                     // prev_t 打一拍 = prev_ul
+
+    wire [CW-1:0] col_r    = (col == W - 1) ? col : (col + 1'b1);
+    wire [AW-1:0] wr_addr  = (par     ? W_AW : {AW{1'b0}}) + {{(AW-CW){1'b0}}, col};
+    wire [AW-1:0] rd_addr_t = ((~par) ? W_AW : {AW{1'b0}}) + {{(AW-CW){1'b0}}, col};
+    wire [AW-1:0] rd_addr_r = ((~par) ? W_AW : {AW{1'b0}}) + {{(AW-CW){1'b0}}, col_r};
+
+    // 第 0 行没有“上一行”，把读口整体屏蔽为 0（RAM 本身不复位，靠这个门控避免读 X）
+    wire row_has_prev = (row != 0);
+    wire [LW-1:0] prev_ul = (row_has_prev && col > 0)     ? prev_t_d : {LW{1'b0}};
+    wire [LW-1:0] prev_t  = row_has_prev                  ? lbl_ram[rd_addr_t] : {LW{1'b0}};
+    wire [LW-1:0] prev_ur = (row_has_prev && col < W - 1) ? lbl_ram[rd_addr_r] : {LW{1'b0}};
     wire [LW-1:0] nb_l    = left_lbl;
 
     function [LW-1:0] min4;
@@ -81,32 +109,39 @@ module candidate_extract_stream #(
         end
     endfunction
 
-    function [LW-1:0] find_root;
-        input [LW-1:0] l;
-        reg [LW-1:0] x;
-        integer k;
-        begin
-            x = l;
-            if (x != 0 && x <= MAX_COMP) begin
-                for (k = 0; k < MAX_COMP; k = k + 1) begin
-                    if (parent[x-1] != 0 && parent[x-1] != x && parent[x-1] <= MAX_COMP)
-                        x = parent[x-1];
-                end
-            end
-            find_root = x;
-        end
-    endfunction
-
     wire [LW-1:0] min_nb = min4(prev_ul, prev_t, prev_ur, nb_l);
     // 本像素被赋的标签
     wire [LW-1:0] new_lbl    = (min_nb != {LW{1'b0}}) ? min_nb
                              : ((n_lbl < MAX_COMP - 1) ? n_lbl + 1'b1 : {LW{1'b0}});
     wire [LW-1:0] assign_lbl = i_bin ? new_lbl : {LW{1'b0}};
 
-    // S_MERGE：标签 mk+1 的根
-    wire [LW-1:0] mk_lbl   = mk[LW-1:0] + 1'b1;
-    wire [LW-1:0] mk_root  = (mk < MAX_COMP) ? find_root(mk_lbl) : {LW{1'b0}};
-    wire          mk_child = (mk < MAX_COMP) && (mk_root != mk_lbl) && (carea[mk] != 0);
+    // ------------------------------------------------------------------
+    // S_MERGE：把每个标签的累加量并入父标签
+    //
+    // 【2026-10-26 重写】原实现用 find_root() 在单拍内展开最多 MAX_COMP(64)
+    //   次父指针遍历，综合后是一条 391 级逻辑、-225.8ns 的组合长路径
+    //   （最优路径：parent_reg[34][2]/CK -> carea[28]_reg[12]/CE）。
+    //
+    //   新实现利用并查集的不变式：parent[x] < x（并时总指向 min_nb，且
+    //   当 min_nb == x 时不写），所以按标签号【从大到小】处理时，每个
+    //   标签的子孙都已处理完毕，直接把它的总量并给父标签即可，父标签
+    //   在更晚的拍被处理，最终所有量必然汇聚到根上。
+    //   每拍只做一次 64:1 查表 + 加法，逻辑深度降到几级。
+    //   mk 仍从 0 升序计数，用 mg_idx = (MAX_COMP-1) - mk 取实际标签索引。
+    // ------------------------------------------------------------------
+    wire [6:0]    mg_idx   = (MAX_COMP - 1) - mk;        // 实际处理的标签索引（降序）
+    wire [LW-1:0] mg_lbl   = mg_idx[LW-1:0] + 1'b1;      // 标签号 1..MAX_COMP
+    wire [LW-1:0] mg_par   = parent[mg_idx];
+    wire          mg_child = (mg_par != mg_lbl) && (mg_par != {LW{1'b0}}) && (carea[mg_idx] != 0);
+
+    // ---- S_POST 串行除法器组合部分 ----
+    wire [18:0] dv_rem_sh = {dv_rem[17:0], dv_num[16]};
+    wire        dv_ge     = (dv_rem_sh >= {11'd0, dv_div});
+    wire [18:0] dv_rem_nx = dv_ge ? (dv_rem_sh - {11'd0, dv_div}) : dv_rem_sh;
+    // 被除数 = 累加和 + 面积/2（四舍五入），源数据同拍组合
+    wire [16:0] dv_num_x  = {1'b0, csumx[pi]} + {11'd0, carea[pi][7:0]} / 2;
+    wire [16:0] dv_num_y  = {1'b0, csumy[pi]} + {11'd0, carea[pi][7:0]} / 2;
+    wire [7:0]  dv_div_w  = (carea[pi][7:0] == 8'd0) ? 8'd1 : carea[pi][7:0];
 
     // 输出字段选择（36 字节：n_cand + 5×(x_hi,x_lo,y_hi,y_lo,area_hi,area_lo,peak)）
     wire [5:0] out_idx = cnt[5:0];
@@ -151,15 +186,22 @@ module candidate_extract_stream #(
     reg [7:0] o_data_r;
     reg o_valid_r;
 
+    // ---- 行标签 RAM 的写口：必须是独立 always 块（写进状态机 case 里 Procise 就不认 RAM）----
+    always @(posedge clk) begin
+        if (state == S_RUN && i_bin_valid)
+            lbl_ram[wr_addr] <= assign_lbl;
+    end
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (i = 0; i < W; i = i + 1) begin lbl_even[i] <= 0; lbl_odd[i] <= 0; end
+            prev_t_d <= 0;
             for (i = 0; i < MAX_COMP; i = i + 1) begin
                 parent[i] <= i + 1; carea[i] <= 0; csumx[i] <= 0; csumy[i] <= 0; cpeak[i] <= 0;
                 cx[i] <= 0; cy[i] <= 0;
             end
             left_lbl <= 0; n_lbl <= 0; n_comp <= 0;
             col <= 0; row <= 0; cnt <= 0; px_cnt <= 0; mk <= 0; pi <= 0;
+            dv_step <= 0; dv_rem <= 0; dv_num <= 0; dv_q <= 0; dv_div <= 8'd1;
             state <= S_RUN;
             o_data_r <= 0; o_valid_r <= 0;
         end else begin
@@ -167,10 +209,9 @@ module candidate_extract_stream #(
             case (state)
             S_RUN: begin
                 if (i_bin_valid) begin
-                    // 1) 行缓存写标签
-                    if (par) lbl_odd[col] <= assign_lbl;
-                    else     lbl_even[col] <= assign_lbl;
+                    // 1) 行缓存写标签（写口在下面独立的 always 块里，否则推不成 RAM）
                     left_lbl <= assign_lbl;
+                    prev_t_d <= prev_t;              // 供下一列作 prev_ul
 
                     // 2) 标签管理与 union
                     if (i_bin && assign_lbl != 0) begin
@@ -200,34 +241,65 @@ module candidate_extract_stream #(
                 end
             end
             S_MERGE: begin
-                // 把子标签的累加量并入根标签（根标签编号恒小于子标签，故按升序处理一次即可）
-                if (mk_child) begin
-                    carea[mk_root-1] <= carea[mk_root-1] + carea[mk];
-                    csumx[mk_root-1] <= csumx[mk_root-1] + csumx[mk];
-                    csumy[mk_root-1] <= csumy[mk_root-1] + csumy[mk];
-                    if (cpeak[mk] > cpeak[mk_root-1]) cpeak[mk_root-1] <= cpeak[mk];
-                    carea[mk] <= 0; csumx[mk] <= 0; csumy[mk] <= 0; cpeak[mk] <= 0;
+                // 把子标签的累加量并入【父标签】（父标签编号恒小于子标签；
+                // 本拍处理的是降序索引 mg_idx，故子孙已先行并入，量会逐级汇聚到根）
+                if (mg_child) begin
+                    carea[mg_par-1] <= carea[mg_par-1] + carea[mg_idx];
+                    csumx[mg_par-1] <= csumx[mg_par-1] + csumx[mg_idx];
+                    csumy[mg_par-1] <= csumy[mg_par-1] + csumy[mg_idx];
+                    if (cpeak[mg_idx] > cpeak[mg_par-1]) cpeak[mg_par-1] <= cpeak[mg_idx];
+                    carea[mg_idx] <= 0; csumx[mg_idx] <= 0; csumy[mg_idx] <= 0; cpeak[mg_idx] <= 0;
                 end
                 if (mk >= MAX_COMP - 1) begin
-                    state <= S_POST; pi <= 0;
+                    state <= S_POST; pi <= 0; dv_step <= 0;
                 end else mk <= mk + 7'd1;
             end
             S_POST: begin
-                // 与旧版 S_ACCUM 尾部一致：有效组件算重心，无效组件清零（peak 清 0 让排序落到底部）
-                // 【面积优化】改成每拍处理 1 个标签（pi 游标），全模块只保留 2 个除法器。
-                //   原来 for 循环在一个周期内展开 MAX_COMP 份除法器，是综合后 LUT 的主因。
-                if (pi == 0) n_comp <= n_comp_c;
-                if (carea[pi] >= MIN_AREA && carea[pi] <= MAX_AREA) begin
-                    cx[pi] <= (csumx[pi] + carea[pi]/16'd2) / carea[pi];
-                    cy[pi] <= (csumy[pi] + carea[pi]/16'd2) / carea[pi];
-                end else begin
-                    cx[pi] <= 0; cy[pi] <= 0; cpeak[pi] <= 0;
+                // 有效组件算重心（整数除法，四舍五入），无效组件清零
+                // （peak 清 0 使其在排序中落到底部）。
+                // 【2026-10-26】除法改成串行移位相减，避免单周期 104 级组合逻辑。
+                case (dv_step)
+                6'd0: begin
+                    if (pi == 0) n_comp <= n_comp_c;
+                    if (carea[pi] >= MIN_AREA && carea[pi] <= MAX_AREA) begin
+                        dv_div  <= dv_div_w;
+                        dv_num  <= dv_num_x;
+                        dv_rem  <= 19'd0;
+                        dv_q    <= 17'd0;
+                        dv_step <= 6'd1;
+                    end else begin
+                        cx[pi] <= 16'd0; cy[pi] <= 16'd0; cpeak[pi] <= 8'd0;
+                        if (pi >= MAX_COMP - 1) begin
+                            state <= S_SORT; si <= 0; sort_phase <= 0;
+                        end else begin
+                            pi <= pi + 7'd1;
+                        end
+                    end
                 end
-                if (pi >= MAX_COMP - 1) begin
-                    state <= S_SORT; si <= 0; sort_phase <= 0;
-                end else begin
-                    pi <= pi + 7'd1;
+                6'd18: begin
+                    cx[pi]  <= dv_q[15:0];
+                    dv_num  <= dv_num_y;
+                    dv_rem  <= 19'd0;
+                    dv_q    <= 17'd0;
+                    dv_step <= 6'd19;
                 end
+                6'd36: begin
+                    cy[pi]  <= dv_q[15:0];
+                    dv_step <= 6'd0;
+                    if (pi >= MAX_COMP - 1) begin
+                        state <= S_SORT; si <= 0; sort_phase <= 0;
+                    end else begin
+                        pi <= pi + 7'd1;
+                    end
+                end
+                default: begin
+                    dv_rem  <= dv_rem_nx;
+                    dv_q    <= {dv_q[15:0], dv_ge};
+                    dv_num  <= {dv_num[15:0], 1'b0};
+                    dv_step <= (dv_step == 6'd17) ? 6'd18
+                             : ((dv_step == 6'd35) ? 6'd36 : (dv_step + 6'd1));
+                end
+                endcase
             end
             S_SORT: begin
                 if (sort_phase == 2'd0) begin
