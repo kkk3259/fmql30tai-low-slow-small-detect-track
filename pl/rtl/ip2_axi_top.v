@@ -114,10 +114,11 @@ module ip2_axi_top #(
             result_addr <= DEF_RESULT_ADDR;
             frame_id    <= 16'd0;
             start_r     <= 1'b0;
-            done_flag   <= 1'b0;
-            err_flag    <= 1'b0;
-            n_cand_r    <= 8'd0;
-            frm_cnt     <= 8'd0;
+            // 注意：done_flag / err_flag / n_cand_r / frm_cnt 的驱动
+            // 统一放在下面的帧状态机块里，本块不再复位它们。
+            // （原先两处都复位 → Vivado 报 CRITICAL WARNING [Synth 8-3352]
+            //   multi-driven net，n_cand_r 的位还被当成常量 GND，STATUS
+            //   里读出来的候选数可能是 0。）
             aw_got      <= 1'b0;
             w_got       <= 1'b0;
             bvalid_r    <= 1'b0;
