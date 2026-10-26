@@ -15,11 +15,13 @@ PS ↔ PL 通信模块（pl_link.py）
     0x31000000 ~ 0x310FFFFF    1 MiB  输出区（候选表 + 状态字）
     0x31100000 ~ 0x380FFFFF  111 MiB  备用
 
-⚠️ 两处待 P 确认（见 TODO），其余按 docs/14 实现。
+✅ P 已确认（2026-10-26）：寄存器基址 = 0xA0000000（挂 PS 的 M_AXI_GP1），
+   访问方式 = /dev/mem + mmap；`trigger()` 会写 CTRL.bit0=1 启动一帧，
+   `version()` / `status()` 可用于上板首测。其余按 docs/14 v0.2 实现。
 
 用法：
     from pl_link import PlLink
-    pl = PlLink(reg_base=0x80000000)          # TODO: 基地址待 P 确认
+    pl = PlLink(reg_base=REG_BASE)          # 0xA0000000，挂 PS 的 M_AXI_GP1（P 已确认）
     pl.put_frame(0, gray640x360)
     pl.trigger(frame_id=0, frame_addr=0x30100000, result_addr=0x31000000)
     cands = pl.wait_done()
@@ -48,11 +50,22 @@ CAND_STRIDE = 7                  # x(2) + y(2) + 保留(1) + area(1) + peak(1)
 STATUS_DONE = 0x80000000         # bit31
 STATUS_ERROR = 0x40000000        # bit30
 
-# ---------------------------------------------------------------- 寄存器偏移
-# TODO(P): AXI4-Lite 寄存器组的**基地址**待确认，且**绝不能落在 0x40000000 段**
-#          （该段 0x40000000~0x400000E3 是 AI_Mate 的寄存器窗口，已实测占用）
-#          建议挂 M_AXI_GP1（0x80000000 段）或在 Procise 里显式分配安全区间。
+# ---------------------------------------------------------------- 寄存器基址
+# P 已确认（2026-10-26）：寄存器组基址 = 0xA0000000，由 Vivado BD 挂在 **M_AXI_GP1** 上。
+#   原因：Zynq-7000 的 PS 主口地址窗口是硬件固定的——
+#         M_AXI_GP0 -> 0x4000_0000 ~ 0x7FFF_FFFF（0x40000000 正是 AI_Mate 的寄存器窗口）
+#         M_AXI_GP1 -> 0x8000_0000 ~ 0xBFFF_FFFF（0xA0000000 落在这段）
+#   我们自己的位流里没有 AI_Mate，所以 0x80000000（AI_Mate DMA 窗口）与
+#   0xA0000000（我们的寄存器）都在 GP1 段内、互不重叠。
+#   不要把基址改回 0x40000000 或 0x80000000。
+REG_BASE = 0xA0000000
+REG_WINDOW = 0x1000              # mmap 4 KiB（寄存器只用到 0x00~0x17）
+
 # 以下是 P 在 pl/rtl/ip2_axi_top.v 里实现的**偏移**（注释原文摘录）：
+REG_CTRL = 0x00                  # W  bit0 = start（写 1 启动一帧，自清）
+REG_STATUS = 0x0C                # R  bit0 busy / bit1 done / bit2 error /
+                                 #    [15:8] n_cand / [23:16] 已完成帧计数
+REG_VERSION = 0x14               # R  0x0001_0000
 REG_FRAME_ADDR = 0x04            # W  输入帧物理地址（默认 0x30100000）
 REG_RESULT_ADDR = 0x08           # W  输出区物理地址（默认 0x31000000）
 REG_FRAME_ID = 0x10              # W  帧号（低 16 位）
@@ -61,25 +74,43 @@ REG_FRAME_ID = 0x10              # W  帧号（低 16 位）
 class PlLink:
     """PS 侧 PL 通信封装。只负责搬运与同步，不涉及算法。"""
 
-    def __init__(self, reg_base):
+    def __init__(self, reg_base=REG_BASE):
         """
         参数：
-            reg_base: AXI4-Lite 寄存器组物理基地址（待 P 确认，见文件头 TODO）
+            reg_base: AXI4-Lite 寄存器组物理基地址，默认 0xA0000000（P 已确认）
         """
         self.reg_base = reg_base
         self._fd = None
         self._buf = None
         self._mem = None
+        self._reg_fd = None
+        self._reg_buf = None
         self.last_trigger_id = None
 
     # ------------------------------------------------------------ 生命周期
     def open(self):
-        """打开 udmabuf 并映射全部 128 MiB。"""
+        """打开 udmabuf（映射 128 MiB）+ 映射寄存器窗口（4 KiB，/dev/mem）。"""
         self._fd = os.open(UDMABUF_DEV, os.O_RDWR | os.O_SYNC)
         self._buf = mmap.mmap(self._fd, 0)
+
+        # 寄存器窗口：PL 的 AXI 从口不是 RAM，/dev/mem 直接映射即可
+        # （若内核开了 CONFIG_STRICT_DEVMEM，非 RAM 区域仍允许访问；真被拦时
+        #   open 会 EPERM，此时改用 /dev/uioN，见文档 §7 风险表）
+        if self.reg_base:
+            self._reg_fd = os.open("/dev/mem", os.O_RDWR | os.O_SYNC)
+            self._reg_buf = mmap.mmap(self._reg_fd, REG_WINDOW,
+                                      mmap.MAP_SHARED,
+                                      mmap.PROT_READ | mmap.PROT_WRITE,
+                                      offset=self.reg_base)
         return self
 
     def close(self):
+        if self._reg_buf is not None:
+            self._reg_buf.close()
+            self._reg_buf = None
+        if self._reg_fd is not None:
+            os.close(self._reg_fd)
+            self._reg_fd = None
         if self._buf is not None:
             self._buf.close()
             self._buf = None
@@ -154,6 +185,8 @@ class PlLink:
         self._reg_write(REG_FRAME_ADDR, frame_addr)
         self._reg_write(REG_RESULT_ADDR, result_addr)
         self._reg_write(REG_FRAME_ID, frame_id & 0xFFFFFFFF)
+        # docs/14 v0.2：写 CTRL.bit0 = 1 启动一帧（PL 侧自清）
+        self._reg_write(REG_CTRL, 1)
         self.last_trigger_id = frame_id
 
     # ------------------------------------------------------------ 等结果
@@ -194,19 +227,28 @@ class PlLink:
     # ------------------------------------------------------------ 寄存器访问
     def _reg_write(self, offset, value):
         """
-        写 AXI4-Lite 寄存器。
+        写 AXI4-Lite 寄存器（/dev/mem + mmap，P 已确认走这条路）。
 
-        TODO(P): 基地址与访问方式待确认，两种可能：
-          ① /dev/mem 映射（内核未开 CONFIG_STRICT_DEVMEM 对 PL 段的限制时可读写）
-          ② UIO 设备节点（/dev/uioN，需要设备树里有对应节点）
-
-        实现时把下面的 NotImplementedError 换成真实访问即可，
-        其余逻辑（udmabuf 搬运、cache 同步、候选表解析）不用改。
+        基地址 0xA0000000 由 Vivado BD 挂在 PS 的 M_AXI_GP1 上；
+        PL 的 AXI 从口不是 RAM 区，/dev/mem 可以直接映射。
         """
-        raise NotImplementedError(
-            "AXI4-Lite 寄存器访问待实现：reg_base=0x%08X offset=0x%02X "
-            "（等 P 确认基地址与访问方式：/dev/mem 还是 /dev/uioN）"
-            % (self.reg_base, offset))
+        if self._reg_buf is None:
+            raise RuntimeError("寄存器窗口未映射：请先 open()（或检查 /dev/mem 权限）")
+        self._reg_buf[offset:offset + 4] = struct.pack("<I", value & 0xFFFFFFFF)
+
+    def _reg_read(self, offset):
+        """读 AXI4-Lite 寄存器。"""
+        if self._reg_buf is None:
+            raise RuntimeError("寄存器窗口未映射：请先 open()（或检查 /dev/mem 权限）")
+        return struct.unpack_from("<I", self._reg_buf, offset)[0]
+
+    def version(self):
+        """读 VERSION 寄存器，正常应为 0x00010000（用于确认 PL 已加载、地址通）。"""
+        return self._reg_read(REG_VERSION)
+
+    def status(self):
+        """读 STATUS 寄存器：bit0 busy / bit1 done / bit2 error / [15:8] n_cand。"""
+        return self._reg_read(REG_STATUS)
 
 
 # ---------------------------------------------------------------- 自检
