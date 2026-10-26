@@ -27,12 +27,18 @@ def main():
     tree = ET.parse(SRC)
     root = tree.getroot()
     params = []
+    skipped_empty = []
     for p in root.iter("PARAMETER"):
         name = p.get("NAME", "")
         val = p.get("VALUE", "")
         if not name.startswith("PCW_"):
             continue
-        # PROTOCOL / 端口使能之类的 <BUSINTERFACE> 不在这里，PARAMETER 里都是普通配置
+        # 空值不能写进 Vivado：像 PCW_CAN0_PERIPHERAL_FREQMHZ 这种浮点参数
+        # 传 '' 会直接 ERROR [IP_Flow 19-3452] Invalid long/float value ''。
+        # 空值在 XML 里的含义是"该外设未使能/无意义"，跳过即可（Vivado 用自身默认）。
+        if val == "":
+            skipped_empty.append(name)
+            continue
         params.append((name, val))
 
     params.sort()
@@ -62,7 +68,9 @@ def main():
         f.write("\n".join(lines))
 
     print("写出 %s" % OUT)
-    print("参数条数 = %d" % len(params))
+    print("参数条数 = %d，跳过空值 %d 条" % (len(params), len(skipped_empty)))
+    if skipped_empty:
+        print("  跳过的空值参数（前 12 个）: %s" % ", ".join(skipped_empty[:12]))
     d = dict(params)
     for k in ("PCW_USE_M_AXI_GP0", "PCW_USE_S_AXI_HP0", "PCW_FPGA0_PERIPHERAL_FREQMHZ",
               "PCW_UIPARAM_DDR_PARTNO", "PCW_UIPARAM_DDR_FREQ_MHZ",
