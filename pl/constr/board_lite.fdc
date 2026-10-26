@@ -37,6 +37,11 @@ set_property IOSTANDARD DIFF_SSTL15 [get_ports {clk_p}]
 set_property IOSTANDARD DIFF_SSTL15 [get_ports {clk_n}]
 create_clock -name sys_clk -period 5.000 -waveform {0.0 2.50000} [get_ports {clk_p}]
 
+# ---- 内部工作时钟：ip2_board_top 内 reg div(200MHz/4) -> BUFG u_bufg100 ----
+# 目标 50 MHz（周期 20 ns）。2026-10-26：100 MHz 版实测 setup 差 -7.385 ns
+# （等效最高约 57 MHz），故降到 50 MHz（余量约 +2.6 ns）。
+create_generated_clock -name clk50 -source [get_ports {clk_p}] -divide_by 4 [get_pins {u_bufg100/O}]
+
 
 # -----------------------------------------------------------------------------
 # 2) 复位：PL_KEY1 = F8（官方工程里同脚名为 sys_rst，LVCMOS15）
