@@ -265,7 +265,10 @@ module cfar_threshold_stream #(
     end
 
     // ---- 环形线写块（独立 always，供综合器推断 RAM）----
-    always @(posedge clk or negedge rst_n) begin
+    // 【Vivado 兼容】三个 RAM 写块都改成**同步复位**（always @(posedge clk)）：
+    //   Vivado 报 [Synth 8-3391] "RAM is sensitive to asynchronous reset signal"
+    //   会拒绝推断 RAM（Procise/Verific 两种都接受）。rst_n 由上层同步产生。
+    always @(posedge clk) begin
         if (!rst_n) begin
             wpa <= 0; filla <= 0;
         end else if (adv) begin
@@ -276,7 +279,7 @@ module cfar_threshold_stream #(
         end
     end
     // 中心像素延迟线
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
             wpb <= 0; fillb <= 0;
         end else if (adv) begin
@@ -286,11 +289,9 @@ module cfar_threshold_stream #(
             if (fillb < DEP_B[PB-1:0]) fillb <= fillb + 1'b1;
         end
     end
-    // 列和数组（同址读旧值 + 写；不复位）
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            // 无复位（RAM）
-        end else if (adv) begin
+    // 列和数组（同址读旧值 + 写；不复位，避免复位影响 RAM 推断）
+    always @(posedge clk) begin
+        if (adv) begin
             cs1[col] <= ncs1;
             cs2[col] <= ncs2;
         end

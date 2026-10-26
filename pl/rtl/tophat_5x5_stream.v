@@ -55,7 +55,8 @@ module tophat_5x5_stream #(
     wire gfull = (gfill >= GD_LAT[GPW-1:0]);
 
     // 独立 always 写块（标准 1写1读 RAM 写法，便于综合推断 RAM）
-    always @(posedge clk or negedge rst_n) begin
+    // 【Vivado 兼容】同步复位（原因见 win5.v 同处注释：Vivado 拒绝带异步复位的 RAM 写块）
+    always @(posedge clk) begin
         if (!rst_n) begin
             gwp   <= {GPW{1'b0}};
             gfill <= {GPW{1'b0}};

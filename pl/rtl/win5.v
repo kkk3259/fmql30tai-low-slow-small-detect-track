@@ -59,7 +59,12 @@ module win5 #(
     integer i;
 
     // ---- 延迟线写块（独立 always，标准 1写1读 RAM 写法，便于综合推断 RAM）----
-    always @(posedge clk or negedge rst_n) begin
+    // 【Vivado 兼容】复位改成**同步**复位（always @(posedge clk) + if(!rst_n)）：
+    //   Vivado 明确拒绝「RAM 写在带异步复位的 always 块里」这种写法
+    //   （[Synth 8-3391] RAM is sensitive to asynchronous reset signal）；
+    //   Procise 两种都接受。同步复位的语义前提是 rst_n 已被时钟域同步过
+    //   （ip2_frame_top 里的 chain_rst_n 就是同步产生的），仿真 tb 也满足。
+    always @(posedge clk) begin
         if (!rst_n) begin
             wp   <= {PW{1'b0}};
             fill <= {PW{1'b0}};
