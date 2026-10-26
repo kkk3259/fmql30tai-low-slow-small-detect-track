@@ -15,13 +15,13 @@ PS ↔ PL 通信模块（pl_link.py）
     0x31000000 ~ 0x310FFFFF    1 MiB  输出区（候选表 + 状态字）
     0x31100000 ~ 0x380FFFFF  111 MiB  备用
 
-✅ P 已确认（2026-10-26）：寄存器基址 = 0xA0000000（挂 PS 的 M_AXI_GP1），
+✅ P 已确认（2026-10-26）：寄存器基址 = 0x83C00000（挂 PS 的 M_AXI_GP1），
    访问方式 = /dev/mem + mmap；`trigger()` 会写 CTRL.bit0=1 启动一帧，
    `version()` / `status()` 可用于上板首测。其余按 docs/14 v0.2 实现。
 
 用法：
     from pl_link import PlLink
-    pl = PlLink(reg_base=REG_BASE)          # 0xA0000000，挂 PS 的 M_AXI_GP1（P 已确认）
+    pl = PlLink(reg_base=REG_BASE)          # 0x83C00000，挂 PS 的 M_AXI_GP1（P 已确认）
     pl.put_frame(0, gray640x360)
     pl.trigger(frame_id=0, frame_addr=0x30100000, result_addr=0x31000000)
     cands = pl.wait_done()
@@ -51,14 +51,14 @@ STATUS_DONE = 0x80000000         # bit31
 STATUS_ERROR = 0x40000000        # bit30
 
 # ---------------------------------------------------------------- 寄存器基址
-# P 已确认（2026-10-26）：寄存器组基址 = 0xA0000000，由 Vivado BD 挂在 **M_AXI_GP1** 上。
+# P 已确认（2026-10-26）：寄存器组基址 = 0x83C00000，由 Vivado BD 挂在 **M_AXI_GP1** 上。
 #   原因：Zynq-7000 的 PS 主口地址窗口是硬件固定的——
 #         M_AXI_GP0 -> 0x4000_0000 ~ 0x7FFF_FFFF（0x40000000 正是 AI_Mate 的寄存器窗口）
-#         M_AXI_GP1 -> 0x8000_0000 ~ 0xBFFF_FFFF（0xA0000000 落在这段）
+#         M_AXI_GP1 -> 0x8000_0000 ~ 0xBFFF_FFFF（0x83C00000 落在这段）
 #   我们自己的位流里没有 AI_Mate，所以 0x80000000（AI_Mate DMA 窗口）与
-#   0xA0000000（我们的寄存器）都在 GP1 段内、互不重叠。
+#   0x83C00000（我们的寄存器）都在 GP1 段内、互不重叠。
 #   不要把基址改回 0x40000000 或 0x80000000。
-REG_BASE = 0xA0000000
+REG_BASE = 0x83C00000
 REG_WINDOW = 0x1000              # mmap 4 KiB（寄存器只用到 0x00~0x17）
 
 # 以下是 P 在 pl/rtl/ip2_axi_top.v 里实现的**偏移**（注释原文摘录）：
@@ -77,7 +77,7 @@ class PlLink:
     def __init__(self, reg_base=REG_BASE):
         """
         参数：
-            reg_base: AXI4-Lite 寄存器组物理基地址，默认 0xA0000000（P 已确认）
+            reg_base: AXI4-Lite 寄存器组物理基地址，默认 0x83C00000（P 已确认）
         """
         self.reg_base = reg_base
         self._fd = None
@@ -229,7 +229,7 @@ class PlLink:
         """
         写 AXI4-Lite 寄存器（/dev/mem + mmap，P 已确认走这条路）。
 
-        基地址 0xA0000000 由 Vivado BD 挂在 PS 的 M_AXI_GP1 上；
+        基地址 0x83C00000 由 Vivado BD 挂在 PS 的 M_AXI_GP1 上；
         PL 的 AXI 从口不是 RAM 区，/dev/mem 可以直接映射。
         """
         if self._reg_buf is None:
