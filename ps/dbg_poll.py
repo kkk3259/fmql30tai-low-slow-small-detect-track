@@ -23,6 +23,9 @@ R_PCOUNT = 0x18
 R_STAT1  = 0x1C   # {fifo_level[15:0], 5'd0, fst[2:0], err_code[7:0]}
 R_CCL    = 0x20   # {8'd0, ch_dbg_px[17:0], 3'd0, ch_dbg_state[2:0]}
 R_HAND   = 0x24   # {ocount[5:0], ch_o_valid, rd_done, rd_error, wr_done, wr_error, 21'd0}
+R_THV    = 0x28   # TopHat -> CFAR 的 valid 拍数（2026-10-28 加）
+R_CFV    = 0x2C   # CFAR  -> CCL  的 valid 拍数
+R_RDY    = 0x30   # {cf_ready 16 位, ch_ready 16 位}
 
 FST = {0: "IDLE", 1: "RST", 2: "FILL", 3: "FEED", 4: "WAIT", 5: "WRITE", 6: "FIN"}
 
@@ -64,14 +67,18 @@ def main():
 
     # ---------- 3) 高频采样（覆盖 IDLE→FEED→WAIT→超时）----------
     t0 = time.time()
-    print("  t(ms)  ST          FST    err  fifo    pcount   ccl_st px     ocount ovalid")
+    print("  t(ms)  ST          FST    err  fifo    pcount   ccl_st px     ocount ovalid   thv     cfv     cfrdy chrdy")
     hi_px, hi_oc = 0, 0
+    last = None
     for _ in range(60):
         st = rd(R_STATUS)
         s1 = rd(R_STAT1)
         ccl = rd(R_CCL)
         hd = rd(R_HAND)
         pc = rd(R_PCOUNT)
+        thv = rd(R_THV)
+        cfv = rd(R_CFV)
+        rdy = rd(R_RDY)
         fifo_lv = (s1 >> 16) & 0xFFFF
         fst = (s1 >> 8) & 0x7
         err = s1 & 0xFF
@@ -81,9 +88,9 @@ def main():
         ov = (hd >> 25) & 1
         hi_px = max(hi_px, cpx)
         hi_oc = max(hi_oc, oc)
-        print("%8.1f  0x%08X  %-6s %3d  %6d  %8d  %3d   %6d  %2d  %d"
+        print("%8.1f  0x%08X  %-6s %3d  %6d  %8d  %3d   %6d  %2d  %d   %8d %8d %6d %6d"
               % ((time.time() - t0) * 1000, st, FST.get(fst, "?"), err,
-                 fifo_lv, pc, cst, cpx, oc, ov))
+                 fifo_lv, pc, cst, cpx, oc, ov, thv, cfv, rdy >> 16, rdy & 0xFFFF))
         if (st & 0x7) == 0 and (st >> 2 & 1) == 0 and err:
             break
         time.sleep(0.02)
