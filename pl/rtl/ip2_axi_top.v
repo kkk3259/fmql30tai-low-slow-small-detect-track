@@ -83,6 +83,11 @@ module ip2_axi_top #(
     output wire        m_axi_bready
 );
     localparam NPIX = W * H;
+    // 冲刷拍数：CFAR 用的是 (W+15)×(H+15) 的虚拟光栅，输出比输入晚 CENTER_OFF 拍，
+    // 所以整帧喂完后必须继续往链路里塞"假像素"，把流水线里剩下的有效像素顶出来，
+    // 否则 CCL 永远数不到第 N 个 valid，也就不会进 S_MERGE/S_OUT（实测：卡在 218212/230400）。
+    // 虚拟光栅像素数 - 真实像素数 + 余量。
+    localparam DRAIN = (W + 15) * (H + 15) - NPIX + 128;
 
     // ------------------------------------------------------------------
     // AXI4-Lite 寄存器
@@ -166,6 +171,7 @@ module ip2_axi_top #(
     wire [31:0] dbg_stat1;
     wire [31:0] dbg_ccl;
     wire [31:0] dbg_hand;
+    wire [31:0] ch_dbg_vcnt;    // CCL 内部 valid 计数（0x34）
     wire [31:0] dbg_thv;      // TopHat→CFAR 的 valid 计数
     wire [31:0] dbg_cfv;      // CFAR→CCL 的 valid 计数
     wire [31:0] dbg_rdy;      // {cf_ready 计数低 16 位, ch_ready 计数低 16 位}
@@ -199,6 +205,7 @@ module ip2_axi_top #(
                     6'h28:   s_axi_rdata <= dbg_thv;
                     6'h2C:   s_axi_rdata <= dbg_cfv;
                     6'h30:   s_axi_rdata <= dbg_rdy;
+                    6'h34:   s_axi_rdata <= ch_dbg_vcnt;   // CCL 内部看到的 valid 数
                     default: s_axi_rdata <= 32'h0;
                 endcase
             end
@@ -260,15 +267,30 @@ module ip2_axi_top #(
     wire [AW_F:0] fifo_level;
     // 只有 F_FEED 才允许链路从帧缓冲取数；F_FILL 期间链路在复位，
     // 若让它出队会把缓冲提前抽干（frame_loaded 永远不满足 → 卡死）。
+    // F_FEED 分两段：
+    //   ①feed_real —— 从帧缓冲取真实像素（pcount 计数）；
+    //   ②feed_pad  —— 真实像素喂完后，继续灌 0 拍把 CFAR 流水线里剩下的有效像素顶出来。
+    // 只有 feed_real 才出队帧缓冲；feed_pad 期间 fifo 停下，避免把缓冲抽干。
+    reg  [17:0]  drain_cnt;     // 已灌入的冲刷假像素数
+
+    wire         feed_real = (fst == F_FEED) && (pcount < NPIX[31:0]);
+    wire         feed_pad  = (fst == F_FEED) && (pcount >= NPIX[31:0]) &&
+                             (drain_cnt < DRAIN[17:0]);
     wire         chain_en  = (fst == F_FEED);
-    wire         fifo_pop  = fifo_valid && ch_i_ready && chain_en;
+    wire         fifo_pop  = fifo_valid && ch_i_ready && feed_real;
+
+    always @(posedge clk) begin
+        if (!rst_n)                drain_cnt <= 18'd0;
+        else if (!chain_rst_n)     drain_cnt <= 18'd0;
+        else if (feed_pad && ch_i_ready) drain_cnt <= drain_cnt + 18'd1;
+    end
 
     assign rd_ready = !fifo_full;                       // 只受帧缓冲满反压
 
     ip2_pix_fifo #(.DEPTH(262144), .AW(AW_F)) u_pixfifo (
         .clk(clk), .rst_n(rst_n),
         .wr_en(rd_valid), .wr_data(rd_data), .wr_full(fifo_full),
-        .rd_data(fifo_data), .rd_valid(fifo_valid), .rd_ready(ch_i_ready && chain_en),
+        .rd_data(fifo_data), .rd_valid(fifo_valid), .rd_ready(ch_i_ready && feed_real),
         .level(fifo_level)
     );
 
@@ -288,13 +310,14 @@ module ip2_axi_top #(
 
     ip2_top_stream #(.W(W), .H(H), .MAX_CAND(MAX_CAND)) u_chain (
         .clk(clk), .rst_n(chain_rst_n),
-        .i_data(fifo_data),
-        .i_valid(fifo_valid && chain_en),
+        .i_data(feed_real ? fifo_data : 8'd0),
+        .i_valid(feed_real ? fifo_valid : feed_pad),
         .i_ready(ch_i_ready),
         .o_data(ch_o_data), .o_valid(ch_o_valid), .o_ready(1'b1),
         .dbg_state(ch_dbg_state), .dbg_px(ch_dbg_px),
         .dbg_th_valid(cha_thv), .dbg_cf_valid(cha_cfv),
-        .dbg_cf_ready(cha_cfrdy), .dbg_ch_ready(cha_chrdy)
+        .dbg_cf_ready(cha_cfrdy), .dbg_ch_ready(cha_chrdy),
+        .dbg_ccl_vcnt(ch_dbg_vcnt)
     );
 
     ip2_axi_master_wr u_wr (
@@ -396,10 +419,18 @@ module ip2_axi_top #(
                     err_flag <= 1'b1;
                     err_code <= 8'd1;
                 end
-                // 断粮检测：连续 4M 拍没吃到像素就报错（原先是死等）
-                if (fifo_pop) wdog <= 32'd0;
-                else          wdog <= wdog + 32'd1;
-                if (pcount >= NPIX[31:0]) begin
+                // 断粮检测：连续 4M 拍没进展就报错（真像素与冲刷像素都算进展）
+                if (fifo_pop || (feed_pad && ch_i_ready)) wdog <= 32'd0;
+                else                                       wdog <= wdog + 32'd1;
+                // 结束条件（三选一）：
+                //   ①候选表已经吐满 36 字节 —— 正常成功（CCL 数到第 N 个 valid 后会自己在
+                //     S_MERGE/S_OUT 里跑完，不需要再喂像素）；
+                //   ②冲刷拍数够了 —— 交给 F_WAIT 的超时判断；
+                //   ③断粮 4M 拍 —— 报错。
+                if (ocount >= 6'd36) begin
+                    fst  <= F_WAIT;
+                    wdog <= 32'd0;
+                end else if (drain_cnt >= DRAIN[17:0]) begin
                     fst  <= F_WAIT;
                     wdog <= 32'd0;
                 end else if (wdog > 32'd4_000_000) begin

@@ -28,7 +28,9 @@ module candidate_extract_stream #(
     output wire o_valid,
     // ---- 调试用（可不接）：当前状态机状态 + 已扫像素计数 ----
     output wire [2:0]  dbg_state,
-    output wire [17:0] dbg_px
+    output wire [17:0] dbg_px,
+    // 调试：CCL 内部实际数到的 i_bin_valid 个数（判定 valid 是否真连到本模块）
+    output wire [31:0] dbg_vcnt
 );
     localparam N = W * H;
     localparam CNT_W = $clog2(N + 1);
@@ -345,4 +347,13 @@ module candidate_extract_stream #(
     // 调试探针（放在最后，iverilog 要求先声明后使用）
     assign dbg_state = state;
     assign dbg_px    = px_cnt;
+
+    // CCL 内部 valid 计数：与顶层 cf_valid 计数对比，
+    //   两者相等 => valid 网络连上了；CCL 侧为 0 而顶层不为 0 => 连线/位宽问题。
+    reg [31:0] vcnt;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)          vcnt <= 32'd0;
+        else if (i_bin_valid) vcnt <= vcnt + 32'd1;
+    end
+    assign dbg_vcnt = vcnt;
 endmodule
