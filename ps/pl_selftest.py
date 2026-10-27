@@ -3,7 +3,7 @@
 上板自检（pl_selftest.py）—— 位流加载后第一件事：确认 AXI4-Lite 寄存器通路是通的。
 
 不需要相机、不需要 udmabuf、不动图像数据，只做三件事：
-  1) 打开 /dev/mem，mmap 0x83C00000，读 VERSION（应为 0x00010000）
+  1) 打开 /dev/mem，mmap 0x43C00000，读 VERSION（应为 0x00010000）
   2) 读 STATUS，看 busy/done/error/n_cand/帧计数
   3) 可选：写一次 FRAME_ADDR/RESULT_ADDR + CTRL=1，短轮询看 done 是否置起
      （不打帧也能验证"寄存器能写、状态能回"，但这帧数据是随机的，会报 error 或乱候选）
@@ -14,7 +14,7 @@
 
 判读：
     VERSION = 0x00010000  → 位流已加载 + 地址映射对 + BD 挂对了
-    VERSION = 0xFFFFFFFF / 0x00000000 → 依次检查：位流没加载？BD 没挂 GP1？地址段被占？
+    VERSION = 0xFFFFFFFF / 0x00000000 → 依次检查：位流没加载？BD 没挂 GP0？地址段被占？
 """
 
 import argparse
@@ -131,7 +131,7 @@ def main():
         ok = False
         print("    ✗ VERSION 不对（期望 %s）" % hx(VERSION_EXPECT))
         print("      依次排查：① 位流真加载了吗（fpga_manager state / FSBL 日志）")
-        print("                ② BD 里寄存器段是不是 0x83C00000、挂在 M_AXI_GP1")
+        print("                ② BD 里寄存器段是不是 0x43C00000、挂在 M_AXI_GP0")
         print("                ③ 这段地址在 /proc/iomem 里有没有被别的驱动先占")
 
     udma_ok = check_udmabuf()
