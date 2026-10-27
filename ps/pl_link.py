@@ -51,14 +51,15 @@ STATUS_DONE = 0x80000000         # bit31
 STATUS_ERROR = 0x40000000        # bit30
 
 # ---------------------------------------------------------------- 寄存器基址
-# P 已确认（2026-10-26）：寄存器组基址 = 0x83C00000，由 Vivado BD 挂在 **M_AXI_GP1** 上。
-#   原因：Zynq-7000 的 PS 主口地址窗口是硬件固定的——
-#         M_AXI_GP0 -> 0x4000_0000 ~ 0x7FFF_FFFF（0x40000000 正是 AI_Mate 的寄存器窗口）
-#         M_AXI_GP1 -> 0x8000_0000 ~ 0xBFFF_FFFF（0x83C00000 落在这段）
-#   我们自己的位流里没有 AI_Mate，所以 0x80000000（AI_Mate DMA 窗口）与
-#   0x83C00000（我们的寄存器）都在 GP1 段内、互不重叠。
-#   不要把基址改回 0x40000000 或 0x80000000。
-REG_BASE = 0x83C00000
+# 【2026-10-27 改】寄存器组基址 = 0x43C00000，由 Vivado BD 挂在 **M_AXI_GP0** 上。
+#   为什么从 GP1 改回 GP0：板上跑的官方 BOOT.bin 里的 FSBL 是按官方 AI_Mate 设计生成的，
+#   它的 ps7_init 只使能了 M_AXI_GP0 + S_AXI_HP0~3；GP1 从未被使能 => 访问 GP1 窗口
+#   （0x8000_0000~0xBFFF_FFFF）必然 SIGBUS（S 已实测）。改用 GP0 后，不用重打 BOOT.bin、
+#   不用重生 FSBL、不动 SD 卡，只要 JTAG 把我们的 bit 下进去，PS 就能访问寄存器。
+#   Zynq-7000 PS 主口地址窗口是硬件固定的：
+#       M_AXI_GP0 -> 0x4000_0000 ~ 0x7FFF_FFFF（0x40000000 是 AI_Mate 寄存器窗口，避开）
+#       M_AXI_GP1 -> 0x8000_0000 ~ 0xBFFF_FFFF
+REG_BASE = 0x43C00000
 REG_WINDOW = 0x1000              # mmap 4 KiB（寄存器只用到 0x00~0x17）
 
 # 以下是 P 在 pl/rtl/ip2_axi_top.v 里实现的**偏移**（注释原文摘录）：

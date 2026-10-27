@@ -24,7 +24,8 @@ import struct
 import sys
 import time
 
-REG_BASE = 0x83C00000
+# 【2026-10-27 改】寄存器基址 0x43C00000（BD 挂在 M_AXI_GP0 上，官方 FSBL 已使能 GP0）
+REG_BASE = 0x43C00000
 REG_WINDOW = 0x1000
 
 REG_CTRL = 0x00

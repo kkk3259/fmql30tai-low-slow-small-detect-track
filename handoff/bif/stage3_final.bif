@@ -1,0 +1,14 @@
+// ============================================================================
+// 阶段 ③ 最终版：我们的 FSBL + 我们的位流
+// 目的：PS 能访问 PL 寄存器（0x83C00000，GP1 已开）→ 可跑 ps/pl_selftest.py
+// 位流来源：handoff/ip2_bd_wrapper.hdf 里的 ip2_bd_wrapper.bit（已解出到 handoff/）
+// ============================================================================
+//arch = fmql; split = false; format = BIN
+the_ROM_image:
+{
+	[bootloader, destination_device = ps]D:/firstharness/synth/sdk_ws/ip2_fsbl/Debug/ip2_fsbl.elf
+	[destination_device = pl]D:/firstharness/repo/handoff/ip2_bd_wrapper.bit
+	[destination_cpu = apu_0, destination_device = ps]D:/firstharness/dl/bootgen/x/BOOT_Gen/bl31.elf
+	[destination_cpu = apu_0, destination_device = ps]D:/firstharness/dl/bootgen/x/BOOT_Gen/u-boot
+	[fsbl_config]apu_x32
+}
