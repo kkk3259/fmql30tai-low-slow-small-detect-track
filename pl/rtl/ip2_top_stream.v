@@ -19,15 +19,26 @@ module ip2_top_stream #(
     output wire o_valid,
     input  wire o_ready,
     output wire [2:0]  dbg_state,
-    output wire [17:0] dbg_px
+    output wire [17:0] dbg_px,
+    // ---- 调试探针（上板定位用）：把内部 valid 引出来给上层计数 ----
+    output wire dbg_th_valid,   // TopHat → CFAR
+    output wire dbg_cf_valid,   // CFAR → CCL
+    output wire dbg_cf_ready,   // CFAR 的 i_ready（= TopHat 的 o_ready）
+    output wire dbg_ch_ready    // 链路入口 ready（= TopHat i_ready）
 );
     wire [7:0] th_data, cf_data, cf_enh;
     wire th_valid, cf_valid;
     wire cf_ready;   // CFAR 的 i_ready（只在图像列有效）
+    wire th_ready;   // TopHat 的 i_ready（= 链路入口 ready）
+
+    assign dbg_th_valid = th_valid;
+    assign dbg_cf_valid = cf_valid;
+    assign dbg_cf_ready = cf_ready;
+    assign dbg_ch_ready = th_ready;
 
     tophat_5x5_stream #(.W(W), .H(H)) u_tophat (
         .clk(clk), .rst_n(rst_n),
-        .i_data(i_data), .i_valid(i_valid), .i_ready(i_ready),
+        .i_data(i_data), .i_valid(i_valid), .i_ready(th_ready),
         .o_data(th_data), .o_valid(th_valid), .o_ready(cf_ready)
     );
     cfar_threshold_stream #(.W(W), .H(H)) u_cfar (
@@ -42,4 +53,7 @@ module ip2_top_stream #(
         .o_valid(o_valid), .o_data(o_data), .o_ready(o_ready),
         .dbg_state(dbg_state), .dbg_px(dbg_px)
     );
+
+    // 顶层 i_ready 就是 TopHat 的 i_ready（反压直通）
+    assign i_ready = th_ready;
 endmodule

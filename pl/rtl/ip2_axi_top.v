@@ -166,6 +166,9 @@ module ip2_axi_top #(
     wire [31:0] dbg_stat1;
     wire [31:0] dbg_ccl;
     wire [31:0] dbg_hand;
+    wire [31:0] dbg_thv;      // TopHat→CFAR 的 valid 计数
+    wire [31:0] dbg_cfv;      // CFAR→CCL 的 valid 计数
+    wire [31:0] dbg_rdy;      // {cf_ready 计数低 16 位, ch_ready 计数低 16 位}
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -193,6 +196,9 @@ module ip2_axi_top #(
                     6'h1C:   s_axi_rdata <= dbg_stat1;
                     6'h20:   s_axi_rdata <= dbg_ccl;
                     6'h24:   s_axi_rdata <= dbg_hand;
+                    6'h28:   s_axi_rdata <= dbg_thv;
+                    6'h2C:   s_axi_rdata <= dbg_cfv;
+                    6'h30:   s_axi_rdata <= dbg_rdy;
                     default: s_axi_rdata <= 32'h0;
                 endcase
             end
@@ -240,6 +246,7 @@ module ip2_axi_top #(
     wire        ch_i_ready;
     wire [2:0]  ch_dbg_state;
     wire [17:0] ch_dbg_px;
+    wire        cha_thv, cha_cfv, cha_cfrdy, cha_chrdy;   // 链内部探针
     reg  [7:0]  err_code;       // 出错现场编码（见 F_FIN 前的各超时分支）
 
     // ---- 帧缓冲（RD 主机 → IP2 链）----
@@ -285,7 +292,9 @@ module ip2_axi_top #(
         .i_valid(fifo_valid && chain_en),
         .i_ready(ch_i_ready),
         .o_data(ch_o_data), .o_valid(ch_o_valid), .o_ready(1'b1),
-        .dbg_state(ch_dbg_state), .dbg_px(ch_dbg_px)
+        .dbg_state(ch_dbg_state), .dbg_px(ch_dbg_px),
+        .dbg_th_valid(cha_thv), .dbg_cf_valid(cha_cfv),
+        .dbg_cf_ready(cha_cfrdy), .dbg_ch_ready(cha_chrdy)
     );
 
     ip2_axi_master_wr u_wr (
@@ -436,6 +445,30 @@ module ip2_axi_top #(
     end
 
     // ------------------------------------------------------------------
+    // ---- 调试计数器（2026-10-28）：把链内部 valid/ready 的出现次数数出来 ----
+    reg [31:0] thv_cnt;    // TopHat → CFAR 的 valid 拍数
+    reg [31:0] cfv_cnt;    // CFAR → CCL 的 valid 拍数
+    reg [15:0] cfrdy_cnt;  // CFAR 的 i_ready 拍数（= 图像列拍数）
+    reg [15:0] chrdy_cnt;  // 链路入口 ready 拍数
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            thv_cnt   <= 32'd0;
+            cfv_cnt   <= 32'd0;
+            cfrdy_cnt <= 16'd0;
+            chrdy_cnt <= 16'd0;
+        end else if (!chain_rst_n) begin
+            thv_cnt   <= 32'd0;
+            cfv_cnt   <= 32'd0;
+            cfrdy_cnt <= 16'd0;
+            chrdy_cnt <= 16'd0;
+        end else begin
+            if (cha_thv)   thv_cnt   <= thv_cnt   + 32'd1;
+            if (cha_cfv)   cfv_cnt   <= cfv_cnt   + 32'd1;
+            if (cha_cfrdy) cfrdy_cnt <= cfrdy_cnt + 16'd1;
+            if (cha_chrdy) chrdy_cnt <= chrdy_cnt + 16'd1;
+        end
+    end
+
     // LED：led[0] 心跳，led[3:1] 本帧候选数
     // ------------------------------------------------------------------
     reg [27:0] hb;
@@ -453,4 +486,7 @@ module ip2_axi_top #(
     assign dbg_ccl    = {8'd0, ch_dbg_px, 3'd0, ch_dbg_state};
     assign dbg_hand   = {ocount, ch_o_valid, rd_done, rd_error,
                          wr_done, wr_error, 21'd0};
+    assign dbg_thv    = thv_cnt;
+    assign dbg_cfv    = cfv_cnt;
+    assign dbg_rdy    = {cfrdy_cnt, chrdy_cnt};
 endmodule
