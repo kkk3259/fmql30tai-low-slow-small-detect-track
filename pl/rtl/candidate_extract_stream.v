@@ -25,7 +25,10 @@ module candidate_extract_stream #(
     input  wire i_enh_valid,
     input  wire o_ready,
     output wire [7:0] o_data,
-    output wire o_valid
+    output wire o_valid,
+    // ---- 调试用（可不接）：当前状态机状态 + 已扫像素计数 ----
+    output wire [2:0]  dbg_state,
+    output wire [17:0] dbg_px
 );
     localparam N = W * H;
     localparam CNT_W = $clog2(N + 1);
@@ -338,4 +341,8 @@ module candidate_extract_stream #(
 
     assign o_data  = o_data_r;
     assign o_valid = o_valid_r;
+
+    // 调试探针（放在最后，iverilog 要求先声明后使用）
+    assign dbg_state = state;
+    assign dbg_px    = px_cnt;
 endmodule
