@@ -33,6 +33,11 @@ module ip2_pix_fifo #(
 )(
     input  wire        clk,
     input  wire        rst_n,
+    // 【2026-10-28】同步清空：每帧起始（F_RST）拉高一拍。
+    // 为什么必须有：实测每帧结束 FIFO 里固定残留 120 字节（上一帧尾部），
+    // 下一帧装帧时这 120 字节留在队头 → 整帧像素流平移 120 个像素
+    // （候选坐标 x 全部 +120、最后 120 个像素永远读不到），且每帧都重复。
+    input  wire        clr,
 
     // 写侧（来自 AXI 读主机）
     input  wire        wr_en,
@@ -55,8 +60,8 @@ module ip2_pix_fifo #(
 
     wire full  = (count == DEPTH[AW:0]);    // 内存满
     wire take  = dout_v && rd_ready;        // 消费者取走队首
-    wire fetch = (count != 0) && (!dout_v || take);  // 从内存预取一个到 dout
-    wire do_wr = wr_en && !full;
+    wire fetch = (count != 0) && (!dout_v || take) && !clr;  // 从内存预取
+    wire do_wr = wr_en && !full && !clr;
 
     assign wr_full  = full;
     assign rd_valid = dout_v;
@@ -88,6 +93,11 @@ module ip2_pix_fifo #(
     // ------------------------------------------------------------------
     always @(posedge clk) begin
         if (!rst_n) begin
+            wptr   <= {AW{1'b0}};
+            rptr   <= {AW{1'b0}};
+            count  <= {(AW+1){1'b0}};
+            dout_v <= 1'b0;
+        end else if (clr) begin
             wptr   <= {AW{1'b0}};
             rptr   <= {AW{1'b0}};
             count  <= {(AW+1){1'b0}};

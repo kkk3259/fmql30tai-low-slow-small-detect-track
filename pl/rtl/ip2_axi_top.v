@@ -287,8 +287,12 @@ module ip2_axi_top #(
 
     assign rd_ready = !fifo_full;                       // 只受帧缓冲满反压
 
+    // 帧缓冲清空：只在 F_RST 的前 16 拍（此时读主机还没发出 AR，
+    // 清掉上一帧残留的 120 字节，避免整帧像素流平移）。
+    wire fifo_clr = (fst == F_RST) && (rstc < 5'd16);
+
     ip2_pix_fifo #(.DEPTH(262144), .AW(AW_F)) u_pixfifo (
-        .clk(clk), .rst_n(rst_n),
+        .clk(clk), .rst_n(rst_n), .clr(fifo_clr),
         .wr_en(rd_valid), .wr_data(rd_data), .wr_full(fifo_full),
         .rd_data(fifo_data), .rd_valid(fifo_valid), .rd_ready(ch_i_ready && feed_real),
         .level(fifo_level)
@@ -298,7 +302,9 @@ module ip2_axi_top #(
         .clk(clk), .rst_n(rst_n),
         .start(rd_start),
         .base_addr(frame_addr),
-        .n_bytes(NPIX[31:0]),
+        // 多读 512 字节：帧缓冲已按每帧清空，但读主机按 256 字节突发取数，
+        // 多读 2 个突发保证整帧 NPIX 个像素全部到位（多余部分下一帧被 clr 丢掉）。
+        .n_bytes(NPIX[31:0] + 32'd512),
         .busy(rd_busy), .done(rd_done), .error(rd_error),
         .o_data(rd_data), .o_valid(rd_valid), .o_ready(rd_ready),
         .m_araddr(m_axi_araddr), .m_arlen(m_axi_arlen),

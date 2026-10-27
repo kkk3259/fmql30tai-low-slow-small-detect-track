@@ -50,6 +50,7 @@ REG = {
     "CTRL": 0x00, "FRAME_ADDR": 0x04, "RESULT_ADDR": 0x08, "STATUS": 0x0C,
     "FRAME_ID": 0x10, "VERSION": 0x14,
     "DBG0": 0x18, "DBG1": 0x1C, "DBG2": 0x20, "DBG3": 0x24,
+    "DBG4": 0x28, "DBG5": 0x2C, "DBG6": 0x30, "DBG7": 0x34,   # 0x34 = CCL 内部数到的 valid
 }
 
 FST_NAME = {0: "F_IDLE", 1: "F_RST", 2: "F_FILL(读DDR填FIFO)", 3: "F_FEED(喂给链路)",
@@ -170,6 +171,10 @@ def show(rm, label=""):
     print("  DBG3 ocount = %d  o_valid=%d  rd_done=%d rd_err=%d wr_done=%d wr_err=%d"
           % ((d3 >> 26) & 0x3F, (d3 >> 25) & 1, (d3 >> 24) & 1, (d3 >> 23) & 1,
              (d3 >> 22) & 1, (d3 >> 21) & 1))
+    # 0x28 = TopHat→CFAR 的 valid 计数，0x2C = CFAR→CCL 的 valid 计数，
+    # 0x34 = CCL 内部数到的 valid（三者应相等；若 0x2C 有值而 0x34 为 0 就是连线问题）
+    print("  DBG4 TopHat→CFAR valid = %d   DBG5 CFAR→CCL valid = %d   DBG7 CCL 内部 valid = %d"
+          % (v.get("DBG4", 0), v.get("DBG5", 0), v.get("DBG7", 0)))
     return v
 
 
