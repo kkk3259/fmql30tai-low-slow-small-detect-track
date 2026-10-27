@@ -59,7 +59,7 @@ RTL 是同一套（`pl/rtl/`），Procise 和 Vivado 都能综合，不需要写
    "每个有效拍就换一个像素"。AXI 读回来是突发间隙的，所以必须经
    `ip2_pix_fifo.v`（整帧 262,144 深 ≈ 2 Mbit LUTRAM）再喂链，不能用
    `pe=o_ready` 之类"跳过空拍"的做法（试过，几何关系全乱，候选表全 0）。
-3. **寄存器基址固定 `0xA0000000`**，与 `ps/pl_link.py` 里的常量一致；
+3. **寄存器基址固定 `0x83C00000`**，与 `ps/pl_link.py` 里的常量一致；
    不要用自动分配的地址（`assign_bd_address` 后要显式改 offset）。
 4. **帧缓冲/结果区物理地址**：帧 `0x30100000`（16 MiB，可放 72 帧）、结果 `0x31000000`。
    注意避开 `0x40000000`（S 明确说被占用）与 `0x80000000`（AI_Mate DMA 用）。
@@ -82,7 +82,7 @@ cd D:\firstharness\synth\vivado
 | 5 | 引出 DDR / FIXED_IO |
 | 6-7 | 放 `ip2_axi_bd_wrap`，`apply_bd_automation` 自动接 GP0→S_AXI、M_AXI→HP0 |
 | 8-9 | 时钟/复位兜底 + LED 引出 |
-| 10 | 地址分配，寄存器段强制 `0xA0000000 / 4K` |
+| 10 | 地址分配，寄存器段强制 `0x83C00000 / 4K` |
 | 11-12 | `validate_bd_design` + 生成 wrapper |
 | 13 | 引脚约束（LED=J1，LVCMOS15） |
 | 14 | `launch_runs impl_1 -to_step write_bitstream`（约 20~40 分钟） |
@@ -119,7 +119,7 @@ cd D:\firstharness\synth\vivado
 
 ```python
 import mmap, struct, os
-BASE = 0xA0000000
+BASE = 0x83C00000
 fd = os.open("/dev/mem", os.O_RDWR | os.O_SYNC)
 m = mmap.mmap(fd, 0x1000, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE, offset=BASE)
 def rd(o): return struct.unpack("<I", m[o:o+4])[0]
