@@ -79,8 +79,14 @@ module ip2_pix_fifo #(
 
     // ------------------------------------------------------------------
     // 指针 / 计数 / 输出有效
+    //
+    // 注意：这里用【同步复位】（不是 negedge rst_n 异步复位）。
+    // 原因：rptr / wptr 是块 RAM 的地址输入，Vivado 的 DRC REQP-1839
+    // （RAMB36 async control check）会警告「驱动 RAMB 地址的寄存器带异步
+    // 复位 → 复位期间可能破坏存储内容/读出值，且静态时序不分析这条路径」。
+    // 改成同步复位后，RAMB 的地址寄存器和复位同时钟域，DRC 干净。
     // ------------------------------------------------------------------
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
             wptr   <= {AW{1'b0}};
             rptr   <= {AW{1'b0}};
