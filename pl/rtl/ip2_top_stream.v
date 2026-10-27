@@ -17,7 +17,9 @@ module ip2_top_stream #(
     output wire i_ready,
     output wire [7:0] o_data,
     output wire o_valid,
-    input  wire o_ready
+    input  wire o_ready,
+    output wire [2:0]  dbg_state,
+    output wire [17:0] dbg_px
 );
     wire [7:0] th_data, cf_data, cf_enh;
     wire th_valid, cf_valid;
@@ -37,6 +39,7 @@ module ip2_top_stream #(
         .clk(clk), .rst_n(rst_n),
         .i_bin(cf_data), .i_bin_valid(cf_valid),
         .i_enh(cf_enh), .i_enh_valid(cf_valid),
-        .o_valid(o_valid), .o_data(o_data), .o_ready(o_ready)
+        .o_valid(o_valid), .o_data(o_data), .o_ready(o_ready),
+        .dbg_state(dbg_state), .dbg_px(dbg_px)
     );
 endmodule

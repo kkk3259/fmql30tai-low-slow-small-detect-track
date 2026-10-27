@@ -161,6 +161,12 @@ module ip2_axi_top #(
     assign s_axi_arready = !r_pend && !s_axi_rvalid;
     assign s_axi_rresp   = 2'b00;
 
+    // ---- 调试探针（wire 先声明，赋值统一放文件末尾，满足“先声明后使用”）----
+    wire [31:0] dbg_pcount;
+    wire [31:0] dbg_stat1;
+    wire [31:0] dbg_ccl;
+    wire [31:0] dbg_hand;
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             r_pend     <= 1'b0;
@@ -182,6 +188,11 @@ module ip2_axi_top #(
                                              err_flag, done_flag, busy_w};
                     6'h10:   s_axi_rdata <= {16'd0, frame_id};
                     6'h14:   s_axi_rdata <= 32'h0001_0000;
+                    // ---- 调试寄存器（2026-10-27 加）----
+                    6'h18:   s_axi_rdata <= dbg_pcount;
+                    6'h1C:   s_axi_rdata <= dbg_stat1;
+                    6'h20:   s_axi_rdata <= dbg_ccl;
+                    6'h24:   s_axi_rdata <= dbg_hand;
                     default: s_axi_rdata <= 32'h0;
                 endcase
             end
@@ -227,6 +238,9 @@ module ip2_axi_top #(
     wire [7:0]  ch_o_data;
     wire        ch_o_valid;
     wire        ch_i_ready;
+    wire [2:0]  ch_dbg_state;
+    wire [17:0] ch_dbg_px;
+    reg  [7:0]  err_code;       // 出错现场编码（见 F_FIN 前的各超时分支）
 
     // ---- 帧缓冲（RD 主机 → IP2 链）----
     // 必需：IP2 是连续像素流假设，AXI 读主机在 burst 边界/反压恢复处会有
@@ -270,7 +284,8 @@ module ip2_axi_top #(
         .i_data(fifo_data),
         .i_valid(fifo_valid && chain_en),
         .i_ready(ch_i_ready),
-        .o_data(ch_o_data), .o_valid(ch_o_valid), .o_ready(1'b1)
+        .o_data(ch_o_data), .o_valid(ch_o_valid), .o_ready(1'b1),
+        .dbg_state(ch_dbg_state), .dbg_px(ch_dbg_px)
     );
 
     ip2_axi_master_wr u_wr (
@@ -336,6 +351,7 @@ module ip2_axi_top #(
                 if (start_r) begin
                     done_flag <= 1'b0;
                     err_flag  <= 1'b0;
+                    err_code  <= 8'd0;
                     fst       <= F_RST;
                 end
             end
@@ -353,20 +369,34 @@ module ip2_axi_top #(
                 // 这样链路开始吃数据后永不出现空拍 —— IP2 的 5×5/31×31
                 // 窗口几何要求连续像素，一个空拍就整帧错位。
                 wdog <= wdog + 32'd1;
-                if (rd_error) err_flag <= 1'b1;
+                if (rd_error) begin
+                    err_flag <= 1'b1;
+                    err_code <= 8'd1;      // 读 DDR 出错（RRESP 异常）
+                end
                 if (frame_loaded) begin
                     fst  <= F_FEED;
                     wdog <= 32'd0;
                 end else if (wdog > 32'd12_000_000) begin
                     err_flag <= 1'b1;      // 读帧超时
+                    err_code <= 8'd2;
                     fst      <= F_FIN;
                 end
             end
             F_FEED: begin
-                if (rd_error) err_flag <= 1'b1;
+                if (rd_error) begin
+                    err_flag <= 1'b1;
+                    err_code <= 8'd1;
+                end
+                // 断粮检测：连续 4M 拍没吃到像素就报错（原先是死等）
+                if (fifo_pop) wdog <= 32'd0;
+                else          wdog <= wdog + 32'd1;
                 if (pcount >= NPIX[31:0]) begin
                     fst  <= F_WAIT;
                     wdog <= 32'd0;
+                end else if (wdog > 32'd4_000_000) begin
+                    err_flag <= 1'b1;      // 链路吃不到像素（帧缓冲断粮）
+                    err_code <= 8'd3;
+                    fst      <= F_FIN;
                 end
             end
             F_WAIT: begin
@@ -375,20 +405,25 @@ module ip2_axi_top #(
                     n_cand_r <= cand_buf[7:0];
                     wdog     <= 32'd0;
                     fst      <= F_WRITE;
-                end else if (wdog > 32'd8_000_000) begin
-                    err_flag <= 1'b1;     // 超时：链路没吐完候选表
+                end else if (wdog > 32'd40_000_000) begin
+                    err_flag <= 1'b1;     // 超时：链路没吐完候选表（0.8 s）
+                    err_code <= 8'd4;
                     fst      <= F_FIN;
                 end
             end
             F_WRITE: begin
                 wdog <= wdog + 32'd1;
                 if (wr_done) begin
-                    if (wr_error) err_flag <= 1'b1;
+                    if (wr_error) begin
+                        err_flag <= 1'b1;
+                        err_code <= 8'd6;
+                    end
                     done_flag <= 1'b1;
                     frm_cnt   <= frm_cnt + 8'd1;
                     fst       <= F_FIN;
                 end else if (wdog > 32'd1_000_000) begin
                     err_flag <= 1'b1;     // 超时：写回没完成
+                    err_code <= 8'd5;
                     fst      <= F_FIN;
                 end
             end
@@ -411,4 +446,11 @@ module ip2_axi_top #(
 
     assign led[0]   = hb[26];
     assign led[3:1] = (n_cand_r > 8'd7) ? 3'd7 : n_cand_r[2:0];
+
+    // ---- 调试探针赋值（此处所有寄存器均已声明）----
+    assign dbg_pcount = pcount;
+    assign dbg_stat1  = {fifo_level[15:0], 5'd0, fst, err_code};
+    assign dbg_ccl    = {8'd0, ch_dbg_px, 3'd0, ch_dbg_state};
+    assign dbg_hand   = {ocount, ch_o_valid, rd_done, rd_error,
+                         wr_done, wr_error, 21'd0};
 endmodule
