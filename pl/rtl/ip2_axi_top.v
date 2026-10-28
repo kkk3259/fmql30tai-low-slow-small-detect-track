@@ -175,6 +175,9 @@ module ip2_axi_top #(
     wire [31:0] dbg_thv;      // TopHat→CFAR 的 valid 计数
     wire [31:0] dbg_cfv;      // CFAR→CCL 的 valid 计数
     wire [31:0] dbg_rdy;      // {cf_ready 计数低 16 位, ch_ready 计数低 16 位}
+    // 候选表寄存器镜像（0x40~0x60）用到的中间线，赋值放文件末尾
+    wire [31:0] cw0, cw1, cw2, cw3, cw4, cw5, cw6, cw7, cw8;
+    wire [31:0] st_mirror, fsm_snap;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -206,6 +209,21 @@ module ip2_axi_top #(
                     6'h2C:   s_axi_rdata <= dbg_cfv;
                     6'h30:   s_axi_rdata <= dbg_rdy;
                     6'h34:   s_axi_rdata <= ch_dbg_vcnt;   // CCL 内部看到的 valid 数
+                    // ---- 候选表寄存器镜像（2026-10-28 加）----
+                    // 板级实测发现：PL 写 DDR 的结果表 PS 读不到（写主控报 done 但
+                    // DDR 里仍是旧值，CPU 缓存/同步都排除过了）。9 个寄存器直接映射
+                    // 36 字节候选表，PS 走 /dev/mem 读，彻底绕开 DDR 与缓存一致性问题。
+                    6'h40:   s_axi_rdata <= cw0;
+                    6'h44:   s_axi_rdata <= cw1;
+                    6'h48:   s_axi_rdata <= cw2;
+                    6'h4C:   s_axi_rdata <= cw3;
+                    6'h50:   s_axi_rdata <= cw4;
+                    6'h54:   s_axi_rdata <= cw5;
+                    6'h58:   s_axi_rdata <= cw6;
+                    6'h5C:   s_axi_rdata <= cw7;
+                    6'h60:   s_axi_rdata <= cw8;
+                    6'h64:   s_axi_rdata <= st_mirror;   // 状态字镜像
+                    6'h6C:   s_axi_rdata <= fsm_snap;    // 主状态机快照
                     default: s_axi_rdata <= 32'h0;
                 endcase
             end
@@ -526,4 +544,17 @@ module ip2_axi_top #(
     assign dbg_thv    = thv_cnt;
     assign dbg_cfv    = cfv_cnt;
     assign dbg_rdy    = {cfrdy_cnt, chrdy_cnt};
+
+    // ---- 候选表寄存器镜像（声明在文件头，赋值放这里）----
+    assign cw0 = cand_buf[31:0];
+    assign cw1 = cand_buf[63:32];
+    assign cw2 = cand_buf[95:64];
+    assign cw3 = cand_buf[127:96];
+    assign cw4 = cand_buf[159:128];
+    assign cw5 = cand_buf[191:160];
+    assign cw6 = cand_buf[223:192];
+    assign cw7 = cand_buf[255:224];
+    assign cw8 = cand_buf[287:256];
+    assign st_mirror = {1'b1, err_flag, 14'd0, frame_id};
+    assign fsm_snap  = {ocount, fst, wr_done, wr_error, rd_done, rd_error, 19'd0};
 endmodule
