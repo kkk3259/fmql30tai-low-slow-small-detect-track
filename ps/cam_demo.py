@@ -42,6 +42,12 @@ class HW(object):
                            prot=MM.PROT_READ | MM.PROT_WRITE)
         self.rfd = os.open(DEVMEM, os.O_RDWR | os.O_SYNC)
         self.reg = MM.mmap(self.rfd, 0x1000, MM.MAP_SHARED, offset=REG)
+        # 只同步真正用到的 640x360 字节，避免每帧清 128 MiB cache（实测可省 ~20 ms）
+        try:
+            sysfs("sync_offset", 0)
+            sysfs("sync_size", NPIX)
+        except Exception as e:
+            print("WARN: 设置 sync_size 失败: %s" % e)
 
     def rd(self, o):
         return struct.unpack_from("<I", self.reg, o)[0]
@@ -58,7 +64,7 @@ class HW(object):
             st = self.rd(R_STATUS)
             if st & 0x06:
                 break
-            time.sleep(0.0005)
+            time.sleep(0.0001)
         raw = bytearray()
         for i in range(9):
             raw += struct.pack("<I", self.rd(CAND_BASE + 4 * i))
@@ -84,11 +90,40 @@ def draw(color, cands):
     return color
 
 
+PAGE = """<!doctype html><html><head><meta charset="utf-8">
+<title>IP2 实时检测</title>
+<style>
+body{margin:0;background:#0d0d0d;color:#7CFC00;font:14px/1.5 Consolas,monospace}
+#hud{padding:8px 12px;border-bottom:1px solid #24451f;white-space:pre}
+img{width:100%;max-width:1280px;display:block;margin:0 auto}
+</style></head><body>
+<div id="hud">连接中…</div>
+<img id="v" src="/live">
+<script>
+const v = document.getElementById('v'), hud = document.getElementById('hud');
+setInterval(function(){ v.src = '/live?t=' + Date.now(); }, 150);
+setInterval(function(){
+  fetch('/info').then(r=>r.json()).then(function(j){
+    var n = (j.cands||[]).length;
+    hud.textContent = 'PL 帧率 ' + j.fps + ' fps   |   PL 耗时 ' + j.PL_ms +
+                      ' ms   |   候选 ' + n + (n ? '\n' + JSON.stringify(j.cands) : '');
+  }).catch(function(){});
+}, 600);
+</script></body></html>"""
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
     def do_GET(self):
+        if self.path == "/" or self.path.startswith("/index"):
+            body = PAGE.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith("/info"):
             body = json.dumps(g_info).encode()
             self.send_response(200)
@@ -123,8 +158,9 @@ def main():
     print("PL VERSION = 0x%08X" % hw.rd(R_VER))
     cap = cv2.VideoCapture(args.cam, cv2.CAP_V4L2)
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    # 640x480 采集，上下各裁 60 行得到 640x360（与 PL 链路一一对应，省掉缩放）
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     if not cap.isOpened():
         print("ERROR: 打不开摄像头")
@@ -147,11 +183,16 @@ def main():
         t0 = time.time()
         ok, frame = cap.read()
         if not ok:
-            time.sleep(0.01)
+            time.sleep(0.002)
             continue
         t1 = time.time()
-        gray = cv2.cvtColor(cv2.resize(frame, (W, H), interpolation=cv2.INTER_AREA),
-                            cv2.COLOR_BGR2GRAY)
+        fh = frame.shape[0]
+        if fh >= H:
+            top = (fh - H) // 2
+            frame = frame[top:top + H, :, :]
+        else:
+            frame = cv2.resize(frame, (W, H), interpolation=cv2.INTER_AREA)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         st, cands = hw.run(gray)
         t2 = time.time()
         t_cap_sum += (t1 - t0)
