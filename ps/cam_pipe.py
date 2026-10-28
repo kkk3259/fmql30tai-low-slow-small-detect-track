@@ -142,9 +142,9 @@ class Tracker(object):
     目的：PL 每帧给出的候选会有细微抖动/偶发漏检，直接画会闪；跟踪后框稳定得多。
     """
 
-    MATCH_R = 8        # 匹配半径（像素，棋盘距离）
-    MIN_HITS = 3       # 连续命中多少帧才显示
-    MAX_MISS = 2       # 连续丢失多少帧才删除
+    MATCH_R = 12       # 匹配半径（像素，棋盘距离）
+    MIN_HITS = 2       # 命中多少帧才显示
+    MAX_MISS = 10      # 连续丢失多少帧才删除
     MAX_SHOW = 64      # 最多显示多少个
     PEAK_MIN = 0       # 候选峰值下限（低于此值不入跟踪）
 
@@ -184,7 +184,10 @@ class Tracker(object):
         keep = []
         for i, t in enumerate(self.tracks):
             if i < nt and not used[i]:
+                # 丢一帧不立刻清零命中数：只做衰减，避免"闪一下就没了"
                 t["miss"] += 1
+                if t["hits"] > 1:
+                    t["hits"] -= 1
             if t["miss"] <= self.MAX_MISS:
                 keep.append(t)
         self.tracks = keep

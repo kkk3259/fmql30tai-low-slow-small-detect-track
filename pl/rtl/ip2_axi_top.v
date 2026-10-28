@@ -29,6 +29,7 @@ module ip2_axi_top #(
     parameter W = 640,
     parameter H = 360,
     parameter MAX_CAND = 64,
+    parameter SE = 5,           // Top-Hat 结构元边长（奇数）：默认 5
     parameter [31:0] DEF_FRAME_ADDR  = 32'h3010_0000,
     parameter [31:0] DEF_RESULT_ADDR = 32'h3100_0000
 )(
@@ -85,11 +86,15 @@ module ip2_axi_top #(
     output wire        m_axi_bready
 );
     localparam NPIX = W * H;
-    // 冲刷拍数：CFAR 用的是 (W+15)×(H+15) 的虚拟光栅，输出比输入晚 CENTER_OFF 拍，
-    // 所以整帧喂完后必须继续往链路里塞"假像素"，把流水线里剩下的有效像素顶出来，
+    // 冲刷拍数：整帧喂完后必须继续往链路里塞"假像素"，把流水线里剩下的有效像素顶出来，
     // 否则 CCL 永远数不到第 N 个 valid，也就不会进 S_MERGE/S_OUT（实测：卡在 218212/230400）。
-    // 虚拟光栅像素数 - 真实像素数 + 余量。
-    localparam DRAIN = (W + 15) * (H + 15) - NPIX + 128;
+    // 需要的拍数 = 链路总延迟 = TopHat 延迟 + CFAR 中心偏移。
+    //   TopHat: TD = 2*((SE/2)*W + SE/2 + 1) + 1     （SE=21,W=640 → 12823）
+    //   CFAR  : CENTER_OFF = 15*(W+15) + 15          （W=640 → 9840）
+    // SE 从 5 放大到 21 后延迟从 ~12632 涨到 ~22668，旧的 15353 会不够，这里按公式算。
+    localparam TD_T   = 2 * (((SE/2)*W) + (SE/2) + 1) + 1;
+    localparam CF_OFF = 15 * (W + 15) + 15;
+    localparam DRAIN  = TD_T + CF_OFF + 2048;
 
     // ------------------------------------------------------------------
     // AXI4-Lite 寄存器
@@ -329,7 +334,7 @@ module ip2_axi_top #(
         .m_rvalid(m_axi_rvalid), .m_rready(m_axi_rready)
     );
 
-    ip2_top_stream #(.W(W), .H(H), .MAX_CAND(MAX_CAND)) u_chain (
+    ip2_top_stream #(.W(W), .H(H), .MAX_CAND(MAX_CAND), .SE(SE)) u_chain (
         .clk(clk), .rst_n(chain_rst_n),
         .i_data(feed_real ? fifo_data : 8'd0),
         .i_valid(feed_real ? fifo_valid : feed_pad),
