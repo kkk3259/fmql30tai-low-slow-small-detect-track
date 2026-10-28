@@ -11,6 +11,7 @@ BIN=/lib/firmware/ip2_bd_wrapper.bin
 FWM=/sys/class/fpga_manager/fpga0
 DIR=/root/ip2
 LOG=/var/log/ip2demo.log
+CAM=/dev/video0
 
 start() {
     echo "== ip2demo start $(date) ==" >> $LOG
@@ -24,6 +25,12 @@ start() {
         echo "WARN: $BIN 不存在，PL 可能未配置" >> $LOG
     fi
     sleep 1
+    # 夜间光线不足时驱动会「降帧换长曝光」→ 运动模糊 + 掉到 20fps。
+    # 关掉自动曝光优先级，强制 30fps 短曝光。
+    if [ -c "$CAM" ]; then
+        v4l2-ctl -d $CAM --set-ctrl exposure_auto_priority=0 2>>$LOG
+        echo "camera: $(v4l2-ctl -d $CAM --get-ctrl exposure_auto_priority 2>>$LOG)" >> $LOG
+    fi
     cd $DIR || exit 1
     setsid nohup python3 -u cam_pipe.py --port 8080 >> $LOG 2>&1 < /dev/null &
     echo $! > /var/run/ip2demo.pid
