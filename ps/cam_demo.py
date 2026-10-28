@@ -75,7 +75,7 @@ class HW(object):
             if len(b) < 7:
                 break
             cands.append({"x": (b[0] << 8) | b[1], "y": (b[2] << 8) | b[3],
-                          "area": b[5] * 256 + b[6], "peak": b[6]})
+                          "area": b[5], "peak": b[6]})
         return st, cands
 
 
