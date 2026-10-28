@@ -1,0 +1,4 @@
+auto eth0
+iface eth0 inet dhcp
+    up ip addr add 169.254.67.100/16 dev eth0 || true
+    down ip addr del 169.254.67.100/16 dev eth0 || true
