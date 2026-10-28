@@ -148,26 +148,32 @@ module candidate_extract_stream #(
     wire [16:0] dv_num_y  = {1'b0, csumy[pi]} + {11'd0, carea[pi][7:0]} / 2;
     wire [7:0]  dv_div_w  = (carea[pi][7:0] == 8'd0) ? 8'd1 : carea[pi][7:0];
 
-    // 输出字段选择（36 字节：n_cand + 5×(x_hi,x_lo,y_hi,y_lo,area_hi,area_lo,peak)）
-    wire [5:0] out_idx = cnt[5:0];
-    wire [2:0] cand_i  = (out_idx - 7'd1) / 3'd7;
-    wire [2:0] field   = (out_idx - 7'd1) % 3'd7;
-    wire [15:0] x16 = cx[cand_i];
-    wire [15:0] y16 = cy[cand_i];
+    // 输出字段选择（S 的格式：n_cand + MAX_CAND×(x_hi,x_lo,y_hi,y_lo,area_hi,area_lo,peak)）
+    // 2026-10-28：MAX_CAND 5→64，按 4 字节对齐补齐到 N_OUT 字节（449→452）
+    localparam N_CAND_BYTES = 1 + MAX_CAND*7;
+    localparam N_OUT        = ((N_CAND_BYTES + 3) / 4) * 4;
+
+    reg [8:0] ocnt;    // 已输出字节数 0..N_OUT-1
+    reg [6:0] oi;      // 候选序号 0..MAX_CAND-1（>=n_comp 时输出 0 补齐）
+    reg [2:0] of;      // 字段序号 0..6
+
+    wire [7:0]  n_out = (n_comp < MAX_CAND) ? n_comp : MAX_CAND[7:0];
+    wire [15:0] x16   = cx[oi[5:0]];
+    wire [15:0] y16   = cy[oi[5:0]];
     reg [7:0] out_val;
     always @* begin
-        if (out_idx == 6'd0)
-            out_val = (n_comp < MAX_CAND) ? n_comp : MAX_CAND[7:0];
-        else if (cand_i >= n_comp)
+        if (ocnt == 9'd0)
+            out_val = n_out;
+        else if (oi >= n_comp[6:0])
             out_val = 8'd0;
-        else case (field)
+        else case (of)
             3'd0: out_val = x16[15:8];
             3'd1: out_val = x16[7:0];
             3'd2: out_val = y16[15:8];
             3'd3: out_val = y16[7:0];
             3'd4: out_val = 8'd0;                 // area 高字节恒 0（area<=200<256）
-            3'd5: out_val = carea[cand_i][7:0];
-            3'd6: out_val = cpeak[cand_i];
+            3'd5: out_val = carea[oi[5:0]][7:0];
+            3'd6: out_val = cpeak[oi[5:0]];
             default: out_val = 8'd0;
         endcase
     end
@@ -182,7 +188,7 @@ module candidate_extract_stream #(
         end
     end
 
-    reg [3:0] si;
+    reg [5:0] si;                 // 选择排序游标（MAX_CAND=64 时需要 6 位）
     reg [6:0] sj;
     reg [5:0] mi;
     reg [7:0] maxp;
@@ -323,17 +329,35 @@ module candidate_extract_stream #(
                         sort_phase <= 2'd2;
                     end
                 end else begin
-                    si <= si + 4'd1;
-                    if (si + 4'd1 < n_comp && si + 4'd1 < MAX_CAND) sort_phase <= 2'd0;
-                    else begin state <= S_OUT; cnt <= 0; end
+                    si <= si + 6'd1;
+                    if (si + 6'd1 < n_comp && si + 6'd1 < MAX_CAND) sort_phase <= 2'd0;
+                    else begin
+                        state <= S_OUT;
+                        ocnt  <= 9'd0;
+                        oi    <= 7'd0;
+                        of    <= 3'd0;
+                    end
                 end
             end
             S_OUT: begin
                 o_valid_r <= 1'b1;
-                o_data_r <= out_val;
+                o_data_r  <= out_val;
                 if (o_ready) begin
-                    if (out_idx == 6'd35) state <= S_DONE;
-                    else cnt <= cnt + 1'b1;
+                    if (ocnt == N_OUT-1) begin
+                        state <= S_DONE;
+                    end else begin
+                        ocnt <= ocnt + 9'd1;
+                        if (ocnt == 9'd0) begin
+                            // 首字节 n_cand 之后进入候选 0 的字段 0
+                            oi <= 7'd0;
+                            of <= 3'd0;
+                        end else if (of == 3'd6) begin
+                            of <= 3'd0;
+                            oi <= oi + 7'd1;
+                        end else begin
+                            of <= of + 3'd1;
+                        end
+                    end
                 end
             end
             S_DONE: state <= S_DONE;

@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import struct
+import subprocess
 import sys
 import threading
 import time
@@ -33,8 +34,12 @@ NPIX = W * H
 R_CTRL = 0x00
 R_STATUS = 0x0C           # {frm_cnt[15:8], n_cand[7:0], 5'd0, err, done, busy}
 R_VER = 0x14
-CAND_BASE = 0x18          # 9 个 32 位字（36 字节候选表）
+R_CIDX = 0x10             # 写：候选表字索引（0..112）；读同一地址返回该字
+R_CDAT = 0x10             # 读：该字（与索引同地址）
+R_HAND = 0x3C             # 读：状态字镜像（原握手探针槽位已改）
 R_STMIRROR = 0x3C
+MAX_CAND = 64
+TAB_WORDS = (1 + MAX_CAND * 7 + 3) // 4   # 113 个字
 
 g_lock = threading.Lock()
 g_jpeg = None
@@ -100,17 +105,92 @@ class HW(object):
             st = self.rd(R_STATUS)
             if st & 0x06:
                 break
-        raw = b"".join(struct.pack("<I", self.rd(CAND_BASE + 4 * i)) for i in range(9))
+        # 候选表在 PL 里是 452 B 的 LUTRAM，经“索引窗口”两个寄存器逐个字读出
+        # 先读第 0 个字拿到 n_cand，再只读需要的那几个字（n 小的时候省一半时间）
+        self.wr(R_CIDX, 0)
+        w0 = self.rd(R_CDAT)
+        n0 = w0 & 0xFF
+        need = (1 + n0 * 7 + 3) // 4
+        if need < 1:
+            need = 1
+        if need > TAB_WORDS:
+            need = TAB_WORDS
+        words = [w0]
+        for i in range(1, need):
+            self.wr(R_CIDX, i)
+            words.append(self.rd(R_CDAT))
+        raw = b"".join(struct.pack("<I", w) for w in words)
         dt = (time.time() - t0) * 1000.0
         n = raw[0]
         cands = []
-        for i in range(min(n, 5)):
+        for i in range(min(n, MAX_CAND)):
             b = raw[1 + i * 7: 8 + i * 7]
             if len(b) < 7:
                 break
             cands.append({"x": (b[0] << 8) | b[1], "y": (b[2] << 8) | b[3],
                           "area": b[5], "peak": b[6]})
         return st, cands, dt
+
+
+class Tracker(object):
+    """跨帧候选跟踪 + 去抖。
+
+    规则：
+      * 同一目标在相邻帧位置差 <= MATCH_R 视为同一条 track（坐标/面积/峰值做 EMA 平滑）
+      * 连续命中 >= MIN_HITS 帧才对外显示（默认 3 帧 ≈ 100 ms @29fps）
+      * 连续丢失 > MAX_MISS 帧才移除（默认 2 帧）
+    目的：PL 每帧给出的候选会有细微抖动/偶发漏检，直接画会闪；跟踪后框稳定得多。
+    """
+
+    MATCH_R = 8        # 匹配半径（像素，棋盘距离）
+    MIN_HITS = 3       # 连续命中多少帧才显示
+    MAX_MISS = 2       # 连续丢失多少帧才删除
+    MAX_SHOW = 64      # 最多显示多少个
+    PEAK_MIN = 0       # 候选峰值下限（低于此值不入跟踪）
+
+    def __init__(self):
+        self.tracks = []
+        self.next_id = 1
+
+    def update(self, cands):
+        nt = len(self.tracks)
+        used = [False] * nt
+        for c in cands:
+            if int(c["peak"]) < self.PEAK_MIN:
+                continue
+            cx, cy = int(c["x"]), int(c["y"])
+            best, bestd = -1, 10 ** 9
+            for i in range(nt):
+                if used[i]:
+                    continue
+                t = self.tracks[i]
+                d = max(abs(t["x"] - cx), abs(t["y"] - cy))
+                if d <= self.MATCH_R and d < bestd:
+                    best, bestd = i, d
+            if best >= 0:
+                t = self.tracks[best]
+                used[best] = True
+                t["x"] = (4 * t["x"] + cx) // 5
+                t["y"] = (4 * t["y"] + cy) // 5
+                t["area"] = (4 * t["area"] + int(c["area"])) // 5
+                t["peak"] = (4 * t["peak"] + int(c["peak"])) // 5
+                t["hits"] += 1
+                t["miss"] = 0
+            else:
+                self.tracks.append({"id": self.next_id, "x": cx, "y": cy,
+                                    "area": int(c["area"]), "peak": int(c["peak"]),
+                                    "hits": 1, "miss": 0})
+                self.next_id += 1
+        keep = []
+        for i, t in enumerate(self.tracks):
+            if i < nt and not used[i]:
+                t["miss"] += 1
+            if t["miss"] <= self.MAX_MISS:
+                keep.append(t)
+        self.tracks = keep
+        conf = [t for t in self.tracks if t["hits"] >= self.MIN_HITS]
+        conf.sort(key=lambda t: (-t["hits"], -t["peak"]))
+        return conf[:self.MAX_SHOW]
 
 
 class Pipeline(object):
@@ -127,9 +207,18 @@ class Pipeline(object):
         self.pl_t0 = time.time()
         self.enc_ms = 0.0
         self.enc_n = 0
+        self.tracker = Tracker()
 
     # ---------- 线程 A：采集 ----------
     def thread_capture(self):
+        # 关键：关掉"光圈优先"，否则光线不足时驱动会把帧率降到 20fps 换长曝光，
+        # 结果既掉帧又运动模糊（这是"画面糊 + 框闪"的一大来源）。强制 30fps 短曝光。
+        for dev in ("/dev/video%d" % self.cam,):
+            try:
+                subprocess.call(["v4l2-ctl", "-d", dev, "-c", "exposure_auto_priority=0"],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
         cap = cv2.VideoCapture(self.cam, cv2.CAP_V4L2)
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -172,20 +261,25 @@ class Pipeline(object):
             st, cands, dt = self.hw.run(gray)
             self.pl_ms = 0.8 * self.pl_ms + 0.2 * dt
             self.pl_n += 1
-            for c in cands:
-                x, y = int(c["x"]), int(c["y"])
-                cv2.rectangle(color, (x - 5, y - 5), (x + 5, y + 5), (0, 255, 0), 1)
-                if x < W - 30 and y > 10:
-                    cv2.putText(color, "%d" % c["peak"], (x + 6, y - 6),
+            shown = self.tracker.update(cands)
+            npass = sum(1 for c in cands if int(c["peak"]) >= Tracker.PEAK_MIN)
+            for t in shown:
+                x, y = int(t["x"]), int(t["y"])
+                r = max(5, min(24, int((t["area"] ** 0.5) / 2) + 3))
+                cv2.rectangle(color, (x - r, y - r), (x + r, y + r), (0, 255, 0), 1)
+                if x < W - 40 and y > 10:
+                    cv2.putText(color, "%d/%d" % (t["peak"], t["hits"]), (x + 6, y - 6),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 0), 1)
-            cv2.putText(color, "PL %.1fms n=%d  cap %.1fms %d fps" %
-                        (self.pl_ms, len(cands), self.cap_ms, self.pl_fps()),
-                        (6, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(color, "PL %.1fms  raw %d  stable %d  cap %.1fms %d fps" %
+                        (self.pl_ms, npass, len(shown), self.cap_ms, self.pl_fps()),
+                        (6, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1, cv2.LINE_AA)
             with self.paint_lock:
                 self.paint = color
-            g_info.update({"cands": cands, "PL_ms": round(self.pl_ms, 2),
+            globals()["g_last_img"] = color   # 供 /snap 按需出高清单帧
+            g_info.update({"cands": shown, "raw": npass, "stable": len(shown),
+                           "PL_ms": round(self.pl_ms, 2),
                            "pl_fps": round(self.pl_fps(), 1),
-                           "cap_ms": round(self.cap_ms, 2), "n": len(cands)})
+                           "cap_ms": round(self.cap_ms, 2), "n": len(shown)})
 
     def pl_fps(self):
         return self.pl_n / max(time.time() - self.pl_t0, 1e-6)
@@ -201,7 +295,7 @@ class Pipeline(object):
                 continue
             last = img
             t0 = time.time()
-            ok, enc = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+            ok, enc = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
             self.enc_ms = 0.8 * self.enc_ms + 0.2 * (time.time() - t0) * 1000
             if ok:
                 self.enc_n += 1
@@ -260,6 +354,20 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 return
             return
+        if self.path.startswith("/snap"):
+            # 按需出一张高质量单帧（q95），平时推流用低质量保帧率
+            img = globals().get("g_last_img")
+            if img is not None:
+                ok, enc = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+                if ok:
+                    data = enc.tobytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
         with g_lock:
             data = g_jpeg
         if not data:
@@ -278,7 +386,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--cam", type=int, default=0)
+    ap.add_argument("--peak-min", type=int, default=0,
+                    help="候选 peak 低于此值直接丢弃（压夜间噪点，0=不过滤）")
+    ap.add_argument("--min-hits", type=int, default=Tracker.MIN_HITS,
+                    help="连续命中多少帧才显示")
+    ap.add_argument("--max-show", type=int, default=8, help="最多显示几个稳定框")
+    ap.add_argument("--max-miss", type=int, default=Tracker.MAX_MISS,
+                    help="连续丢失多少帧才删除")
     args = ap.parse_args()
+
+    Tracker.MIN_HITS = args.min_hits
+    Tracker.MAX_MISS = args.max_miss
+    Tracker.MAX_SHOW = args.max_show
+    Tracker.PEAK_MIN = args.peak_min
 
     hw = HW()
     print("PL VERSION = 0x%08X" % hw.rd(R_VER))

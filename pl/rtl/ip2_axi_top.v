@@ -21,12 +21,14 @@
 //   0x08 RESULT_ADDR  W  输出区物理地址（默认 0x31000000）
 //   0x0C STATUS       R  bit0 busy / bit1 done / bit2 error /
 //                        [15:8] n_cand / [23:16] 已完成帧计数
-//   0x10 FRAME_ID     W  帧号（低 16 位写进状态字回传给 PS）
+//   0x10 CAND_WIN     W  候选表窗口索引（0..112）；R 读该字
 //   0x14 VERSION      R  0x0001_0000
+//   0x18~0x38 LEGACY  R  兼容视图：9 个字 = 36 字节（旧 5 候选格式）
+//   0x3C ST_MIRROR    R  {bit31 done, bit30 err, [15:0] frame_id}
 module ip2_axi_top #(
     parameter W = 640,
     parameter H = 360,
-    parameter MAX_CAND = 5,
+    parameter MAX_CAND = 64,
     parameter [31:0] DEF_FRAME_ADDR  = 32'h3010_0000,
     parameter [31:0] DEF_RESULT_ADDR = 32'h3100_0000
 )(
@@ -99,6 +101,9 @@ module ip2_axi_top #(
     reg         done_flag;
     reg         err_flag;
     reg  [7:0]  n_cand_r;
+    reg  [6:0]  cand_rd_idx;   // 候选表窗口索引（0x40 写）
+    reg [31:0] legacy_ram [0:8];         // 兼容视图：前 9 字（36 字节）常驻寄存器
+    wire [31:0] cand_rdata;     // 候选表窗口数据（0x1C 读）
     reg  [7:0]  frm_cnt;
 
     wire        busy_w;         // 声明提前：AXI-Lite 读 STATUS 时要用
@@ -149,7 +154,7 @@ module ip2_axi_top #(
                     6'h00: if (wstrb_l[0]) start_r <= wdata_l[0];
                     6'h04: frame_addr  <= wdata_l;
                     6'h08: result_addr <= wdata_l;
-                    6'h10: frame_id    <= wdata_l[15:0];
+                    6'h10: cand_rd_idx <= wdata_l[6:0];   // 候选表窗口索引（写 0x10，读 0x10 取该字）
                     default: ;   // 0x0C/0x14 只读
                 endcase
                 aw_got   <= 1'b0;
@@ -162,7 +167,7 @@ module ip2_axi_top #(
 
     // ---- 读通道 ----
     reg        r_pend;
-    reg  [5:0] araddr_l;
+    reg  [7:0] araddr_l;
     assign s_axi_arready = !r_pend && !s_axi_rvalid;
     assign s_axi_rresp   = 2'b00;
 
@@ -175,8 +180,7 @@ module ip2_axi_top #(
     wire [31:0] dbg_thv;      // TopHat→CFAR 的 valid 计数
     wire [31:0] dbg_cfv;      // CFAR→CCL 的 valid 计数
     wire [31:0] dbg_rdy;      // {cf_ready 计数低 16 位, ch_ready 计数低 16 位}
-    // 候选表寄存器镜像（0x40~0x60）用到的中间线，赋值放文件末尾
-    wire [31:0] cw0, cw1, cw2, cw3, cw4, cw5, cw6, cw7, cw8;
+    // 候选表窗口读：PS 先写索引（0x18），再读数据（0x1C），113 次读完 452 字节
     wire [31:0] st_mirror, fsm_snap;
 
     always @(posedge clk or negedge rst_n) begin
@@ -198,27 +202,20 @@ module ip2_axi_top #(
                     6'h08:   s_axi_rdata <= result_addr;
                     6'h0C:   s_axi_rdata <= {8'h00, frm_cnt, n_cand_r, 5'd0,
                                              err_flag, done_flag, busy_w};
-                    6'h10:   s_axi_rdata <= {16'd0, frame_id};
+                    6'h10:   s_axi_rdata <= cand_rdata;      // 64 候选窗口数据（写 0x10 选字）
                     6'h14:   s_axi_rdata <= 32'h0001_0000;
-                    // ---- 候选表寄存器镜像（2026-10-28 加）----
-                    // 板级实测：PL 写 DDR 的结果表 PS 读不到（写主控报 done 但 DDR 里
-                    // 仍是旧值；缓存同步、冲缓存都试过）。改成 9 个寄存器直接镜像 36 字节
-                    // 候选表 + 1 个状态字镜像，PS 走 /dev/mem 读，绕开 DDR 一致性问题。
-                    //
-                    // 注意：s_axi_*addr 只有 6 位（0x00~0x3C 共 16 个寄存器），
-                    // 所以**不能**放到 0x40 以上（会与 0x00/0x04… 别名）。这里复用原来
-                    // 的调试寄存器槽位 0x18~0x38。调试计数器已完成使命，需要时从别的
-                    // 顶层（ip2_axi_top 的 dbg_* 端口）取。
-                    6'h18:   s_axi_rdata <= cw0;        // n_cand + 候选0 前 3 字节
-                    6'h1C:   s_axi_rdata <= cw1;
-                    6'h20:   s_axi_rdata <= cw2;
-                    6'h24:   s_axi_rdata <= cw3;
-                    6'h28:   s_axi_rdata <= cw4;
-                    6'h2C:   s_axi_rdata <= cw5;
-                    6'h30:   s_axi_rdata <= cw6;
-                    6'h34:   s_axi_rdata <= cw7;
-                    6'h38:   s_axi_rdata <= cw8;        // 候选表最后 4 字节
-                    6'h3C:   s_axi_rdata <= st_mirror;  // {done,err,14'd0,frame_id}
+                    // ---- 候选表兼容镜像（S 的 web_console 读 0x18~0x3C 共 9 字 = 36 字节）----
+                    6'h18:   s_axi_rdata <= legacy_ram[0];   // byte0 = n_cand
+                    6'h1C:   s_axi_rdata <= legacy_ram[1];
+                    6'h20:   s_axi_rdata <= legacy_ram[2];
+                    6'h24:   s_axi_rdata <= legacy_ram[3];
+                    6'h28:   s_axi_rdata <= legacy_ram[4];
+                    6'h2C:   s_axi_rdata <= legacy_ram[5];
+                    6'h30:   s_axi_rdata <= legacy_ram[6];
+                    6'h34:   s_axi_rdata <= legacy_ram[7];
+                    6'h38:   s_axi_rdata <= legacy_ram[8];
+                    6'h3C:   s_axi_rdata <= st_mirror;     // {done,err,14'd0,frame_id}
+                    // ---- 64 候选窗口（写 0x10 选字，读 0x10 取该字，共 113 字 = 452 字节）----
                     default: s_axi_rdata <= 32'h0;
                 endcase
             end
@@ -240,8 +237,13 @@ module ip2_axi_top #(
     localparam AW_F = 18;       // 帧缓冲深度 2^18 = 262144 ≥ 230400
 
     reg [2:0]  fst;
-    reg [5:0]  ocount;          // 已收候选表字节数
-    reg [287:0] cand_buf;       // 36 B 候选表
+    // 候选表缓冲：1 + MAX_CAND*7 字节，向上补齐到 4 的倍数（449 -> 452）
+    localparam N_CAND_BYTES = 1 + MAX_CAND*7;
+    localparam N_BYTES      = ((N_CAND_BYTES + 3) / 4) * 4;
+    localparam N_WORDS      = N_BYTES / 4;
+    reg [8:0]  ocount;          // 已收候选表字节数（0..N_BYTES-1）
+    reg [31:0] cand_w;          // 正在拼装的 32 位字（按字节槽位写）
+    reg [31:0] cand_ram [0:N_WORDS-1];   // 1 写 1 读 -> LUTRAM
     reg [31:0] pcount;          // 已喂像素数
     reg [4:0]  rstc;
     reg [31:0] wdog;
@@ -343,7 +345,7 @@ module ip2_axi_top #(
         .clk(clk), .rst_n(rst_n),
         .start(wr_start),
         .base_addr(result_addr),
-        .cand_bytes(cand_buf),
+        .cand_bytes(288'd0),          // DDR 写回已停用：候选表改走寄存器窗口（写主控保留以维持 FSM 计时）
         .status_word({1'b1, err_flag, 14'd0, frame_id}),
         .busy(wr_busy), .done(wr_done), .error(wr_error),
         .m_awaddr(m_axi_awaddr), .m_awlen(m_axi_awlen),
@@ -355,25 +357,44 @@ module ip2_axi_top #(
     );
 
     assign rd_start = (fst == F_RST) && (rstc == 5'd31);
-    assign wr_start = (fst == F_WAIT) && (ocount >= 6'd36) && !wr_busy && !wr_done;
+    assign wr_start = (fst == F_WAIT) && (ocount >= N_BYTES[8:0]) && !wr_busy && !wr_done;
 
     // 帧缓冲是否已装满（读主机把 NPIX 个像素全部搬进 FIFO/帧缓存）
     wire frame_loaded = rd_done && (fifo_level >= NPIX[AW_F-1:0]);
 
-    // 候选表收集：CCL 在 S_DONE 里 o_valid 一直高，只收前 36 字节
+    // 候选表收集：每 4 字节拼成一个 32 位字写进 cand_ram（1 写 1 读 -> 可推断 LUTRAM）
+    // 注意：清缓冲只能用 F_RST，不能用 !chain_rst_n（F_WRITE/F_FIN 时它是 0，会把刚收好的表清掉）
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            ocount   <= 6'd0;
-            cand_buf <= 288'd0;
+            ocount   <= 9'd0;
         end else if (fst == F_RST) begin
-            // 注意：这里只能用 F_RST 清，不能用 !chain_rst_n。
-            // chain_rst_n 在 F_WRITE/F_FIN 也是 0，用它会把刚收好的 36 字节
-            // 在写回之前清掉（表现为候选表全 0、只有状态字正常）。
-            ocount   <= 6'd0;
-            cand_buf <= 288'd0;
-        end else if (ch_o_valid && (ocount < 6'd36)) begin
-            cand_buf[{ocount, 3'b000} +: 8] <= ch_o_data;
-            ocount <= ocount + 6'd1;
+            ocount   <= 9'd0;
+        end else if (ch_o_valid && (ocount < N_BYTES[8:0])) begin
+            ocount   <= ocount + 9'd1;
+        end
+    end
+
+    // 写口独立 always 块（写进状态机 case 里 Procise 不认 RAM）
+    // 按字节槽位拼 32 位字：第 0 字节 -> [7:0]，保证小端顺序正确
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            cand_w <= 32'd0;
+        end else if (fst == F_RST) begin
+            cand_w <= 32'd0;
+        end else if (ch_o_valid && (ocount < N_BYTES[8:0])) begin
+            case (ocount[1:0])
+                2'd0:    cand_w[7:0]   <= ch_o_data;
+                2'd1:    cand_w[15:8]  <= ch_o_data;
+                2'd2:    cand_w[23:16] <= ch_o_data;
+                default: cand_w[31:24] <= ch_o_data;
+            endcase
+        end
+    end
+
+    always @(posedge clk) begin
+        if (ch_o_valid && (ocount < N_BYTES[8:0]) && (ocount[1:0] == 2'd3)) begin
+            cand_ram[ocount[8:2]] <= {ch_o_data, cand_w[23:0]};
+            if (ocount[8:2] < 9) legacy_ram[ocount[8:2]] <= {ch_o_data, cand_w[23:0]};
         end
     end
 
@@ -446,7 +467,7 @@ module ip2_axi_top #(
                 //     S_MERGE/S_OUT 里跑完，不需要再喂像素）；
                 //   ②冲刷拍数够了 —— 交给 F_WAIT 的超时判断；
                 //   ③断粮 4M 拍 —— 报错。
-                if (ocount >= 6'd36) begin
+                if (ocount >= N_BYTES[8:0]) begin
                     fst  <= F_WAIT;
                     wdog <= 32'd0;
                 end else if (drain_cnt >= DRAIN[17:0]) begin
@@ -460,8 +481,8 @@ module ip2_axi_top #(
             end
             F_WAIT: begin
                 wdog <= wdog + 32'd1;
-                if (ocount >= 6'd36) begin
-                    n_cand_r <= cand_buf[7:0];
+                if (ocount >= N_BYTES[8:0]) begin
+                    n_cand_r <= legacy_ram[0][7:0];
                     wdog     <= 32'd0;
                     fst      <= F_WRITE;
                 end else if (wdog > 32'd40_000_000) begin
@@ -535,21 +556,13 @@ module ip2_axi_top #(
     assign dbg_stat1  = {fifo_level[15:0], 5'd0, fst, err_code};
     assign dbg_ccl    = {8'd0, ch_dbg_px, 3'd0, ch_dbg_state};
     assign dbg_hand   = {ocount, ch_o_valid, rd_done, rd_error,
-                         wr_done, wr_error, 21'd0};
+                         wr_done, wr_error, 18'd0};
     assign dbg_thv    = thv_cnt;
     assign dbg_cfv    = cfv_cnt;
     assign dbg_rdy    = {cfrdy_cnt, chrdy_cnt};
 
     // ---- 候选表寄存器镜像（声明在文件头，赋值放这里）----
-    assign cw0 = cand_buf[31:0];
-    assign cw1 = cand_buf[63:32];
-    assign cw2 = cand_buf[95:64];
-    assign cw3 = cand_buf[127:96];
-    assign cw4 = cand_buf[159:128];
-    assign cw5 = cand_buf[191:160];
-    assign cw6 = cand_buf[223:192];
-    assign cw7 = cand_buf[255:224];
-    assign cw8 = cand_buf[287:256];
     assign st_mirror = {1'b1, err_flag, 14'd0, frame_id};
-    assign fsm_snap  = {ocount, fst, wr_done, wr_error, rd_done, rd_error, 19'd0};
+    assign cand_rdata = cand_ram[cand_rd_idx];   // 异步读 -> LUTRAM
+    assign fsm_snap  = {ocount, fst, wr_done, wr_error, rd_done, rd_error, 16'd0};
 endmodule
