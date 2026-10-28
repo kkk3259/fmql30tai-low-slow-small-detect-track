@@ -163,6 +163,14 @@ PAGE = r"""<!DOCTYPE html>
     <div class="panel">
       <h2>参数调节</h2>
       <div class="ctl">
+        <label>视图模式</label>
+        <select id="view" style="width:100%;padding:6px;background:#1b2836;color:#cfe0f0;border:1px solid #2a3d52;border-radius:4px;font-size:12px">
+          <option value="raw">原始灰度</option>
+          <option value="tophat">Top-Hat 增强图</option>
+          <option value="binary">CFAR 二值图</option>
+        </select>
+      </div>
+      <div class="ctl">
         <label>真/假阈值 <b id="l_thr">0.50</b></label>
         <input type="range" id="thr" min="0.1" max="0.95" step="0.05" value="0.5">
       </div>
@@ -175,6 +183,13 @@ PAGE = r"""<!DOCTYPE html>
       <div class="btnrow">
         <button id="btn_snap">截图保存</button>
         <button id="btn_rec" class="rec">开始录像</button>
+      </div>
+      <div class="btnrow">
+        <button id="btn_csv">导出 CSV</button>
+        <button id="btn_clear">清空记录</button>
+      </div>
+      <div style="font-size:11px;color:#5a6f85;margin-top:8px;line-height:1.5">
+        切到 Top-Hat / CFAR 视图会额外计算，帧率下降属正常现象
       </div>
     </div>
 
@@ -292,6 +307,26 @@ $('btn_rec').onclick = async () => {
   const b = $('btn_rec');
   b.textContent = recording ? '停止录像' : '开始录像';
   b.classList.toggle('on', recording);
+};
+
+// ---- 视图切换 ----
+$('view').onchange = e => {
+  fetch('/api/view', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ view: e.target.value })
+  }).catch(()=>{});
+};
+
+// ---- CSV 导出 ----
+$('btn_csv').onclick = () => {
+  const a = document.createElement('a');
+  a.href = '/api/export?t=' + Date.now();
+  a.download = 'targets.csv';
+  a.click();
+};
+$('btn_clear').onclick = () => {
+  fetch('/api/csv_clear', { method: 'POST' }).catch(()=>{});
 };
 
 poll();
@@ -452,6 +487,11 @@ class State(object):
         self.cfg = {"thr": 0.5, "cands": 64, "show_cand": True, "show_trail": True}
         self.recording = False
         self._writer = None
+        # 新增：中间结果视图与 CSV 导出
+        self.view = "raw"            # raw | tophat | binary
+        self.csv_rows = []           # [(帧号, ms, ID, X, Y, 面积)]
+        self.frame_no = 0
+        self.csv_max = 5000          # 环形上限，避免内存无限增长
 
     def set_frame(self, bgr, gray):
         with self.lock:
@@ -544,6 +584,23 @@ class Handler(BaseHTTPRequestHandler):
                        json.dumps(STATE.get_cfg()).encode("utf-8"))
             return
 
+        if path == "/api/export":
+            with STATE.lock:
+                rows = list(STATE.csv_rows)
+            lines = ["帧号,时间ms,目标ID,X,Y,面积"]
+            for r in rows:
+                lines.append("%d,%.1f,%d,%d,%d,%d" % r)
+            body = ("\ufeff" + "\r\n".join(lines)).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Disposition",
+                             'attachment; filename="targets_%s.csv"'
+                             % time.strftime("%Y%m%d_%H%M%S"))
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if path == "/snapshot":
             fr = STATE.get_frame()
             if fr is None:
@@ -583,13 +640,51 @@ class Handler(BaseHTTPRequestHandler):
                        json.dumps({"recording": STATE.recording}).encode("utf-8"))
             return
 
+        if self.path == "/api/view":
+            try:
+                d = json.loads(body or b"{}")
+            except Exception:
+                d = {}
+            v = d.get("view", "raw")
+            if v not in ("raw", "tophat", "binary"):
+                v = "raw"
+            with STATE.lock:
+                STATE.view = v
+            self._send(200, "application/json",
+                       json.dumps({"view": v}).encode("utf-8"))
+            return
+
+        if self.path == "/api/csv_clear":
+            with STATE.lock:
+                STATE.csv_rows = []
+            self._send(200, "application/json", b'{"ok":true}')
+            return
+
         self._send(404, "text/plain", b"not found")
 
 
 # ============================================================ 主循环
 
-def draw_overlay(gray, cands, confirmed, cfg, backend_name):
-    bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+def draw_overlay(gray, cands, confirmed, cfg, backend_name, view="raw"):
+    """按视图模式生成显示帧：raw=原始灰度，tophat=形态学增强图，binary=CFAR 二值图"""
+    if view == "tophat":
+        k5 = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        base = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, k5)
+        bgr = cv2.cvtColor(base, cv2.COLOR_GRAY2BGR)
+    elif view == "binary":
+        # Top-Hat → CFAR（与检测链路同参数：win=31, k=4.0, floor=3.0）
+        k5 = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        th = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, k5)
+        f = th.astype(np.float32)
+        mu = cv2.boxFilter(f, -1, (31, 31), normalize=True,
+                           borderType=cv2.BORDER_REFLECT)
+        mu2 = cv2.boxFilter(f * f, -1, (31, 31), normalize=True,
+                            borderType=cv2.BORDER_REFLECT)
+        sd = np.sqrt(np.maximum(mu2 - mu * mu, 0))
+        base = ((f > mu + 4.0 * sd + 3.0)).astype(np.uint8) * 255
+        bgr = cv2.cvtColor(base, cv2.COLOR_GRAY2BGR)
+    else:
+        bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
     thr = cfg.get("thr", 0.5)
 
     if cfg.get("show_cand", True):
@@ -748,8 +843,22 @@ def main():
             det_ms = (time.time() - t0) * 1000
             confirmed = tracker.step([(c["x"], c["y"], c.get("area", 4)) for c in pts])
 
-            bgr = draw_overlay(gray, cs, confirmed, cfg, backend_name)
+            with STATE.lock:
+                view = STATE.view
+            bgr = draw_overlay(gray, cs, confirmed, cfg, backend_name, view)
             STATE.set_frame(bgr, gray)
+
+            # 记录目标轨迹到 CSV 缓冲（供 /api/export 下载）
+            with STATE.lock:
+                STATE.frame_no += 1
+                fn = STATE.frame_no
+                for t in confirmed:
+                    STATE.csv_rows.append(
+                        (fn, det_ms, t.id,
+                         int(t.trail[-1][0]), int(t.trail[-1][1]),
+                         len(t.trail)))
+                if len(STATE.csv_rows) > STATE.csv_max:
+                    STATE.csv_rows = STATE.csv_rows[-STATE.csv_max:]
 
             # 统计
             fps_n += 1
