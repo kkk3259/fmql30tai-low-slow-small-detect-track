@@ -200,30 +200,25 @@ module ip2_axi_top #(
                                              err_flag, done_flag, busy_w};
                     6'h10:   s_axi_rdata <= {16'd0, frame_id};
                     6'h14:   s_axi_rdata <= 32'h0001_0000;
-                    // ---- 调试寄存器（2026-10-27 加）----
-                    6'h18:   s_axi_rdata <= dbg_pcount;
-                    6'h1C:   s_axi_rdata <= dbg_stat1;
-                    6'h20:   s_axi_rdata <= dbg_ccl;
-                    6'h24:   s_axi_rdata <= dbg_hand;
-                    6'h28:   s_axi_rdata <= dbg_thv;
-                    6'h2C:   s_axi_rdata <= dbg_cfv;
-                    6'h30:   s_axi_rdata <= dbg_rdy;
-                    6'h34:   s_axi_rdata <= ch_dbg_vcnt;   // CCL 内部看到的 valid 数
                     // ---- 候选表寄存器镜像（2026-10-28 加）----
-                    // 板级实测发现：PL 写 DDR 的结果表 PS 读不到（写主控报 done 但
-                    // DDR 里仍是旧值，CPU 缓存/同步都排除过了）。9 个寄存器直接映射
-                    // 36 字节候选表，PS 走 /dev/mem 读，彻底绕开 DDR 与缓存一致性问题。
-                    6'h40:   s_axi_rdata <= cw0;
-                    6'h44:   s_axi_rdata <= cw1;
-                    6'h48:   s_axi_rdata <= cw2;
-                    6'h4C:   s_axi_rdata <= cw3;
-                    6'h50:   s_axi_rdata <= cw4;
-                    6'h54:   s_axi_rdata <= cw5;
-                    6'h58:   s_axi_rdata <= cw6;
-                    6'h5C:   s_axi_rdata <= cw7;
-                    6'h60:   s_axi_rdata <= cw8;
-                    6'h64:   s_axi_rdata <= st_mirror;   // 状态字镜像
-                    6'h6C:   s_axi_rdata <= fsm_snap;    // 主状态机快照
+                    // 板级实测：PL 写 DDR 的结果表 PS 读不到（写主控报 done 但 DDR 里
+                    // 仍是旧值；缓存同步、冲缓存都试过）。改成 9 个寄存器直接镜像 36 字节
+                    // 候选表 + 1 个状态字镜像，PS 走 /dev/mem 读，绕开 DDR 一致性问题。
+                    //
+                    // 注意：s_axi_*addr 只有 6 位（0x00~0x3C 共 16 个寄存器），
+                    // 所以**不能**放到 0x40 以上（会与 0x00/0x04… 别名）。这里复用原来
+                    // 的调试寄存器槽位 0x18~0x38。调试计数器已完成使命，需要时从别的
+                    // 顶层（ip2_axi_top 的 dbg_* 端口）取。
+                    6'h18:   s_axi_rdata <= cw0;        // n_cand + 候选0 前 3 字节
+                    6'h1C:   s_axi_rdata <= cw1;
+                    6'h20:   s_axi_rdata <= cw2;
+                    6'h24:   s_axi_rdata <= cw3;
+                    6'h28:   s_axi_rdata <= cw4;
+                    6'h2C:   s_axi_rdata <= cw5;
+                    6'h30:   s_axi_rdata <= cw6;
+                    6'h34:   s_axi_rdata <= cw7;
+                    6'h38:   s_axi_rdata <= cw8;        // 候选表最后 4 字节
+                    6'h3C:   s_axi_rdata <= st_mirror;  // {done,err,14'd0,frame_id}
                     default: s_axi_rdata <= 32'h0;
                 endcase
             end
