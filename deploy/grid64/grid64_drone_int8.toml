@@ -1,0 +1,58 @@
+# YOLO11n 截断版 INT8 转换配置（模仿 icraft_modelzoo yolov5s_int8.toml 的 ZG 模板）
+# 用法（Icraft 安装后）：icraft compile D:/icraft_work/grid64_drone_int8.toml
+# 注意：字段取值以本机 icraft docs 为准，安装后如有出入需微调（framework/inputs_layout_g64/no_transinput）。
+
+[parse]
+net_name = "grid64_drone"
+framework = "onnx"
+inputs = [ 1, 512, 512, 3]
+inputs_layout = "NHWC"
+inputs_dtype = "UINT8"
+pre_method = "nop"
+pre_scale = [ 255.0, 255.0, 255.0]
+pre_mean = [ 0.0, 0.0, 0.0]
+channel_swap = [ 0, 1, 2]
+image_channel_order = "rgb"
+network = "D:/icraft_work/grid64_drone.onnx"
+jr_path = "D:/icraft_work/out_g64/"
+target = "zhuge"
+
+[optimize]
+target = "zhuge"
+json = "D:/icraft_work/out_g64/grid64_drone_parsed.json"
+raw = "D:/icraft_work/out_g64/grid64_drone_parsed.raw"
+jr_path = "D:/icraft_work/out_g64/"
+
+[quantize]
+forward_mode = "image"
+saturation = "kld"
+forward_dir = "D:/icraft_work/qtset_g64"
+forward_list = "D:/icraft_work/qtset_g64/dut.txt"
+qdtype = "int8"
+json = "D:/icraft_work/out_g64/grid64_drone_optimized.json"
+raw = "D:/icraft_work/out_g64/grid64_drone_optimized.raw"
+jr_path = "D:/icraft_work/out_g64/"
+per = "channel"
+target = "zhuge"
+no_transinput = true
+
+[adapt]
+target = "zhuge"
+json = "D:/icraft_work/out_g64/grid64_drone_quantized.json"
+raw = "D:/icraft_work/out_g64/grid64_drone_quantized.raw"
+jr_path = "D:/icraft_work/out_g64/"
+
+[generate]
+json = "D:/icraft_work/out_g64/grid64_drone_adapted.json"
+raw = "D:/icraft_work/out_g64/grid64_drone_adapted.raw"
+jr_path = "D:/icraft_work/out_g64/"
+log_path = "D:/icraft_work/out_g64/logs/"
+
+[run]
+log_time = true
+log_io = true
+dump_format = "SFB"
+json = "D:/icraft_work/out_g64/grid64_drone_ZG.json"
+raw = "D:/icraft_work/out_g64/grid64_drone_ZG.raw"
+input = "D:/icraft_work/qtset_g64/dut/g0000.jpg"
+log_path = "D:/icraft_work/out_g64/logs/"
