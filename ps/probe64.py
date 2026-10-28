@@ -20,8 +20,8 @@ TAB_WORDS = (1 + N_CAND * 7 + 3) // 4   # 113
 R_CTRL = 0x00
 R_STATUS = 0x0C
 R_VER = 0x14
-R_CIDX = 0x10
-R_CDAT = 0x10
+R_CIDX = 0x40
+R_CDAT = 0x44
 R_FADDR = 0x04
 
 UIO = "/dev/udmabuf0"

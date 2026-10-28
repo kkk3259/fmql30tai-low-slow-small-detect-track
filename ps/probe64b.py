@@ -17,7 +17,8 @@ TAB_WORDS = (1 + N_CAND * 7 + 3) // 4
 R_CTRL = 0x00
 R_STATUS = 0x0C
 R_VER = 0x14
-R_CIDX = 0x10          # 写：字索引；读：该字
+R_CIDX = 0x40          # 写：字索引（读回索引）
+R_CDAT = 0x44          # 读：该字
 R_FADDR = 0x04
 
 UIO = "/dev/udmabuf0"
@@ -81,7 +82,7 @@ def main():
     words = []
     for i in range(TAB_WORDS):
         wr(R_CIDX, i)
-        words.append(rd(R_CIDX))
+        words.append(rd(R_CDAT))
     raw = b"".join(struct.pack("<I", w) for w in words)
     n = raw[0]
     print("STATUS = 0x%08X  busy=%d done=%d err=%d n_cand=%d  用时 %.1f ms"

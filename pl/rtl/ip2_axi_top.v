@@ -29,7 +29,7 @@ module ip2_axi_top #(
     parameter W = 640,
     parameter H = 360,
     parameter MAX_CAND = 64,
-    parameter SE = 5,           // Top-Hat 结构元边长（奇数）：默认 5
+    parameter SE = 21,          // Top-Hat 结构元边长（奇数）：21 可检 ≤20 px 目标
     parameter [31:0] DEF_FRAME_ADDR  = 32'h3010_0000,
     parameter [31:0] DEF_RESULT_ADDR = 32'h3100_0000
 )(

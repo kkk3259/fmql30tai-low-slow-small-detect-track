@@ -34,9 +34,10 @@ NPIX = W * H
 R_CTRL = 0x00
 R_STATUS = 0x0C           # {frm_cnt[15:8], n_cand[7:0], 5'd0, err, done, busy}
 R_VER = 0x14
-R_CIDX = 0x10             # 写：候选表字索引（0..112）；读同一地址返回该字
-R_CDAT = 0x10             # 读：该字（与索引同地址）
-R_HAND = 0x3C             # 读：状态字镜像（原握手探针槽位已改）
+R_LEG = 0x18              # 兼容视图：0x18~0x38 共 9 个字 = 36 字节候选表（S 的 web_console 也这么读）
+R_CIDX = 0x40             # 写：窗口字索引（0..112）
+R_CDAT = 0x44             # 读：该字（全 452 字节 = 64 个候选）
+R_HAND = 0x3C             # 读：状态字镜像
 R_STMIRROR = 0x3C
 MAX_CAND = 64
 TAB_WORDS = (1 + MAX_CAND * 7 + 3) // 4   # 113 个字
@@ -105,21 +106,20 @@ class HW(object):
             st = self.rd(R_STATUS)
             if st & 0x06:
                 break
-        # 候选表在 PL 里是 452 B 的 LUTRAM，经“索引窗口”两个寄存器逐个字读出
-        # 先读第 0 个字拿到 n_cand，再只读需要的那几个字（n 小的时候省一半时间）
-        self.wr(R_CIDX, 0)
-        w0 = self.rd(R_CDAT)
-        n0 = w0 & 0xFF
-        need = (1 + n0 * 7 + 3) // 4
-        if need < 1:
-            need = 1
-        if need > TAB_WORDS:
-            need = TAB_WORDS
-        words = [w0]
-        for i in range(1, need):
-            self.wr(R_CIDX, i)
-            words.append(self.rd(R_CDAT))
+        # 新映射：0x18~0x38 是 36 字节兼容视图（9 个字，S 的 web_console 也这么读）；
+        # 候选多于 5 个时，再走 0x40/0x44 索引窗口把 64 个全读出来
+        words = [self.rd(R_LEG + 4 * i) for i in range(9)]
         raw = b"".join(struct.pack("<I", w) for w in words)
+        n0 = raw[0]
+        if n0 > 5:
+            need = (1 + n0 * 7 + 3) // 4
+            if need > TAB_WORDS:
+                need = TAB_WORDS
+            full = []
+            for i in range(need):
+                self.wr(R_CIDX, i)
+                full.append(self.rd(R_CDAT))
+            raw = b"".join(struct.pack("<I", w) for w in full)
         dt = (time.time() - t0) * 1000.0
         n = raw[0]
         cands = []
