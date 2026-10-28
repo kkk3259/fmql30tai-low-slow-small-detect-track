@@ -89,38 +89,45 @@ module win5 #(
         end
     end
 
-    // ---------------- 归约：行内 → 行间 ----------------
+    // ---------------- 归约：行内 → 行间（平衡树，不是线性链）----------------
     // 注意：不能用 always @(*) + for 循环读数组 —— iverilog 对"数组/循环依赖"的
-    // 敏感表推导不可靠（实测会导致 41% 像素错位），这里全部用连续赋值链实现。
-    wire [7:0] hc [0:(SE*SE)-1];    // 行内归约链：hc[r*SE+c] = red(tap[r*SE+0..c])
-    wire [7:0] vc [0:SE-1];         // 行间归约链
+    // 敏感表推导不可靠（实测会导致 41% 像素错位），这里全部用实例化的树形归约实现。
+    // 早期版本用线性链 hc[i]=min(hc[i-1],tap[i])：21×21 时深度 441 级比较，
+    // 综合后 60 级逻辑、WNS -7.775 ns @50 MHz → 改为每行一棵树、行结果再一棵树。
+    wire [7:0] rowmin [0:SE-1];     // 每行的行内最小值/最大值
 
-    genvar gr, gc;
+    // tap 是 unpacked 数组，树模块要扁平向量，这里重新拼一份
+    wire [SE*SE*8-1:0] tap_flat;
+    genvar gt;
     generate
-        for (gr = 0; gr < SE; gr = gr + 1) begin : g_hred
-            assign hc[gr*SE] = tap[gr*SE];
-            for (gc = 1; gc < SE; gc = gc + 1) begin : g_hs
-                if (IS_MAX)
-                    assign hc[gr*SE+gc] = (hc[gr*SE+gc-1] > tap[gr*SE+gc]) ?
-                                           hc[gr*SE+gc-1] : tap[gr*SE+gc];
-                else
-                    assign hc[gr*SE+gc] = (hc[gr*SE+gc-1] < tap[gr*SE+gc]) ?
-                                           hc[gr*SE+gc-1] : tap[gr*SE+gc];
-            end
+        for (gt = 0; gt < SE*SE; gt = gt + 1) begin : g_tapflat
+            assign tap_flat[gt*8 +: 8] = tap[gt];
         end
     endgenerate
 
-    assign vc[0] = hc[SE-1];        // 第 0 行自己的行内结果（hc[r*SE+SE-1] 是第 r 行结果）
+    genvar gr;
     generate
-        for (gr = 1; gr < SE; gr = gr + 1) begin : g_vred
-            if (IS_MAX)
-                assign vc[gr] = (vc[gr-1] > hc[gr*SE+SE-1]) ? vc[gr-1] : hc[gr*SE+SE-1];
-            else
-                assign vc[gr] = (vc[gr-1] < hc[gr*SE+SE-1]) ? vc[gr-1] : hc[gr*SE+SE-1];
+        for (gr = 0; gr < SE; gr = gr + 1) begin : g_rowtree
+            minmax_tree #(.N(SE), .W(8), .IS_MAX(IS_MAX)) u_row (
+                .din  (tap_flat[gr*SE*8 +: SE*8]),
+                .dout (rowmin[gr])
+            );
         end
     endgenerate
 
-    wire [7:0] vred = vc[SE-1];
+    // 行结果再归约成一棵树
+    wire [SE*8-1:0] rowflat;
+    generate
+        for (gr = 0; gr < SE; gr = gr + 1) begin : g_rowflat
+            assign rowflat[gr*8 +: 8] = rowmin[gr];
+        end
+    endgenerate
+
+    wire [7:0] vred;
+    minmax_tree #(.N(SE), .W(8), .IS_MAX(IS_MAX)) u_col (
+        .din  (rowflat),
+        .dout (vred)
+    );
 
     // ---------------- valid 延迟线（循环 RAM，1 bit）----------------
     reg vmem [0:VD-1];
