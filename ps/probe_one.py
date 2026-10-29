@@ -19,8 +19,8 @@ TAB_WORDS = (1 + N_CAND * 7 + 3) // 4
 R_CTRL = 0x00
 R_STATUS = 0x0C
 R_VER = 0x14
-R_CIDX = 0x10
-R_CDAT = 0x10
+R_CIDX = 0x40           # 写：候选表字索引（0x10 是 FRAME_ID，别写错）
+R_CDAT = 0x44           # 读：该字数据
 
 UIO = "/dev/udmabuf0"
 SYS = "/sys/class/u-dma-buf/udmabuf0"
@@ -80,7 +80,7 @@ def main():
             b = raw[1 + i * 7: 8 + i * 7]
             if len(b) < 7:
                 break
-            got.append(((b[0] << 8) | b[1], (b[2] << 8) | b[3], b[5], b[6]))
+            got.append((((b[0] << 8) | b[1], (b[2] << 8) | b[3], (b[4] << 8) | b[5], b[6])))
         near = [(x, y, a, p) for (x, y, a, p) in got if abs(x - cx) <= 4 and abs(y - cy) <= 4]
         print("边长 %2d px -> n_cand=%d  用时 %.1f ms  中心处候选: %s"
               % (s, n, dt, near if near else "无"))

@@ -1,4 +1,14 @@
+# /etc/network/interfaces.d/eth0 —— 静态优先，DHCP 丢后台（开机不再等 5 分钟）
+#
+# 背景：原来是 `inet dhcp` + `up ip addr add ...`，没有 DHCP 服务器时 ifup 会死等
+# 5 分钟（systemd 里表现为 "A start job is running for Raise network interfaces"），
+# 我们的 ip2demo 又声明了 Required-Start: $network，于是连带 failed。
+#
+# 现在：静态地址立即生效（板子一定能被 PC 用 169.254.67.100 找到），
+# DHCP 只在后台补一个租约（拿到就有 192.168.126.x，拿不到也不阻塞开机）。
 auto eth0
-iface eth0 inet dhcp
-    up ip addr add 169.254.67.100/16 dev eth0 || true
-    down ip addr del 169.254.67.100/16 dev eth0 || true
+iface eth0 inet static
+    address 169.254.67.100
+    netmask 255.255.0.0
+    up (sleep 5; dhclient -1 -t 10 eth0 >/dev/null 2>&1 || true) &
+    down pkill -f "dhclient.*eth0" 2>/dev/null || true

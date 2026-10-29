@@ -1,40 +1,69 @@
 #!/bin/sh
 ### BEGIN INIT INFO
 # Provides:          ip2demo
-# Required-Start:    $network $remote_fs
-# Required-Stop:     $network $remote_fs
+# Required-Start:    $remote_fs
+# Required-Stop:     $remote_fs
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
 # Short-Description: IP2 低小目标检测 实时预览
 ### END INIT INFO
+#
+# 2026-10-29 修订：
+#   1) 去掉 Required-Start: $network —— 网络失败不该拖垮我们的服务（原来会连带 failed）
+#   2) 摄像头按 v4l2 名字自动识别（"USB Camera"），不再写死 /dev/video1
+#      —— 重启后 video0/video1 顺序会变，写死会起不来
+#   3) 日志超过 2000 行自动截断，避免 SD 卡写满
+#   4) 结尾统一 exit 0，避免 systemd 记 failed
 BIN=/lib/firmware/ip2_bd_wrapper.bin
 FWM=/sys/class/fpga_manager/fpga0
 DIR=/root/ip2
 LOG=/var/log/ip2demo.log
-CAM=/dev/video1
+
+find_cam() {
+    # 在 v4l2 设备里找名字含 "USB Camera" 的那个节点
+    for d in /sys/class/video4linux/video*; do
+        [ -e "$d/name" ] || continue
+        case "$(cat "$d/name" 2>/dev/null)" in
+            *USB*Camera*) echo "/dev/$(basename $d)"; return 0 ;;
+        esac
+    done
+    [ -c /dev/video0 ] && { echo /dev/video0; return 0; }
+    return 1
+}
+
+trim_log() {
+    [ -f "$LOG" ] || return 0
+    n=$(wc -l < "$LOG" 2>/dev/null || echo 0)
+    if [ "$n" -gt 2000 ]; then
+        tail -1000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+    fi
+}
 
 start() {
+    trim_log
     echo "== ip2demo start $(date) ==" >> $LOG
     pkill -f 'cam_pipe[.]py' 2>/dev/null
     pkill -f 'cam_demo[.]py' 2>/dev/null
     sleep 1
     if [ -f "$BIN" ]; then
         echo ip2_bd_wrapper.bin > $FWM/firmware 2>>$LOG
-        echo "fpga_manager load rc=$? state=$(cat $FWM/state)" >> $LOG
+        echo "fpga_manager load rc=$? state=$(cat $FWM/state 2>/dev/null)" >> $LOG
     else
         echo "WARN: $BIN 不存在，PL 可能未配置" >> $LOG
     fi
     sleep 1
-    # 夜间光线不足时驱动会「降帧换长曝光」→ 运动模糊 + 掉到 20fps。
-    # 关掉自动曝光优先级，强制 30fps 短曝光。
-    if [ -c "$CAM" ]; then
+    CAM=$(find_cam)
+    if [ -n "$CAM" ]; then
+        # 夜间光线不足时驱动会「降帧换长曝光」→ 运动模糊 + 掉到 20fps
         v4l2-ctl -d $CAM --set-ctrl exposure_auto_priority=0 2>>$LOG
-        echo "camera: $(v4l2-ctl -d $CAM --get-ctrl exposure_auto_priority 2>>$LOG)" >> $LOG
+        echo "camera: $CAM $(v4l2-ctl -d $CAM --get-ctrl exposure_auto_priority 2>>$LOG)" >> $LOG
+    else
+        echo "WARN: 没找到 USB 摄像头" >> $LOG
     fi
-    cd $DIR || exit 1
-    setsid nohup python3 -u cam_pipe.py --cam 1 --port 8080 >> $LOG 2>&1 < /dev/null &
+    cd $DIR || { echo "ERR: $DIR 不存在" >> $LOG; exit 0; }
+    setsid nohup python3 -u cam_pipe.py --cam "${CAM#/dev/video}" --port 8080 >> $LOG 2>&1 < /dev/null &
     echo $! > /var/run/ip2demo.pid
-    echo "server pid=$(cat /var/run/ip2demo.pid)" >> $LOG
+    echo "server pid=$(cat /var/run/ip2demo.pid) cam=$CAM" >> $LOG
 }
 
 stop() {
@@ -51,6 +80,7 @@ case "$1" in
     start)   start ;;
     stop)    stop ;;
     restart) stop; sleep 1; start ;;
-    status)  ps | grep -c '[c]am_pipe' ;;
-    *) echo "用法: $0 {start|stop|restart|status}"; exit 1 ;;
+    status)  pgrep -f 'cam_pipe[.]py' >/dev/null && echo running || echo stopped ;;
+    *) echo "用法: $0 {start|stop|restart|status}" ;;
 esac
+exit 0
