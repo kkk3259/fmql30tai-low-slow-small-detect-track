@@ -510,10 +510,16 @@ class Handler(BaseHTTPRequestHandler):
                 return
             return
         if self.path.startswith("/snap"):
-            # 按需出一张高质量单帧（q95），平时推流用低质量保帧率
+            # 按需出一张单帧：/snap?q=72|80|95（默认 95），用于画质 A/B 对比
             img = globals().get("g_last_img")
+            _q = 95
+            try:
+                if "q=" in self.path:
+                    _q = max(10, min(100, int(self.path.split("q=")[1].split("&")[0])))
+            except Exception:
+                _q = 95
             if img is not None:
-                ok, enc = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+                ok, enc = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), _q])
                 if ok:
                     data = enc.tobytes()
                     self.send_response(200)
