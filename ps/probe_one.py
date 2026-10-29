@@ -19,8 +19,8 @@ TAB_WORDS = (1 + N_CAND * 7 + 3) // 4
 R_CTRL = 0x00
 R_STATUS = 0x0C
 R_VER = 0x14
-R_CIDX = 0x40           # 写：候选表字索引（0x10 是 FRAME_ID，别写错）
-R_CDAT = 0x44           # 读：该字数据
+R_CIDX = 0x10           # 写：候选表字索引（6 位地址，0x40 会绕回 0x00）
+R_CDAT = 0x10           # 读：该字数据
 
 UIO = "/dev/udmabuf0"
 SYS = "/sys/class/u-dma-buf/udmabuf0"

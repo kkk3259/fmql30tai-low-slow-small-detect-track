@@ -9,7 +9,8 @@ module ip2_top_stream #(
     parameter W = 64,
     parameter H = 64,
     parameter MAX_CAND = 5,
-    parameter SE = 5           // Top-Hat 结构元边长（奇数）：默认 5
+    parameter SE = 5,           // Top-Hat 结构元边长（奇数）：默认 5
+    parameter MODE = 0          // 0=Top-Hat(亮目标) 1=Black-Hat(暗目标)
 )(
     input  wire clk,
     input  wire rst_n,
@@ -38,7 +39,7 @@ module ip2_top_stream #(
     assign dbg_cf_ready = cf_ready;
     assign dbg_ch_ready = th_ready;
 
-    tophat_5x5_stream #(.W(W), .H(H), .SE(SE)) u_tophat (
+    tophat_5x5_stream #(.W(W), .H(H), .SE(SE), .MODE(MODE)) u_tophat (
         .clk(clk), .rst_n(rst_n),
         .i_data(i_data), .i_valid(i_valid), .i_ready(th_ready),
         .o_data(th_data), .o_valid(th_valid), .o_ready(cf_ready)

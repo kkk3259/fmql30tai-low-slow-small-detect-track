@@ -1,13 +1,19 @@
-// tophat_5x5_stream.v —— 流式 NxN Top-Hat（行缓存 + 流水线）
-// TopHat = I - opening(I) = I - dilate(erode(I,SE),SE)
+// tophat_5x5_stream.v —— 流式 NxN Top-Hat / Black-Hat（行缓存 + 流水线）
+// TopHat   = I - opening(I) = I - dilate(erode(I,SE),SE)      → 亮小目标
+// BlackHat = closing(I) - I = erode(dilate(I,SE),SE) - I      → 暗小目标
+// 【2026-10-29】新增 MODE：0=Top-Hat（默认，检亮目标）、1=Black-Hat（检暗目标）。
+//   S 的实测（tools/bench_cfar_tradeoff.py，100 张真实图）：真实目标是**暗点**，
+//   Black-Hat k=3.0 召回 86%/候选 47.5，优于 Top-Hat k=4.0 的 55%/34.7。
+//   硬件无需新增资源：两级 win5 的 IS_MAX/PAD 对调、减法方向反过来即可。
 // ✅ 已验证（SE=5）：内部逐像素与 cv2.morphologyEx(MORPH_TOPHAT, 5x5) 0 误差。
 // 【2026-10-28】SE 参数化，默认 21x21（SE=5 只能检 1~4px，SE=21 可检 <=20px）。
-// 结构：win5(腐蚀 min, PAD=255) → win5(膨胀 max, PAD=0) → 原始延迟 TD 对齐。
+// 结构：win5(第1级) → win5(第2级) → 原始延迟 TD 对齐。
 // TD = 2*(每级 win5 延迟) + 1，每级延迟 = (SE/2)*W + (SE/2) + 1。
 module tophat_5x5_stream #(
     parameter W = 32,
     parameter H = 32,
     parameter SE = 5,                                       // 结构元边长（奇数）；默认 5
+    parameter MODE = 0,                                     // 0=Top-Hat(亮) 1=Black-Hat(暗)
     parameter TD = 2*(((SE/2)*W) + (SE/2) + 1) + 1           // 原始灰度延迟（对齐 opening）
 )(
     input  wire clk,
@@ -24,7 +30,8 @@ module tophat_5x5_stream #(
     wire [7:0] eroded;
     wire eroded_valid;
     wire eroded_ready;
-    win5 #(.W(W), .SE(SE), .IS_MAX(0), .PAD(8'd255)) u_erode (
+    // 第 1 级：Top-Hat 用腐蚀(min,pad255)，Black-Hat 用膨胀(max,pad0)
+    win5 #(.W(W), .SE(SE), .IS_MAX(MODE ? 1 : 0), .PAD(MODE ? 8'd0 : 8'd255)) u_erode (
         .clk(clk), .rst_n(rst_n),
         .i_data(i_data), .i_valid(i_valid), .i_ready(i_ready),
         .o_data(eroded), .o_valid(eroded_valid), .o_ready(eroded_ready)
@@ -32,7 +39,9 @@ module tophat_5x5_stream #(
 
     wire [7:0] dilated;
     wire dilated_valid;
-    win5 #(.W(W), .SE(SE), .IS_MAX(1), .PAD(8'd0)) u_dilate (
+    wire dilated_ready;
+    // 第 2 级：Top-Hat 用膨胀(max,pad0)，Black-Hat 用腐蚀(min,pad255)
+    win5 #(.W(W), .SE(SE), .IS_MAX(MODE ? 0 : 1), .PAD(MODE ? 8'd255 : 8'd0)) u_dilate (
         .clk(clk), .rst_n(rst_n),
         .i_data(eroded), .i_valid(eroded_valid), .i_ready(eroded_ready),
         .o_data(dilated), .o_valid(dilated_valid), .o_ready(o_ready)
@@ -70,7 +79,11 @@ module tophat_5x5_stream #(
     end
 
     wire [7:0] gray_c = gfull ? gd[grp] : 8'd0;
-    wire [7:0] th = (gray_c >= dilated) ? (gray_c - dilated) : 8'd0;
+    // MODE=0: TopHat   = I - opening  → 亮目标
+    // MODE=1: BlackHat = closing - I  → 暗目标
+    wire [7:0] th_t = (gray_c >= dilated) ? (gray_c - dilated) : 8'd0;
+    wire [7:0] th_b = (dilated >= gray_c) ? (dilated - gray_c) : 8'd0;
+    wire [7:0] th   = MODE ? th_b : th_t;
 
     // 寄存输出（与 win5 对齐，标准流式；带 o_ready 使能，受阻时必须保持数据）
     reg [7:0] o_data_r;

@@ -35,8 +35,8 @@ R_CTRL = 0x00
 R_STATUS = 0x0C           # {frm_cnt[15:8], n_cand[7:0], 5'd0, err, done, busy}
 R_VER = 0x14
 R_LEG = 0x18              # 兼容视图：0x18~0x38 共 9 个字 = 36 字节候选表（S 的 web_console 也这么读）
-R_CIDX = 0x40             # 写：窗口字索引（0..112）
-R_CDAT = 0x44             # 读：该字（全 452 字节 = 64 个候选）
+R_CIDX = 0x10             # 写：窗口字索引（0..112）
+R_CDAT = 0x10             # 读：该字（全 452 字节 = 64 个候选）
 R_HAND = 0x3C             # 读：状态字镜像
 R_STMIRROR = 0x3C
 MAX_CAND = 64

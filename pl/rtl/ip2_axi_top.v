@@ -30,6 +30,7 @@ module ip2_axi_top #(
     parameter H = 360,
     parameter MAX_CAND = 64,
     parameter SE = 21,          // Top-Hat 结构元边长（奇数）：21 可检 ≤20 px 目标
+    parameter MODE = 0,         // 0=Top-Hat(亮目标) 1=Black-Hat(暗目标)
     parameter [31:0] DEF_FRAME_ADDR  = 32'h3010_0000,
     parameter [31:0] DEF_RESULT_ADDR = 32'h3100_0000
 )(
@@ -334,7 +335,7 @@ module ip2_axi_top #(
         .m_rvalid(m_axi_rvalid), .m_rready(m_axi_rready)
     );
 
-    ip2_top_stream #(.W(W), .H(H), .MAX_CAND(MAX_CAND), .SE(SE)) u_chain (
+    ip2_top_stream #(.W(W), .H(H), .MAX_CAND(MAX_CAND), .SE(SE), .MODE(MODE)) u_chain (
         .clk(clk), .rst_n(chain_rst_n),
         .i_data(feed_real ? fifo_data : 8'd0),
         .i_valid(feed_real ? fifo_valid : feed_pad),

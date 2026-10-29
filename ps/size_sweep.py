@@ -24,8 +24,8 @@ R_CTRL = 0x00
 R_FADDR = 0x04
 R_STATUS = 0x0C
 R_VER = 0x14
-R_CIDX = 0x40
-R_CDAT = 0x44
+R_CIDX = 0x10
+R_CDAT = 0x10
 N_CAND, TAB_WORDS, LEG_WORDS, LEG_CAND = 64, 113, 9, 5
 UIO = "/dev/udmabuf0"
 SYS = "/sys/class/u-dma-buf/udmabuf0"
@@ -44,7 +44,7 @@ def pick_view(rd, wr, want):
     """决定用哪个地址视图。
 
     判据（数据驱动）：帧跑完后 STATUS 的 n_cand 若 >0，而窗口视图读出来的 n 是 0，
-    说明这个位流没有 0x40/0x44 窗口（6 位地址的老构建），必须走 legacy。
+    说明这个位流没有窗口（老构建），必须走 legacy。
     没跑到帧时退化为猜 window（调用方随后会用真实帧再校正一次）。
     """
     if want != "auto":

@@ -2,10 +2,10 @@
 """cand_read.py —— 统一读候选表（兼容两种构建的地址视图）
 
 两种视图：
-  window  —— 写 0x40 字索引，读 0x44（新构建，最多 64 个候选 / 452 B）
+  window  —— 写 0x10 字索引，读 0x10（新构建，最多 64 个候选 / 452 B）
   legacy  —— 读 0x18 起 9 个 32 位字 = 36 字节兼容视图（老构建 6 位地址，只有前 5 个候选）
 
-视图判定：往 0x40 写字索引 3 再读回；若读回值不等于 3（说明 0x40 绕回 0x00），则用 legacy。
+视图判定：写索引 0 后读回该字，与 legacy[0] 比对；不一致则用 legacy。
 
 用法:
   python3 cand_read.py                 # 自动判视图，打印候选
@@ -23,8 +23,8 @@ R_FADDR = 0x04
 R_RADDR = 0x08
 R_STATUS = 0x0C
 R_VER = 0x14
-R_CIDX = 0x40
-R_CDAT = 0x44
+R_CIDX = 0x10
+R_CDAT = 0x10
 N_CAND = 64
 TAB_WORDS = (1 + N_CAND * 7 + 3) // 4
 LEG_WORDS = 9
@@ -49,8 +49,10 @@ def main():
 
     view = a.view
     if view == "auto":
-        wr(R_CIDX, 3)
-        view = "window" if rd(R_CIDX) == 3 else "legacy"
+        # 判定：窗口的 0 号字应与 legacy_ram[0] 完全相同（都是候选表前 4 字节），
+        # 且索引默认 0（复位值）。老构建没窗口，0x10 读回别的寄存器 → 必然不同。
+        # 注意：**不发任何写操作**，避免把老构建的 FRAME_ID 写坏。
+        view = "window" if rd(R_CDAT) == rd(0x18) else "legacy"
 
     if view == "window":
         words = []
