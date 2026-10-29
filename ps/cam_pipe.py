@@ -48,6 +48,7 @@ g_info = {}
 g_stop = False
 MOTION_FRAC = 0.0     # 时域差分：变化像素占比门限（0=关闭），由 --motion-frac 设置
 MOTION_THR = 8        # 时域差分：逐像素变化门限
+MULTI_SCALE = 0       # 1=开启多尺度（全分辨率 + 2x 降采样各跑一遍）
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <title>IP2 实时检测</title>
@@ -133,6 +134,28 @@ class HW(object):
                           "area": (b[4] << 8) | b[5], "peak": b[6]})
         return st, cands, dt
 
+    def run_ms(self, gray):
+        """多尺度：全分辨率跑一遍（2~20px），再把 3x 降采样图放进左上角跑一遍（约 4~60px），
+        后者坐标 x2、面积 x4 映回原尺度，两组按 8px 距离去重合并。"""
+        st, c1, dt = self.run(gray)
+        sw, sh = W // 3, H // 3
+        small = cv2.resize(gray, (sw, sh), interpolation=cv2.INTER_AREA)
+        canvas = np.zeros((H, W), np.uint8)
+        canvas[0:sh, 0:sw] = small
+        st2, c2, dt2 = self.run(canvas)
+        out = list(c1)
+        for c in c2:
+            mx = min(int(c["x"]) * 3 + 1, W - 1)
+            my = min(int(c["y"]) * 3 + 1, H - 1)
+            ma = min(int(c["area"]) * 9, 60000)
+            dup = False
+            for o in out:
+                if abs(int(o["x"]) - mx) <= 10 and abs(int(o["y"]) - my) <= 10:
+                    dup = True
+                    break
+            if not dup:
+                out.append({"x": mx, "y": my, "area": ma, "peak": c["peak"], "big": 1})
+        return st, out, dt + dt2
 
 class Tracker(object):
     """跨帧候选跟踪 + 去抖。
@@ -264,7 +287,7 @@ class Pipeline(object):
                 time.sleep(0.002)
                 continue
             color, gray = item
-            st, cands, dt = self.hw.run(gray)
+            st, cands, dt = self.hw.run_ms(gray) if MULTI_SCALE else self.hw.run(gray)
             self.pl_ms = 0.8 * self.pl_ms + 0.2 * dt
             self.pl_n += 1
             # ---- 时域差分（借鉴帧差法）：只保留“相对上一帧有变化”的候选，静止背景直接滤掉 ----
@@ -421,11 +444,14 @@ def main():
                     help="连续丢失多少帧才删除")
     ap.add_argument("--motion-frac", type=float, default=0.0,
                     help="时域差分：候选周围 13x13 内变化像素占比低于此值则丢弃（0=关闭；建议 0.10~0.20）")
+    ap.add_argument("--multi-scale", type=int, default=0,
+                    help="1=开启多尺度：额外把 2x 降采样图跑一遍，覆盖 20~40px 目标（帧率约降一半）")
     ap.add_argument("--motion-thr", type=int, default=8,
                     help="时域差分：逐像素灰度变化门限（默认 8）")
     args = ap.parse_args()
 
-    global MOTION_FRAC, MOTION_THR
+    global MOTION_FRAC, MOTION_THR, MULTI_SCALE
+    MULTI_SCALE = args.multi_scale
     MOTION_FRAC = args.motion_frac
     MOTION_THR = args.motion_thr
 
