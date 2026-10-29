@@ -15,7 +15,7 @@ def main():
     print("step  true_x  track_x  err_before  err_after")
     eb = ea = n = 0
     for i in range(24):
-        tx = 40 + i * 16          # 每帧右移 16 px（约 480 px/s @30fps）
+        tx = 40 + i * 6          # 每帧右移 6 px（约 180 px/s @30fps）
         ty = 180
         st, cands, dt = hw.run(frame(tx, ty))
         tracks = trk.update(cands, 29.0)

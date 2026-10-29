@@ -55,7 +55,7 @@ MS_EVERY = 1          # 多尺度第二/三遍每 N 帧做一次（2 => 隔帧�
 MS_CNT = 0            # 帧计数
 CLUSTER_R = 12        # 候选聚类半径（像素）：相距小于它的候选合并成一个目标
 NMS_IOU = 0.45        # 框去重阈值：交叠/较小框面积 超过它就合并
-LAG_FRAMES = 3.0      # 速度外推帧数（补偿端到端时延；0=不外推）
+LAG_FRAMES = 0.0      # 速度外推帧数（补偿端到端时延；0=不外推）
 GRAY_STREAM = 1       # 1=推灰度 JPEG（编码快一倍、全分辨率更锐）；0=推彩色
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
