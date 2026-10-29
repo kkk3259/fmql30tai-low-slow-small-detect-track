@@ -27,7 +27,7 @@ import numpy as np
 sys.stdout.reconfigure(encoding='utf-8')
 
 HALF = 15
-K = 4
+K = 1      # 与 cfar_threshold_stream.v 的 K=1（2026-10-29 调参：detect_v1.py 同款）保持一致
 FLOOR = 3
 
 SIM = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sim"))

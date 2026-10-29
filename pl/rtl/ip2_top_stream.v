@@ -10,7 +10,8 @@ module ip2_top_stream #(
     parameter H = 64,
     parameter MAX_CAND = 5,
     parameter SE = 5,           // Top-Hat 结构元边长（奇数）：默认 5
-    parameter MODE = 0          // 0=Top-Hat(亮目标) 1=Black-Hat(暗目标)
+    parameter MODE = 0,         // 0=Top-Hat(亮目标) 1=Black-Hat(暗目标)
+    parameter DENOISE = 0       // 1=CCL 去孤立点（板级顶层打开）
 )(
     input  wire clk,
     input  wire rst_n,
@@ -49,7 +50,7 @@ module ip2_top_stream #(
         .i_data(th_data), .i_valid(th_valid), .i_ready(cf_ready),
         .o_data(cf_data), .o_enh(cf_enh), .o_valid(cf_valid), .o_ready(1'b1)
     );
-    candidate_extract_stream #(.W(W), .H(H), .MAX_CAND(MAX_CAND)) u_cand (
+    candidate_extract_stream #(.W(W), .H(H), .MAX_CAND(MAX_CAND), .DENOISE(DENOISE)) u_cand (
         .clk(clk), .rst_n(rst_n),
         // CFAR 的 o_data 是 8 bit，CCL 的 i_bin 是 1 bit：显式取"非零"，
         // 避免隐式截断（旧写法直接接 8 bit，Verific 只报 warning，语义不明）。

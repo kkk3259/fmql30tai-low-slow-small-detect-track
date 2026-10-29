@@ -17,7 +17,14 @@ module candidate_extract_stream #(
     parameter MIN_AREA = 2,
     // 面积上限：原来是 200，等于把 14px 以上的目标（20px→400）直接滤掉。
     // 比赛目标 15~70px，上限必须放大，否则“检测得到也算不出来”。
-    parameter MAX_AREA = 2047
+    parameter MAX_AREA = 2047,
+    // ---- 去孤立点（默认关，板级顶层会打开）----
+    // CFAR 输出的二值图里常有单像素亮点（噪声/压缩伪影），CCL 会给每个噪点
+    // 分配一个标签、占满 MAX_COMP(64)，并让候选表逐帧抖动。
+    // DENOISE=1：要求左邻也是前景才保留（滤掉 1px 孤立点与 1px 宽细线）。
+    // 代价：1 个寄存器 + 1 个与门，延迟 1 拍，无行缓存。
+    // 默认 0 —— 保证所有历史回归用例（参考表按“不去噪”生成）保持 0 差异。
+    parameter DENOISE = 0
 )(
     input  wire clk,
     input  wire rst_n,
@@ -49,8 +56,8 @@ module candidate_extract_stream #(
     reg [LW-1:0] parent [0:MAX_COMP-1];  // 并查集父指针（parent[i]=标签 i+1 的父，自身=根）
 
     reg [15:0] carea [0:MAX_COMP-1];
-    reg [15:0] csumx [0:MAX_COMP-1];
-    reg [15:0] csumy [0:MAX_COMP-1];
+    reg [23:0] csumx [0:MAX_COMP-1];   // 2026-10-30：16 位会溢出（area*坐标），改 24 位
+    reg [23:0] csumy [0:MAX_COMP-1];   // 同上
     reg [7:0]  cpeak [0:MAX_COMP-1];
 
     reg [15:0] cx [0:MAX_COMP-1];
@@ -71,10 +78,10 @@ module candidate_extract_stream #(
     //   （50MHz 下 48us，相对一帧 23 万拍可忽略）。
     //   dv_step: 0=装载cx 1..17=迭代cx 18=写cx/装载cy 19..35=迭代cy 36=写cy
     reg [5:0]  dv_step;
-    reg [18:0] dv_rem;
-    reg [16:0] dv_num;             // 被除数（csum + 面积/2，最大 127800+100 < 2^17）
-    reg [16:0] dv_q;
-    reg [7:0]  dv_div;
+    reg [16:0] dv_rem;   // 除数 16 位 + 1
+    reg [23:0] dv_num;   // 被除数（csum + 面积/2，最大 2047*639 < 2^21）
+    reg [17:0] dv_q;
+    reg [15:0] dv_div;
     reg [2:0] state;
     localparam S_RUN = 0, S_MERGE = 1, S_POST = 2, S_SORT = 3, S_OUT = 4, S_DONE = 5;
 
@@ -117,10 +124,37 @@ module candidate_extract_stream #(
     endfunction
 
     wire [LW-1:0] min_nb = min4(prev_ul, prev_t, prev_ur, nb_l);
+
+    // ------------------------------------------------------------------
+    // 去孤立点（见参数注释）：要求本像素的左侧邻居也是前景
+    //   孤立单点(1px)   ：左邻为 0 → 滤掉
+    //   竖直细线(1px宽) ：左邻为 0 → 滤掉
+    //   2px 以上团块/水平线：左邻为 1 → 保留
+    // 代价：1 个寄存器 + 1 个与门，延迟 1 拍，无行缓存、无 RAM。
+    // （先前写的 3×3 邻域计数版需要 2 行行缓存，仿真出现 X 传播、
+    //   输出恒 0，先回退到这个最小可用版本，避免把整链改坏。）
+    // ------------------------------------------------------------------
+    reg           b_d1;          // 左邻像素
+    reg           f_bin, f_valid_r;
+
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            b_d1 <= 1'b0; f_bin <= 1'b0; f_valid_r <= 1'b0;
+        end else if (state == S_RUN) begin
+            if (i_bin_valid) begin
+                b_d1      <= i_bin;
+                f_bin     <= DENOISE ? (i_bin && b_d1) : i_bin;
+                f_valid_r <= 1'b1;
+            end else begin
+                f_valid_r <= 1'b0;
+            end
+        end
+    end
+
     // 本像素被赋的标签
     wire [LW-1:0] new_lbl    = (min_nb != {LW{1'b0}}) ? min_nb
                              : ((n_lbl < MAX_COMP - 1) ? n_lbl + 1'b1 : {LW{1'b0}});
-    wire [LW-1:0] assign_lbl = i_bin ? new_lbl : {LW{1'b0}};
+    wire [LW-1:0] assign_lbl = f_bin ? new_lbl : {LW{1'b0}};
 
     // ------------------------------------------------------------------
     // S_MERGE：把每个标签的累加量并入父标签
@@ -142,13 +176,13 @@ module candidate_extract_stream #(
     wire          mg_child = (mg_par != mg_lbl) && (mg_par != {LW{1'b0}}) && (carea[mg_idx] != 0);
 
     // ---- S_POST 串行除法器组合部分 ----
-    wire [18:0] dv_rem_sh = {dv_rem[17:0], dv_num[16]};
-    wire        dv_ge     = (dv_rem_sh >= {11'd0, dv_div});
-    wire [18:0] dv_rem_nx = dv_ge ? (dv_rem_sh - {11'd0, dv_div}) : dv_rem_sh;
+    wire [16:0] dv_rem_sh = {dv_rem[15:0], dv_num[23]};
+    wire        dv_ge     = (dv_rem_sh >= {1'b0, dv_div});
+    wire [16:0] dv_rem_nx = dv_ge ? (dv_rem_sh - {1'b0, dv_div}) : dv_rem_sh;
     // 被除数 = 累加和 + 面积/2（四舍五入），源数据同拍组合
-    wire [16:0] dv_num_x  = {1'b0, csumx[pi]} + {11'd0, carea[pi][7:0]} / 2;
-    wire [16:0] dv_num_y  = {1'b0, csumy[pi]} + {11'd0, carea[pi][7:0]} / 2;
-    wire [7:0]  dv_div_w  = (carea[pi][7:0] == 8'd0) ? 8'd1 : carea[pi][7:0];
+    wire [23:0] dv_num_x  = csumx[pi] + {12'd0, carea[pi][15:1]};
+    wire [23:0] dv_num_y  = csumy[pi] + {12'd0, carea[pi][15:1]};
+    wire [15:0] dv_div_w  = (carea[pi] == 16'd0) ? 16'd1 : carea[pi];
 
     // 输出字段选择（S 的格式：n_cand + MAX_CAND×(x_hi,x_lo,y_hi,y_lo,area_hi,area_lo,peak)）
     // 2026-10-28：MAX_CAND 5→64，按 4 字节对齐补齐到 N_OUT 字节（449→452）
@@ -201,7 +235,7 @@ module candidate_extract_stream #(
 
     // ---- 行标签 RAM 的写口：必须是独立 always 块（写进状态机 case 里 Procise 就不认 RAM）----
     always @(posedge clk) begin
-        if (state == S_RUN && i_bin_valid)
+        if (state == S_RUN && f_valid_r)
             lbl_ram[wr_addr] <= assign_lbl;
     end
 
@@ -214,20 +248,20 @@ module candidate_extract_stream #(
             end
             left_lbl <= 0; n_lbl <= 0; n_comp <= 0;
             col <= 0; row <= 0; cnt <= 0; px_cnt <= 0; mk <= 0; pi <= 0;
-            dv_step <= 0; dv_rem <= 0; dv_num <= 0; dv_q <= 0; dv_div <= 8'd1;
+            dv_step <= 0; dv_rem <= 0; dv_num <= 0; dv_q <= 0; dv_div <= 16'd1;
             state <= S_RUN;
             o_data_r <= 0; o_valid_r <= 0;
         end else begin
             o_valid_r <= 1'b0;
             case (state)
             S_RUN: begin
-                if (i_bin_valid) begin
+                if (f_valid_r) begin
                     // 1) 行缓存写标签（写口在下面独立的 always 块里，否则推不成 RAM）
                     left_lbl <= assign_lbl;
                     prev_t_d <= prev_t;              // 供下一列作 prev_ul
 
                     // 2) 标签管理与 union
-                    if (i_bin && assign_lbl != 0) begin
+                    if (f_bin && assign_lbl != 0) begin
                         if (min_nb == {LW{1'b0}}) begin
                             if (n_lbl < MAX_COMP - 1) n_lbl <= n_lbl + 1'b1;
                         end else begin
@@ -238,8 +272,8 @@ module candidate_extract_stream #(
                         end
                         // 3) 立即累加到被赋标签
                         carea[assign_lbl-1] <= carea[assign_lbl-1] + 16'd1;
-                        csumx[assign_lbl-1] <= csumx[assign_lbl-1] + {{(16-CW){1'b0}}, col};
-                        csumy[assign_lbl-1] <= csumy[assign_lbl-1] + {{(16-CH){1'b0}}, row};
+                        csumx[assign_lbl-1] <= csumx[assign_lbl-1] + {{(24-CW){1'b0}}, col};
+                        csumy[assign_lbl-1] <= csumy[assign_lbl-1] + {{(24-CH){1'b0}}, row};
                         if (i_enh > cpeak[assign_lbl-1]) cpeak[assign_lbl-1] <= i_enh;
                     end
 
@@ -277,8 +311,8 @@ module candidate_extract_stream #(
                     if (carea[pi] >= MIN_AREA && carea[pi] <= MAX_AREA) begin
                         dv_div  <= dv_div_w;
                         dv_num  <= dv_num_x;
-                        dv_rem  <= 19'd0;
-                        dv_q    <= 17'd0;
+                        dv_rem  <= 17'd0;
+                        dv_q    <= 18'd0;
                         dv_step <= 6'd1;
                     end else begin
                         cx[pi] <= 16'd0; cy[pi] <= 16'd0; cpeak[pi] <= 8'd0;
@@ -289,14 +323,14 @@ module candidate_extract_stream #(
                         end
                     end
                 end
-                6'd18: begin
+                6'd25: begin
                     cx[pi]  <= dv_q[15:0];
                     dv_num  <= dv_num_y;
                     dv_rem  <= 19'd0;
                     dv_q    <= 17'd0;
-                    dv_step <= 6'd19;
+                    dv_step <= 6'd26;
                 end
-                6'd36: begin
+                6'd50: begin
                     cy[pi]  <= dv_q[15:0];
                     dv_step <= 6'd0;
                     if (pi >= MAX_COMP - 1) begin
@@ -307,10 +341,10 @@ module candidate_extract_stream #(
                 end
                 default: begin
                     dv_rem  <= dv_rem_nx;
-                    dv_q    <= {dv_q[15:0], dv_ge};
-                    dv_num  <= {dv_num[15:0], 1'b0};
-                    dv_step <= (dv_step == 6'd17) ? 6'd18
-                             : ((dv_step == 6'd35) ? 6'd36 : (dv_step + 6'd1));
+                    dv_q    <= {dv_q[16:0], dv_ge};
+                    dv_num  <= {dv_num[22:0], 1'b0};
+                    dv_step <= (dv_step == 6'd24) ? 6'd25
+                             : ((dv_step == 6'd49) ? 6'd50 : (dv_step + 6'd1));
                 end
                 endcase
             end
