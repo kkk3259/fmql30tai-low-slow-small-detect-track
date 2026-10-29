@@ -50,7 +50,7 @@ MOTION_FRAC = 0.0     # 时域差分：变化像素占比门限（0=关闭），
 MOTION_THR = 8        # 时域差分：逐像素变化门限
 MULTI_SCALE = 0       # 1=开启多尺度
 MS_FACTOR = 3         # 第二遍降采样倍数（3 => 覆盖约 4~60px）
-MS_FACTOR2 = 0        # 第三遍倍数（4 => 补 20~80px；0=关闭，会再慢 1/3）
+MS_FACTOR2 = 4        # 第三遍倍数（4 => 补 20~80px）
 MS_EVERY = 1          # 多尺度第二/三遍每 N 帧做一次（2 => 隔帧，省一半 PL 时间）
 MS_CNT = 0            # 帧计数
 CLUSTER_R = 12        # 候选聚类半径（像素）：相距小于它的候选合并成一个目标
@@ -172,6 +172,30 @@ class HW(object):
                 if not dup:
                     out.append({"x": mx, "y": my, "area": ma, "peak": c["peak"], "big": n})
         return st, out, total
+
+def reject_lines(cands, dy=3, dx=30, need=3, band=48):
+    """剔除“细长亮线”类误报（显示器上边框、窗框、桌沿）——只对画面上下边带生效。
+    教训：若对所有行生效，同一行上的多个真目标（比如靶图一排方块）会被一起删掉。"""
+    if len(cands) < need:
+        return cands
+    rows = {}
+    for c in cands:
+        y = int(c["y"])
+        if y > band and y < H - band // 2:
+            continue                      # 画面中部不做线状剔除
+        rows.setdefault(y // (dy + 1), []).append(c)
+    drop = set()
+    for _, g in rows.items():
+        if len(g) < need:
+            continue
+        xs = sorted(int(c["x"]) for c in g)
+        if xs[-1] - xs[0] > dx:
+            for c in g:
+                drop.add(id(c))
+    if not drop:
+        return cands
+    return [c for c in cands if id(c) not in drop]
+
 
 def cluster_cands(cands, r=12):
     """把相距 < r 的候选合并成一个（按面积加权质心），避免同一目标出多个框。"""
@@ -395,6 +419,7 @@ class Pipeline(object):
             self.prev_gray = gray.copy()
             cands = cluster_cands(cands, CLUSTER_R)
             _t0 = time.time()
+            cands = reject_lines(cands)
             shown = nms_tracks(self.tracker.update(cands, self.pl_fps()), NMS_IOU)
             self.trk_ms = 0.8 * getattr(self, "trk_ms", 0.0) + 0.2 * (time.time() - _t0) * 1000.0
             npass = sum(1 for c in cands if int(c["peak"]) >= Tracker.PEAK_MIN)
