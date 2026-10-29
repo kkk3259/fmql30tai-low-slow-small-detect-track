@@ -264,7 +264,7 @@ class Tracker(object):
     MAX_MISS = 10      # 连续丢失多少帧才删除
     MAX_SHOW = 64      # 最多显示多少个
     PEAK_MIN = 0       # 候选峰值下限
-    MAX_IN = 12        # 每帧最多送进跟踪的候选数（按峰值排序取前 N）
+    MAX_IN = 16        # 每帧最多送进跟踪的候选数（按峰值排序取前 N）
     MAX_TRACKS = 64    # track 池上限
 
     def __init__(self):
