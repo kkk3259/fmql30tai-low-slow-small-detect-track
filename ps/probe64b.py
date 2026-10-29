@@ -93,7 +93,7 @@ def main():
         b = raw[1 + i * 7: 8 + i * 7]
         if len(b) < 7:
             break
-        got.append(((b[0] << 8) | b[1], (b[2] << 8) | b[3], b[5], b[6]))
+        got.append((((b[0] << 8) | b[1], (b[2] << 8) | b[3], (b[4] << 8) | b[5], b[6])))
     hit = 0
     for (cx, cy, r) in DOTS:
         for (x, y, a, pk) in got:

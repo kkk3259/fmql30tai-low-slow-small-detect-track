@@ -50,7 +50,11 @@ module cfar_threshold_stream #(
     parameter W = 64,
     parameter H = 64,
     parameter WIN = 31,
-    parameter K = 4,
+    // 门限：thr = mean + K*sd + FLOOR
+    // K=4（比赛早期的保守值）在 31×31 窗口里会把“比结构元小的亮块”自己抑制掉：
+    //   10px 亮块 → mean≈24 σ≈59 → thr≈262 > 亮块值 232，直接漏检。
+    // 实测（2026-10-29）改成 K=1 后 2~20px 都能出来，见 docs/13 §14。
+    parameter K = 1,
     parameter FLOOR = 3
 )(
     input  wire clk,

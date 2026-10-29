@@ -15,7 +15,9 @@ module candidate_extract_stream #(
     parameter MAX_CAND = 5,
     parameter MAX_COMP = 64,
     parameter MIN_AREA = 2,
-    parameter MAX_AREA = 200
+    // 面积上限：原来是 200，等于把 14px 以上的目标（20px→400）直接滤掉。
+    // 比赛目标 15~70px，上限必须放大，否则“检测得到也算不出来”。
+    parameter MAX_AREA = 2047
 )(
     input  wire clk,
     input  wire rst_n,
@@ -171,7 +173,7 @@ module candidate_extract_stream #(
             3'd1: out_val = x16[7:0];
             3'd2: out_val = y16[15:8];
             3'd3: out_val = y16[7:0];
-            3'd4: out_val = 8'd0;                 // area 高字节恒 0（area<=200<256）
+            3'd4: out_val = carea[oi[5:0]][15:8];   // area 高字节（<256 时为 0，与旧格式兼容）
             3'd5: out_val = carea[oi[5:0]][7:0];
             3'd6: out_val = cpeak[oi[5:0]];
             default: out_val = 8'd0;
