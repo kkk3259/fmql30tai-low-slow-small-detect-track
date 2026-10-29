@@ -46,6 +46,8 @@ g_lock = threading.Lock()
 g_jpeg = None
 g_info = {}
 g_stop = False
+MOTION_FRAC = 0.0     # 时域差分：变化像素占比门限（0=关闭），由 --motion-frac 设置
+MOTION_THR = 8        # 时域差分：逐像素变化门限
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <title>IP2 实时检测</title>
@@ -211,6 +213,7 @@ class Pipeline(object):
         self.enc_ms = 0.0
         self.enc_n = 0
         self.tracker = Tracker()
+        self.prev_gray = None     # 时域差分用：上一帧灰度
 
     # ---------- 线程 A：采集 ----------
     def thread_capture(self):
@@ -264,6 +267,26 @@ class Pipeline(object):
             st, cands, dt = self.hw.run(gray)
             self.pl_ms = 0.8 * self.pl_ms + 0.2 * dt
             self.pl_n += 1
+            # ---- 时域差分（借鉴帧差法）：只保留“相对上一帧有变化”的候选，静止背景直接滤掉 ----
+            nmv = 0
+            if self.prev_gray is not None and MOTION_FRAC > 0.0:
+                d_all = cv2.absdiff(gray, self.prev_gray)
+                kept = []
+                for c in cands:
+                    cx, cy = int(c["x"]), int(c["y"])
+                    r = 6
+                    x0, x1 = max(0, cx - r), min(W, cx + r + 1)
+                    y0, y1 = max(0, cy - r), min(H, cy + r + 1)
+                    if x1 <= x0 or y1 <= y0:
+                        continue
+                    frac = float((d_all[y0:y1, x0:x1] > MOTION_THR).mean())
+                    c["mv"] = round(frac, 2)
+                    if frac >= MOTION_FRAC:
+                        kept.append(c)
+                    else:
+                        nmv += 1
+                cands = kept
+            self.prev_gray = gray.copy()
             shown = self.tracker.update(cands)
             npass = sum(1 for c in cands if int(c["peak"]) >= Tracker.PEAK_MIN)
             for t in shown:
@@ -396,7 +419,15 @@ def main():
     ap.add_argument("--max-show", type=int, default=8, help="最多显示几个稳定框")
     ap.add_argument("--max-miss", type=int, default=Tracker.MAX_MISS,
                     help="连续丢失多少帧才删除")
+    ap.add_argument("--motion-frac", type=float, default=0.0,
+                    help="时域差分：候选周围 13x13 内变化像素占比低于此值则丢弃（0=关闭；建议 0.10~0.20）")
+    ap.add_argument("--motion-thr", type=int, default=8,
+                    help="时域差分：逐像素灰度变化门限（默认 8）")
     args = ap.parse_args()
+
+    global MOTION_FRAC, MOTION_THR
+    MOTION_FRAC = args.motion_frac
+    MOTION_THR = args.motion_thr
 
     Tracker.MIN_HITS = args.min_hits
     Tracker.MAX_MISS = args.max_miss
