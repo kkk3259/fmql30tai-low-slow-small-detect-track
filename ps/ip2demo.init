@@ -61,7 +61,7 @@ start() {
         echo "WARN: 没找到 USB 摄像头" >> $LOG
     fi
     cd $DIR || { echo "ERR: $DIR 不存在" >> $LOG; exit 0; }
-    setsid nohup python3 -u cam_pipe.py --cam "${CAM#/dev/video}" --port 8080 --motion-frac 0.0 --multi-scale 1 --ms-every 2 >> $LOG 2>&1 < /dev/null &
+    setsid nohup python3 -u cam_pipe.py --cam "${CAM#/dev/video}" --port 8080 --motion-frac 0.0 --multi-scale 1 --ms-every 3 >> $LOG 2>&1 < /dev/null &
     echo $! > /var/run/ip2demo.pid
     echo "server pid=$(cat /var/run/ip2demo.pid) cam=$CAM" >> $LOG
 }

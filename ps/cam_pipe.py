@@ -240,7 +240,7 @@ class Tracker(object):
     MAX_MISS = 10      # 连续丢失多少帧才删除
     MAX_SHOW = 64      # 最多显示多少个
     PEAK_MIN = 0       # 候选峰值下限
-    MAX_IN = 24        # 每帧最多送进跟踪的候选数（按峰值排序取前 N）
+    MAX_IN = 12        # 每帧最多送进跟踪的候选数（按峰值排序取前 N）
     MAX_TRACKS = 64    # track 池上限
 
     def __init__(self):
@@ -394,7 +394,9 @@ class Pipeline(object):
                     cands = kept
             self.prev_gray = gray.copy()
             cands = cluster_cands(cands, CLUSTER_R)
+            _t0 = time.time()
             shown = nms_tracks(self.tracker.update(cands, self.pl_fps()), NMS_IOU)
+            self.trk_ms = 0.8 * getattr(self, "trk_ms", 0.0) + 0.2 * (time.time() - _t0) * 1000.0
             npass = sum(1 for c in cands if int(c["peak"]) >= Tracker.PEAK_MIN)
             lat_ms = (time.time() - t_cap) * 1000.0
             self.lat_ms = 0.8 * getattr(self, "lat_ms", lat_ms) + 0.2 * lat_ms
@@ -429,6 +431,7 @@ class Pipeline(object):
             globals()["g_last_img"] = disp     # 供 /snap 按需出高清单帧
             g_info.update({"cands": shown, "raw": npass, "stable": len(shown),
                            "lat_ms": round(self.lat_ms, 1),
+                           "trk_ms": round(getattr(self, "trk_ms", 0.0), 1),
                            "PL_ms": round(self.pl_ms, 2),
                            "pl_fps": round(self.pl_fps(), 1),
                            "cap_ms": round(self.cap_ms, 2), "n": len(shown)})
