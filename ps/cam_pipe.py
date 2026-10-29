@@ -51,6 +51,11 @@ MOTION_THR = 8        # 时域差分：逐像素变化门限
 MULTI_SCALE = 0       # 1=开启多尺度
 MS_FACTOR = 3         # 第二遍降采样倍数（3 => 覆盖约 4~60px）
 MS_FACTOR2 = 0        # 第三遍倍数（4 => 补 20~80px；0=关闭，会再慢 1/3）
+MS_EVERY = 1          # 多尺度第二/三遍每 N 帧做一次（2 => 隔帧，省一半 PL 时间）
+MS_CNT = 0            # 帧计数
+CLUSTER_R = 12        # 候选聚类半径（像素）：相距小于它的候选合并成一个目标
+NMS_IOU = 0.45        # 框去重阈值：交叠/较小框面积 超过它就合并
+LAG_FRAMES = 3.0      # 速度外推帧数（补偿端到端时延；0=不外推）
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <title>IP2 实时检测</title>
@@ -139,10 +144,13 @@ class HW(object):
     def run_ms(self, gray):
         """多尺度：全分辨率跑一遍（2~20px），再依次把 MS_FACTOR / MS_FACTOR2 倍降采样图放进
         左上角各跑一遍（3x≈4~60px，4x≈20~80px），坐标 xN、面积 xN² 映回原尺度后按距离去重合并。"""
+        global MS_CNT
         st, c1, dt = self.run(gray)
         out = list(c1)
         total = dt
-        for n in (MS_FACTOR, MS_FACTOR2):
+        MS_CNT += 1
+        do_extra = (MS_EVERY <= 1) or (MS_CNT % MS_EVERY == 0)
+        for n in ((MS_FACTOR, MS_FACTOR2) if do_extra else ()):
             if n < 2:
                 continue
             sw, sh = W // n, H // n
@@ -164,30 +172,86 @@ class HW(object):
                     out.append({"x": mx, "y": my, "area": ma, "peak": c["peak"], "big": n})
         return st, out, total
 
+def cluster_cands(cands, r=12):
+    """把相距 < r 的候选合并成一个（按面积加权质心），避免同一目标出多个框。"""
+    if len(cands) <= 1:
+        return cands
+    out = []
+    for c in sorted(cands, key=lambda c: -int(c["area"])):
+        cx, cy, ar = int(c["x"]), int(c["y"]), max(1, int(c["area"]))
+        merged = False
+        for o in out:
+            if abs(o["x"] - cx) <= r and abs(o["y"] - cy) <= r:
+                w = o["_w"]
+                o["x"] = int((o["x"] * w + cx * ar) / (w + ar))
+                o["y"] = int((o["y"] * w + cy * ar) / (w + ar))
+                o["area"] = min(60000, o["area"] + ar)
+                o["_w"] = w + ar
+                o["peak"] = max(int(o["peak"]), int(c["peak"]))
+                o["mv"] = max(float(o.get("mv", 0.0)), float(c.get("mv", 0.0)))
+                merged = True
+                break
+        if not merged:
+            d = dict(c)
+            d["_w"] = ar
+            out.append(d)
+    for o in out:
+        o.pop("_w", None)
+    return out
+
+
+def nms_tracks(trks, iom=0.45):
+    """框去重：交叠/较小框面积 超过 iom 的视为同一个目标，保留命中多的。"""
+    keep = []
+    for t in sorted(trks, key=lambda t: (-t["hits"], -int(t["area"]))):
+        r0 = max(4, int((int(t["area"]) ** 0.5) / 2) + 3)
+        x0, y0 = int(t["x"]), int(t["y"])
+        drop = False
+        for k in keep:
+            r1 = max(4, int((int(k["area"]) ** 0.5) / 2) + 3)
+            x1, y1 = int(k["x"]), int(k["y"])
+            ox = max(0, min(x0 + r0, x1 + r1) - max(x0 - r0, x1 - r1))
+            oy = max(0, min(y0 + r0, y1 + r1) - max(y0 - r0, y1 - r1))
+            inter = ox * oy
+            a0 = (2 * r0 + 1) ** 2
+            a1 = (2 * r1 + 1) ** 2
+            if inter > 0 and inter / float(min(a0, a1)) > iom:
+                drop = True
+                break
+        if not drop:
+            keep.append(t)
+    return keep
+
+
 class Tracker(object):
     """跨帧候选跟踪 + 去抖。
 
     规则：
-      * 同一目标在相邻帧位置差 <= MATCH_R 视为同一条 track（坐标/面积/峰值做 EMA 平滑）
-      * 连续命中 >= MIN_HITS 帧才对外显示（默认 3 帧 ≈ 100 ms @29fps）
-      * 连续丢失 > MAX_MISS 帧才移除（默认 2 帧）
-    目的：PL 每帧给出的候选会有细微抖动/偶发漏检，直接画会闪；跟踪后框稳定得多。
+      * 同一目标在相邻帧位置差 <= MATCH_R 视为同一条 track（坐标/面积/峰值做到 EMA 平滑）
+      * 连续命中 >= MIN_HITS 帧才对外显示
+      * 连续丢失 > MAX_MISS 帧才移除
+      * 每条 track 维护 vx/vy（像素/帧），用于在画面上标速度
+    性能：候选按峰值预剪（MAX_IN），track 池上限 MAX_TRACKS，避免 O(候选×track) 爆炸。
     """
 
     MATCH_R = 12       # 匹配半径（像素，棋盘距离）
     MIN_HITS = 2       # 命中多少帧才显示
     MAX_MISS = 10      # 连续丢失多少帧才删除
     MAX_SHOW = 64      # 最多显示多少个
-    PEAK_MIN = 0       # 候选峰值下限（低于此值不入跟踪）
+    PEAK_MIN = 0       # 候选峰值下限
+    MAX_IN = 48        # 每帧最多送进跟踪的候选数（按峰值排序取前 N）
+    MAX_TRACKS = 160   # track 池上限
 
     def __init__(self):
         self.tracks = []
         self.next_id = 1
 
-    def update(self, cands):
+    def update(self, cands, fps=25.0):
+        # 1) 候选预剪：按 (mv, peak) 排序，只保留前 MAX_IN 个
+        cs = sorted(cands, key=lambda c: (-float(c.get("mv", 0.0)), -int(c["peak"])))[:self.MAX_IN]
         nt = len(self.tracks)
         used = [False] * nt
-        for c in cands:
+        for c in cs:
             if int(c["peak"]) < self.PEAK_MIN:
                 continue
             cx, cy = int(c["x"]), int(c["y"])
@@ -202,30 +266,43 @@ class Tracker(object):
             if best >= 0:
                 t = self.tracks[best]
                 used[best] = True
+                dx, dy = cx - t["x"], cy - t["y"]
                 t["x"] = (4 * t["x"] + cx) // 5
                 t["y"] = (4 * t["y"] + cy) // 5
                 t["area"] = (4 * t["area"] + int(c["area"])) // 5
                 t["peak"] = (4 * t["peak"] + int(c["peak"])) // 5
+                t["vx"] = 0.6 * t.get("vx", 0.0) + 0.4 * dx
+                t["vy"] = 0.6 * t.get("vy", 0.0) + 0.4 * dy
                 t["hits"] += 1
                 t["miss"] = 0
             else:
                 self.tracks.append({"id": self.next_id, "x": cx, "y": cy,
                                     "area": int(c["area"]), "peak": int(c["peak"]),
+                                    "vx": 0.0, "vy": 0.0,
                                     "hits": 1, "miss": 0})
                 self.next_id += 1
+        # 2) 未匹配的 track 衰减
         keep = []
         for i, t in enumerate(self.tracks):
             if i < nt and not used[i]:
-                # 丢一帧不立刻清零命中数：只做衰减，避免"闪一下就没了"
                 t["miss"] += 1
+                t["vx"] *= 0.5
+                t["vy"] *= 0.5
                 if t["hits"] > 1:
                     t["hits"] -= 1
             if t["miss"] <= self.MAX_MISS:
                 keep.append(t)
+        # 3) 池上限：优先保留命中多、丢失少的
+        if len(keep) > self.MAX_TRACKS:
+            keep.sort(key=lambda t: (-t["hits"], t["miss"]))
+            keep = keep[:self.MAX_TRACKS]
         self.tracks = keep
         conf = [t for t in self.tracks if t["hits"] >= self.MIN_HITS]
         conf.sort(key=lambda t: (-t["hits"], -t["peak"]))
-        return conf[:self.MAX_SHOW]
+        out = conf[:self.MAX_SHOW]
+        for t in out:
+            t["spd"] = int((t.get("vx", 0.0) ** 2 + t.get("vy", 0.0) ** 2) ** 0.5 * fps)
+        return out
 
 
 class Pipeline(object):
@@ -299,36 +376,44 @@ class Pipeline(object):
             self.pl_n += 1
             # ---- 时域差分（借鉴帧差法）：只保留“相对上一帧有变化”的候选，静止背景直接滤掉 ----
             nmv = 0
-            if self.prev_gray is not None and MOTION_FRAC > 0.0:
+            if self.prev_gray is not None:
                 d_all = cv2.absdiff(gray, self.prev_gray)
-                kept = []
                 for c in cands:
                     cx, cy = int(c["x"]), int(c["y"])
                     r = 6
                     x0, x1 = max(0, cx - r), min(W, cx + r + 1)
                     y0, y1 = max(0, cy - r), min(H, cy + r + 1)
                     if x1 <= x0 or y1 <= y0:
+                        c["mv"] = 0.0
                         continue
-                    frac = float((d_all[y0:y1, x0:x1] > MOTION_THR).mean())
-                    c["mv"] = round(frac, 2)
-                    if frac >= MOTION_FRAC:
-                        kept.append(c)
-                    else:
-                        nmv += 1
-                cands = kept
+                    c["mv"] = round(float((d_all[y0:y1, x0:x1] > MOTION_THR).mean()), 2)
+                if MOTION_FRAC > 0.0:
+                    kept = [c for c in cands if c.get("mv", 0.0) >= MOTION_FRAC]
+                    nmv = len(cands) - len(kept)
+                    cands = kept
             self.prev_gray = gray.copy()
-            shown = self.tracker.update(cands)
+            cands = cluster_cands(cands, CLUSTER_R)
+            shown = nms_tracks(self.tracker.update(cands, self.pl_fps()), NMS_IOU)
             npass = sum(1 for c in cands if int(c["peak"]) >= Tracker.PEAK_MIN)
             for t in shown:
-                x, y = int(t["x"]), int(t["y"])
+                # 速度外推：往前推 LAG_FRAMES 帧，抵消端到端时延，让框盖在目标身上
+                x = int(t["x"] + t.get("vx", 0.0) * LAG_FRAMES)
+                y = int(t["y"] + t.get("vy", 0.0) * LAG_FRAMES)
+                x = max(0, min(W - 1, x))
+                y = max(0, min(H - 1, y))
                 r = max(5, min(24, int((t["area"] ** 0.5) / 2) + 3))
-                cv2.rectangle(color, (x - r, y - r), (x + r, y + r), (0, 255, 0), 1)
-                if x < W - 40 and y > 10:
-                    cv2.putText(color, "%d/%d" % (t["peak"], t["hits"]), (x + 6, y - 6),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 0), 1)
+                cv2.rectangle(color, (x - r, y - r), (x + r, y + r), (0, 255, 0), 2)
+                side = max(1, int(round((t["area"]) ** 0.5)))
+                spd = t.get("spd", 0)
+                lbl = "#%d %dpx" % (t["id"] % 100, side)
+                if spd >= 8:
+                    lbl += " %d/s" % spd
+                if x < W - 60 and y > 10:
+                    cv2.putText(color, lbl, (x + 6, y - 6),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1, cv2.LINE_AA)
             cv2.putText(color, "PL %.1fms  raw %d  stable %d  cap %.1fms %d fps" %
                         (self.pl_ms, npass, len(shown), self.cap_ms, self.pl_fps()),
-                        (6, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1, cv2.LINE_AA)
+                        (6, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2, cv2.LINE_AA)
             with self.paint_lock:
                 self.paint = color
             globals()["g_last_img"] = color   # 供 /snap 按需出高清单帧
@@ -351,7 +436,7 @@ class Pipeline(object):
                 continue
             last = img
             t0 = time.time()
-            ok, enc = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
+            ok, enc = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
             self.enc_ms = 0.8 * self.enc_ms + 0.2 * (time.time() - t0) * 1000
             if ok:
                 self.enc_n += 1
@@ -453,16 +538,25 @@ def main():
                     help="时域差分：候选周围 13x13 内变化像素占比低于此值则丢弃（0=关闭；建议 0.10~0.20）")
     ap.add_argument("--ms-factor", type=int, default=3, help="多尺度第二遍的降采样倍数（3 => 4~60px）")
     ap.add_argument("--ms-factor2", type=int, default=0, help="多尺度第三遍倍数（4 => 补 20~80px；0=关闭）")
+    ap.add_argument("--lag", type=float, default=3.0, help="速度外推帧数（补偿时延，0=关闭）")
+    ap.add_argument("--cluster-r", type=int, default=12, help="候选聚类半径（像素）")
+    ap.add_argument("--nms-iou", type=float, default=0.45, help="框去重阈值")
+    ap.add_argument("--ms-every", type=int, default=1, help="多尺度第二/三遍每 N 帧做一次（2=隔帧，省一半 PL 时间）")
     ap.add_argument("--multi-scale", type=int, default=0,
                     help="1=开启多尺度：额外把 2x 降采样图跑一遍，覆盖 20~40px 目标（帧率约降一半）")
     ap.add_argument("--motion-thr", type=int, default=8,
                     help="时域差分：逐像素灰度变化门限（默认 8）")
     args = ap.parse_args()
 
-    global MOTION_FRAC, MOTION_THR, MULTI_SCALE, MS_FACTOR, MS_FACTOR2
+    global MOTION_FRAC, MOTION_THR, MULTI_SCALE, MS_FACTOR, MS_FACTOR2, MS_EVERY
+    global LAG_FRAMES, CLUSTER_R, NMS_IOU
     MULTI_SCALE = args.multi_scale
     MS_FACTOR = args.ms_factor
     MS_FACTOR2 = args.ms_factor2
+    MS_EVERY = args.ms_every
+    LAG_FRAMES = args.lag
+    CLUSTER_R = args.cluster_r
+    NMS_IOU = args.nms_iou
     MOTION_FRAC = args.motion_frac
     MOTION_THR = args.motion_thr
 
