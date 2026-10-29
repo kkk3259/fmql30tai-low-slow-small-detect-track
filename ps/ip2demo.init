@@ -11,7 +11,7 @@ BIN=/lib/firmware/ip2_bd_wrapper.bin
 FWM=/sys/class/fpga_manager/fpga0
 DIR=/root/ip2
 LOG=/var/log/ip2demo.log
-CAM=/dev/video0
+CAM=/dev/video1
 
 start() {
     echo "== ip2demo start $(date) ==" >> $LOG
@@ -32,7 +32,7 @@ start() {
         echo "camera: $(v4l2-ctl -d $CAM --get-ctrl exposure_auto_priority 2>>$LOG)" >> $LOG
     fi
     cd $DIR || exit 1
-    setsid nohup python3 -u cam_pipe.py --port 8080 >> $LOG 2>&1 < /dev/null &
+    setsid nohup python3 -u cam_pipe.py --cam 1 --port 8080 >> $LOG 2>&1 < /dev/null &
     echo $! > /var/run/ip2demo.pid
     echo "server pid=$(cat /var/run/ip2demo.pid)" >> $LOG
 }
