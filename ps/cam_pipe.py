@@ -56,6 +56,7 @@ MS_CNT = 0            # 帧计数
 CLUSTER_R = 12        # 候选聚类半径（像素）：相距小于它的候选合并成一个目标
 NMS_IOU = 0.45        # 框去重阈值：交叠/较小框面积 超过它就合并
 LAG_FRAMES = 3.0      # 速度外推帧数（补偿端到端时延；0=不外推）
+GRAY_STREAM = 1       # 1=推灰度 JPEG（编码快一倍、全分辨率更锐）；0=推彩色
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <title>IP2 实时检测</title>
@@ -239,8 +240,8 @@ class Tracker(object):
     MAX_MISS = 10      # 连续丢失多少帧才删除
     MAX_SHOW = 64      # 最多显示多少个
     PEAK_MIN = 0       # 候选峰值下限
-    MAX_IN = 48        # 每帧最多送进跟踪的候选数（按峰值排序取前 N）
-    MAX_TRACKS = 160   # track 池上限
+    MAX_IN = 24        # 每帧最多送进跟踪的候选数（按峰值排序取前 N）
+    MAX_TRACKS = 64    # track 池上限
 
     def __init__(self):
         self.tracks = []
@@ -358,7 +359,7 @@ class Pipeline(object):
             gray = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
             self.cap_ms = 0.8 * self.cap_ms + 0.2 * (time.time() - t0) * 1000
             with self.slot_lock:
-                self.slot = (f, gray)
+                self.slot = (f, gray, time.time())
         cap.release()
 
     # ---------- 线程 B：PL 推理 + 画框 ----------
@@ -370,7 +371,7 @@ class Pipeline(object):
             if item is None:
                 time.sleep(0.002)
                 continue
-            color, gray = item
+            color, gray, t_cap = item
             st, cands, dt = self.hw.run_ms(gray) if MULTI_SCALE else self.hw.run(gray)
             self.pl_ms = 0.8 * self.pl_ms + 0.2 * dt
             self.pl_n += 1
@@ -395,6 +396,15 @@ class Pipeline(object):
             cands = cluster_cands(cands, CLUSTER_R)
             shown = nms_tracks(self.tracker.update(cands, self.pl_fps()), NMS_IOU)
             npass = sum(1 for c in cands if int(c["peak"]) >= Tracker.PEAK_MIN)
+            lat_ms = (time.time() - t_cap) * 1000.0
+            self.lat_ms = 0.8 * getattr(self, "lat_ms", lat_ms) + 0.2 * lat_ms
+            if GRAY_STREAM:
+                disp = gray if gray.ndim == 2 else cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
+            else:
+                disp = color
+            c_box = 255 if GRAY_STREAM else (0, 255, 0)
+            c_txt = 255 if GRAY_STREAM else (0, 255, 0)
+            c_hud = 255 if GRAY_STREAM else (0, 255, 255)
             for t in shown:
                 # 速度外推：往前推 LAG_FRAMES 帧，抵消端到端时延，让框盖在目标身上
                 x = int(t["x"] + t.get("vx", 0.0) * LAG_FRAMES)
@@ -402,22 +412,23 @@ class Pipeline(object):
                 x = max(0, min(W - 1, x))
                 y = max(0, min(H - 1, y))
                 r = max(5, min(24, int((t["area"] ** 0.5) / 2) + 3))
-                cv2.rectangle(color, (x - r, y - r), (x + r, y + r), (0, 255, 0), 2)
+                cv2.rectangle(disp, (x - r, y - r), (x + r, y + r), c_box, 2)
                 side = max(1, int(round((t["area"]) ** 0.5)))
                 spd = t.get("spd", 0)
                 lbl = "#%d %dpx" % (t["id"] % 100, side)
                 if spd >= 8:
                     lbl += " %d/s" % spd
                 if x < W - 60 and y > 10:
-                    cv2.putText(color, lbl, (x + 6, y - 6),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1, cv2.LINE_AA)
-            cv2.putText(color, "PL %.1fms  raw %d  stable %d  cap %.1fms %d fps" %
-                        (self.pl_ms, npass, len(shown), self.cap_ms, self.pl_fps()),
-                        (6, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2, cv2.LINE_AA)
+                    cv2.putText(disp, lbl, (x + 6, y - 6),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, c_txt, 1, cv2.LINE_AA)
+            cv2.putText(disp, "PL %.1fms  lat %.0fms  raw %d  stable %d  cap %.1fms %d fps" %
+                        (self.pl_ms, self.lat_ms, npass, len(shown), self.cap_ms, self.pl_fps()),
+                        (6, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, c_hud, 2, cv2.LINE_AA)
             with self.paint_lock:
-                self.paint = color
-            globals()["g_last_img"] = color   # 供 /snap 按需出高清单帧
+                self.paint = disp
+            globals()["g_last_img"] = disp     # 供 /snap 按需出高清单帧
             g_info.update({"cands": shown, "raw": npass, "stable": len(shown),
+                           "lat_ms": round(self.lat_ms, 1),
                            "PL_ms": round(self.pl_ms, 2),
                            "pl_fps": round(self.pl_fps(), 1),
                            "cap_ms": round(self.cap_ms, 2), "n": len(shown)})
@@ -538,6 +549,7 @@ def main():
                     help="时域差分：候选周围 13x13 内变化像素占比低于此值则丢弃（0=关闭；建议 0.10~0.20）")
     ap.add_argument("--ms-factor", type=int, default=3, help="多尺度第二遍的降采样倍数（3 => 4~60px）")
     ap.add_argument("--ms-factor2", type=int, default=0, help="多尺度第三遍倍数（4 => 补 20~80px；0=关闭）")
+    ap.add_argument("--gray", type=int, default=1, help="1=灰度推流(快) 0=彩色")
     ap.add_argument("--lag", type=float, default=3.0, help="速度外推帧数（补偿时延，0=关闭）")
     ap.add_argument("--cluster-r", type=int, default=12, help="候选聚类半径（像素）")
     ap.add_argument("--nms-iou", type=float, default=0.45, help="框去重阈值")
@@ -549,12 +561,13 @@ def main():
     args = ap.parse_args()
 
     global MOTION_FRAC, MOTION_THR, MULTI_SCALE, MS_FACTOR, MS_FACTOR2, MS_EVERY
-    global LAG_FRAMES, CLUSTER_R, NMS_IOU
+    global LAG_FRAMES, CLUSTER_R, NMS_IOU, GRAY_STREAM
     MULTI_SCALE = args.multi_scale
     MS_FACTOR = args.ms_factor
     MS_FACTOR2 = args.ms_factor2
     MS_EVERY = args.ms_every
     LAG_FRAMES = args.lag
+    GRAY_STREAM = 1 if args.gray else 0
     CLUSTER_R = args.cluster_r
     NMS_IOU = args.nms_iou
     MOTION_FRAC = args.motion_frac
