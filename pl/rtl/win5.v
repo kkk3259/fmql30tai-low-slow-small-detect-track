@@ -37,6 +37,11 @@ module win5 #(
     localparam DELAY = (DLY == 0) ? (HALF * W + HALF + 1) : DLY;  // 输入 → 窗口对齐延迟
     localparam VD    = DELAY + 1;            // valid 延迟线深度
     localparam VPW   = (((VD)<=2)?1:((VD)<=4)?2:((VD)<=8)?3:((VD)<=16)?4:((VD)<=32)?5:((VD)<=64)?6:((VD)<=128)?7:((VD)<=256)?8:((VD)<=512)?9:((VD)<=1024)?10:((VD)<=2048)?11:((VD)<=4096)?12:((VD)<=8192)?13:((VD)<=16384)?14:((VD)<=32768)?15:((VD)<=65536)?16:((VD)<=131072)?17:((VD)<=262144)?18:((VD)<=524288)?19:((VD)<=1048576)?20:((VD)<=2097152)?21:((VD)<=4194304)?22:((VD)<=8388608)?23:((VD)<=16777216)?24:((VD)<=33554432)?25:((VD)<=67108864)?26:((VD)<=134217728)?27:((VD)<=268435456)?28:((VD)<=536870912)?29:((VD)<=1073741824)?30:((VD)<=2147483648)?31:32);
+    // 2026-10-30 Procise 不接受对 parameter 做位选（W_V），改成定宽 localparam
+    localparam [PW-1:0]  DEPTH_V = DEPTH;
+    localparam [PW-1:0]  W_V     = W;
+    localparam [VPW-1:0] VD_V    = VD;
+    localparam [VPW-1:0] DELAY_V = DELAY;
 
     wire hs = i_valid && i_ready;
     assign i_ready = o_ready;
@@ -51,8 +56,8 @@ module win5 #(
             reg [7:0] mem [0:DEPTH-1];
             reg [PW-1:0] wp;
             reg [PW-1:0] fill;
-            wire [PW-1:0] rp = (wp == DEPTH[PW-1:0] - 1'b1) ? {PW{1'b0}} : (wp + 1'b1);
-            wire full = (fill >= W[PW-1:0]);
+            wire [PW-1:0] rp = (wp == DEPTH_V - 1'b1) ? {PW{1'b0}} : (wp + 1'b1);
+            wire full = (fill >= W_V);
 
             assign rdout[gi+1] = full ? mem[rp] : PAD;
 
@@ -64,9 +69,9 @@ module win5 #(
                     fill <= {PW{1'b0}};
                 end else if (hs) begin
                     mem[wp] <= rdout[gi];
-                    if (wp == DEPTH[PW-1:0] - 1'b1) wp <= {PW{1'b0}};
+                    if (wp == DEPTH_V - 1'b1) wp <= {PW{1'b0}};
                     else                            wp <= wp + 1'b1;
-                    if (fill < W[PW-1:0]) fill <= fill + 1'b1;
+                    if (fill < W_V) fill <= fill + 1'b1;
                 end
             end
         end
@@ -133,8 +138,8 @@ module win5 #(
     reg vmem [0:VD-1];
     reg [VPW-1:0] vwp;
     reg [VPW-1:0] vfill;
-    wire [VPW-1:0] vrp = (vwp == VD[VPW-1:0] - 1'b1) ? {VPW{1'b0}} : (vwp + 1'b1);
-    wire vfull = (vfill >= DELAY[VPW-1:0]);
+    wire [VPW-1:0] vrp = (vwp == VD_V - 1'b1) ? {VPW{1'b0}} : (vwp + 1'b1);
+    wire vfull = (vfill >= DELAY_V);
     wire vdelayed = vfull ? vmem[vrp] : 1'b0;
 
     always @(posedge clk) begin
@@ -145,9 +150,9 @@ module win5 #(
             // 注意：这一级必须按 o_ready 自由移位（不是 hs），否则输入停了以后
             // 指针冻结、valid 排不空（实测尾巴多 5 拍，与新老版本对不上）
             vmem[vwp] <= i_valid;
-            if (vwp == VD[VPW-1:0] - 1'b1) vwp <= {VPW{1'b0}};
+            if (vwp == VD_V - 1'b1) vwp <= {VPW{1'b0}};
             else                           vwp <= vwp + 1'b1;
-            if (vfill < DELAY[VPW-1:0]) vfill <= vfill + 1'b1;
+            if (vfill < DELAY_V) vfill <= vfill + 1'b1;
         end
     end
 

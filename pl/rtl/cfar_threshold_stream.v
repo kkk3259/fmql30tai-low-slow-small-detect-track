@@ -68,6 +68,7 @@ module cfar_threshold_stream #(
     input  wire o_ready
 );
     localparam N     = W * H;
+    localparam [5:0] WIN_V = WIN;   // Procise: parameter 不能位选
     localparam HALF  = WIN / 2;                     // 15
     localparam W15   = W + HALF;                    // 虚拟列宽
     localparam H15   = H + HALF;                    // 虚拟行高
@@ -153,9 +154,9 @@ module cfar_threshold_stream #(
     wire [CH-1:0] cr = row - HALF;
     wire [CW-1:0] cc = col - HALF;
     wire [5:0] cnt_r = (cr < HALF) ? (cr + HALF + 1)
-                     : ((cr >= H - HALF) ? (H + HALF - cr) : WIN[5:0]);
+                     : ((cr >= H - HALF) ? (H + HALF - cr) : WIN_V);
     wire [5:0] cnt_c = (cc < HALF) ? (cc + HALF + 1)
-                     : ((cc >= W - HALF) ? (W + HALF - cc) : WIN[5:0]);
+                     : ((cc >= W - HALF) ? (W + HALF - cc) : WIN_V);
     wire [11:0] area_raw = cnt_r * cnt_c;
     wire [A_W-1:0] area_c = (area_raw == 12'd0) ? 11'd1 : area_raw[A_W-1:0];
 

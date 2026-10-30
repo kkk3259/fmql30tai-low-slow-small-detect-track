@@ -52,13 +52,14 @@ module ip2_pix_fifo #(
     // 水位（元素个数，含输出寄存器里那个）
     output wire [AW:0] level
 );
+    localparam [AW:0] DEPTH_V = DEPTH;   // Procise: parameter 不能位选
     reg  [7:0]   mem [0:DEPTH-1];
     reg  [7:0]   dout;                      // 输出寄存器（FWFT）
     reg          dout_v;                    // 输出寄存器里有有效像素
     reg  [AW-1:0] wptr, rptr;               // 写/读地址（自然回绕）
     reg  [AW:0]  count;                     // 内存中的元素个数（不含 dout）
 
-    wire full  = (count == DEPTH[AW:0]);    // 内存满
+    wire full  = (count == DEPTH_V);    // 内存满
     wire take  = dout_v && rd_ready;        // 消费者取走队首
     wire fetch = (count != 0) && (!dout_v || take) && !clr;  // 从内存预取
     wire do_wr = wr_en && !full && !clr;
