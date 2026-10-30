@@ -162,7 +162,10 @@ class Grabber(threading.Thread):
                     "-video_size", "%dx%d" % (w, h), "-framerate", "30",
                     "-i", "/dev/video" + self.src,
                     "-f", "rawvideo", "-pix_fmt", pix, "-"]
+        # 视频文件：加 -stream_loop -1 让它无限循环（否则 5~21 秒后流就断了）。
+        # 注意 -stream_loop 必须放在 -i 之前，顺序错了 ffmpeg 会报错。
         return ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re",
+                "-stream_loop", "-1",
                 "-i", self.src, "-vf", "scale=%d:%d" % (w, h),
                 "-f", "rawvideo", "-pix_fmt", pix, "-"]
 
@@ -417,9 +420,13 @@ class Tracker(object):
        跟踪只负责航迹关联，去虚警靠 NPU 判别环节。
     """
 
-    def __init__(self, gate=12.0, confirm=3, max_miss=15):
+    def __init__(self, gate=12.0, confirm=3, max_miss=15, max_tracks=64):
         self.tracks = []
         self.gate, self.confirm, self.max_miss = gate, confirm, max_miss
+        # 轨迹池总上限。匹配是 O(n×m) 双重循环，若不设上限，
+        # 长时间跑会累积到上百条（实测视频输入 trk 从 106 涨到 158，
+        # 帧率被拖到 3.5 fps）。按「命中多、丢失少」保留最好的 max_tracks 条。
+        self.max_tracks = max_tracks
 
     def step(self, dets):
         preds = [t.predict() for t in self.tracks]
@@ -444,6 +451,10 @@ class Tracker(object):
         for t in self.tracks:
             t.miss += 1
         self.tracks = [t for t in self.tracks if t.miss <= self.max_miss]
+        # 总上限：按「命中多、丢失少」排序后截断，防止长跑时池子无限膨胀
+        if len(self.tracks) > self.max_tracks:
+            self.tracks.sort(key=lambda t: (t.hits, -t.miss), reverse=True)
+            del self.tracks[self.max_tracks:]
         return [t for t in self.tracks if t.confirmed]
 
 

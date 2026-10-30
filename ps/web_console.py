@@ -165,10 +165,12 @@ PAGE = r"""<!DOCTYPE html>
       <div class="ctl">
         <label>视图模式</label>
         <select id="view" style="width:100%;padding:6px;background:#1b2836;color:#cfe0f0;border:1px solid #2a3d52;border-radius:4px;font-size:12px">
-          <option value="raw">原始灰度</option>
-          <option value="tophat">Top-Hat 增强图</option>
-          <option value="binary">CFAR 二值图</option>
+          <option value="raw">原始灰度（PL 候选叠加）</option>
         </select>
+        <div style="font-size:11px;color:#5a6f85;margin-top:6px;line-height:1.45">
+          增强图 / CFAR 二值图需要 PL 直接输出（当前 RTL 未提供），<br>
+          用软件复现会与硬件结果不一致，故不提供。
+        </div>
       </div>
       <div class="ctl">
         <label>真/假阈值 <b id="l_thr">0.50</b></label>
@@ -189,7 +191,8 @@ PAGE = r"""<!DOCTYPE html>
         <button id="btn_clear">清空记录</button>
       </div>
       <div style="font-size:11px;color:#5a6f85;margin-top:8px;line-height:1.5">
-        切到 Top-Hat / CFAR 视图会额外计算，帧率下降属正常现象
+        所有数字均来自 PL 硬件寄存器（候选表 / STATUS / 计时），<br>
+        未经软件复现，可逐项追溯。
       </div>
     </div>
 
@@ -344,22 +347,30 @@ class PlDetector(object):
     接口与 DualDetector 兼容（`__call__(gray) -> [{'x','y','area','peak'}, ...]`），
     所以主循环可在 PS 粗筛与 PL 检测之间无缝切换。
 
-    寄存器布局（与 pl/rtl/ip2_axi_top.v 及 ps/read_cand.py 一致）：
+    寄存器布局（权威依据：docs/23-寄存器映射与候选表窗口.md，与 ps/cand_read.py 一致）：
       基址 0x43C00000，挂 PS 的 M_AXI_GP0
       0x00 CTRL        bit0 = start
       0x04 FRAME_ADDR  帧在 udmabuf 的物理地址（默认 0x30100000）
       0x08 RESULT_ADDR 结果区地址
       0x0C STATUS      bit1/bit2 = done，[15:8] = 候选数
       0x14 VERSION     期望 0x00010000
-      0x18~0x3C        候选表 36 字节 = 9 个 32 位字
-                       byte0 = n_cand；每候选 7 字节：
-                         x_hi, x_lo, y_hi, y_lo, (保留), area, peak
+      0x10 候选表窗口  写 = 设字索引(0~112)，读 = 取该字数据（**同址**！）
+                      113 字 = 452 字节 = 1 + 64×7，装 64 个候选
+      0x18~0x38        legacy 兼容视图（9 字 = 36 字节 = 前 5 个候选）
+                      老构建（6 位地址、无窗口）只能读这里
+
+    候选表字节布局（每候选 7 字节，大端）：
+      byte 0        : n_cand
+      每候选 7 字节 : x_hi x_lo  y_hi y_lo  area_hi area_lo  peak
+                      ↑ x/y 16 位          ↑ area **16 位**（2026-10-29 起，原 8 位）
+
+    ⚠️ 0x40 不能用：6 位 s_axi 地址下 0x40 绕回 0x00 = 误触发一帧。
 
     注意：这是"检测器"而非"判别器"——它直接给出候选坐标，不需要 PS 再跑粗筛。
     """
 
     def __init__(self, base=0x43C00000, udma="/dev/udmabuf0",
-                 w=W, h=H, max_cand=5, timeout_ms=3000):
+                 w=W, h=H, max_cand=64, timeout_ms=3000):
         self.base = base
         self.udma = udma
         self.w, self.h = w, h
@@ -369,12 +380,16 @@ class PlDetector(object):
         self._reg = None
         self._mem = None
         self._fds = []
+        self._view = "window"        # open() 里判定，判定过程不写任何寄存器
 
     # ---- 寄存器偏移 ----
     R_CTRL, R_FADDR, R_RADDR, R_STATUS = 0x00, 0x04, 0x08, 0x0C
-    R_FID, R_VER = 0x10, 0x14
-    R_CAND = 0x18
-    N_CAND_WORDS = 9          # 36 字节
+    R_VER = 0x14
+    R_CIDX = 0x10            # 写：设字索引
+    R_CDAT = 0x10            # 读：取该字数据（同址）
+    LEG_BASE = 0x18          # legacy 兼容视图起点
+    N_WIN_WORDS = (1 + 64 * 7 + 3) // 4      # 113 字 = 452 字节
+    N_LEG_WORDS = 9                          # 36 字节 = 5 个候选
 
     def open(self):
         import mmap as MM
@@ -401,6 +416,17 @@ class PlDetector(object):
                 "PL VERSION=0x%08X（期望 0x00010000）\n"
                 "  · 位流没加载？跑 python3 ps/probe_addr.py 0x43C00000 先确认\n"
                 "  · 基址不是 0x43C00000？" % ver)
+
+        # 视图判定：先写索引 0，再比较窗口 0 号字与 legacy[0]。
+        # 注意 1：索引寄存器可能被之前的操作改成非 0，直接读会误判成 legacy
+        #        （实测：索引非 0 时 rd(0x10)=0，而 legacy[0]=候选表头）。
+        # 注意 2：这个写操作在老构建上会把 0x10（当时的 FRAME_ID）清零，
+        #        但 FRAME_ID 只用于调试显示，不影响检测功能，故可接受。
+        try:
+            self._wr(self.R_CIDX, 0)
+            self._view = "window" if self._rd(self.R_CDAT) == self._rd(self.LEG_BASE) else "legacy"
+        except Exception:
+            self._view = "legacy"
         return ver
 
     def _rd(self, off):
@@ -435,20 +461,30 @@ class PlDetector(object):
                 break
             time.sleep(0.001)
 
-        # 读 9 个字 = 36 字节候选表
-        raw = bytearray()
-        for i in range(self.N_CAND_WORDS):
-            raw += self._rd(self.R_CAND + 4 * i).to_bytes(4, "little")
+        # 读候选表：window 视图走 0x10 索引窗口（113 字 / 64 候选），
+        #             legacy 视图退化为 0x18 起 9 字（36 字节 / 5 候选）
+        import struct as _st
+        if self._view == "window":
+            raw = bytearray()
+            for i in range(self.N_WIN_WORDS):
+                self._wr(self.R_CIDX, i)          # 设索引
+                raw += self._rd(self.R_CDAT).to_bytes(4, "little")   # 取数据（同址）
+            maxn = 64
+        else:
+            raw = bytearray()
+            for i in range(self.N_LEG_WORDS):
+                raw += self._rd(self.LEG_BASE + 4 * i).to_bytes(4, "little")
+            maxn = 5
 
         n = raw[0]
         out = []
-        for i in range(min(n, self.max_cand)):
+        for i in range(min(n, self.max_cand, maxn)):
             b = raw[1 + i * 7: 8 + i * 7]
             if len(b) < 7:
                 break
             out.append({"x": (b[0] << 8) | b[1],
                         "y": (b[2] << 8) | b[3],
-                        "area": int(b[5]) if b[5] else 1,
+                        "area": ((b[4] << 8) | b[5]) or 1,   # 16 位大端（原为 b[5] 8 位）
                         "peak": int(b[6])})
         return out
 
@@ -646,7 +682,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 d = {}
             v = d.get("view", "raw")
-            if v not in ("raw", "tophat", "binary"):
+            if v not in ("raw",):        # 只保留 raw（见 draw_overlay 说明）
                 v = "raw"
             with STATE.lock:
                 STATE.view = v
@@ -666,25 +702,15 @@ class Handler(BaseHTTPRequestHandler):
 # ============================================================ 主循环
 
 def draw_overlay(gray, cands, confirmed, cfg, backend_name, view="raw"):
-    """按视图模式生成显示帧：raw=原始灰度，tophat=形态学增强图，binary=CFAR 二值图"""
-    if view == "tophat":
-        k5 = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        base = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, k5)
-        bgr = cv2.cvtColor(base, cv2.COLOR_GRAY2BGR)
-    elif view == "binary":
-        # Top-Hat → CFAR（与检测链路同参数：win=31, k=4.0, floor=3.0）
-        k5 = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        th = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, k5)
-        f = th.astype(np.float32)
-        mu = cv2.boxFilter(f, -1, (31, 31), normalize=True,
-                           borderType=cv2.BORDER_REFLECT)
-        mu2 = cv2.boxFilter(f * f, -1, (31, 31), normalize=True,
-                            borderType=cv2.BORDER_REFLECT)
-        sd = np.sqrt(np.maximum(mu2 - mu * mu, 0))
-        base = ((f > mu + 4.0 * sd + 3.0)).astype(np.uint8) * 255
-        bgr = cv2.cvtColor(base, cv2.COLOR_GRAY2BGR)
-    else:
-        bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    """生成显示帧。
+
+    ⚠️ 2026-10-30 起只保留 raw 视图。
+    原先的 tophat / binary 视图是用 Python 侧 cv2 复现的，参数与 PL 的 RTL 不一致
+    （5×5 方核 vs SE=21、Top-Hat vs Black-Hat、k=4.0 vs K=1.0、BORDER_REFLECT vs
+    因果窗口），画出来的"增强图"和 FPGA 实际看到的东西对不上，作为演示会误导。
+    要展示算法内部，应当由 PL 直接输出增强图（需改 RTL），不是在这里复现。
+    """
+    bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
     thr = cfg.get("thr", 0.5)
 
     if cfg.get("show_cand", True):
@@ -728,7 +754,7 @@ def main():
     ap.add_argument("--cands", type=int, default=0)
     ap.add_argument("--json", default="deploy/grid64/grid64_drone_ZG.json")
     ap.add_argument("--raw", default="deploy/grid64/grid64_drone_ZG.raw")
-    ap.add_argument("--port", type=int, default=8080)
+    ap.add_argument("--port", type=int, default=8081)
     ap.add_argument("--topk", type=int, default=64)
     ap.add_argument("--confirm", type=int, default=3)
     ap.add_argument("--reg-base", default="0x43C00000",
@@ -747,9 +773,13 @@ def main():
             print("    提示：--backend pl 必须在板上运行，且位流已加载")
             return 1
         print("  ✓ PL VERSION = 0x%08X（基址 %s）" % (ver, a.reg_base))
+        print("  ✓ 候选视图 = %s（%s）" % (
+            pl_det._view,
+            "113 字窗口 / 最多 64 个候选" if pl_det._view == "window"
+            else "0x18 兼容视图 / 最多 5 个候选（老构建）"))
         judge = DummyJudge(a.grid, a.cell)   # 占位：PL 后端不做 NPU 判别
         judge.open()
-        n_cand = 5                            # PL 当前 MAX_CAND=5
+        n_cand = 64 if pl_det._view == "window" else 5   # 按视图动态定
         grid_info = "PL@%s" % a.reg_base
         backend_name = "pl"
     else:
@@ -777,7 +807,9 @@ def main():
                 return 1
 
     # ---- 采集 ----
-    grab = FakeGrabber() if a.src == "test" else Grabber(a.src, gray=True)
+    # 注意：Grabber 默认 size=(1280,720)，但 PL 与显示都只用 640×360。
+    # 不显式指定会让 ffmpeg 输出 4 倍像素、编码慢 4 倍（实测 fps 3.7 → 指定后 ~20）。
+    grab = FakeGrabber() if a.src == "test" else Grabber(a.src, size=(W, H), gray=True)
     grab.start()
     for _ in range(200):
         if grab.latest() is not None:

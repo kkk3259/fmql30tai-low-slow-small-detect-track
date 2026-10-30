@@ -59,24 +59,167 @@ LAG_FRAMES = 0.0      # 速度外推帧数（补偿端到端时延；0=不外推
 GRAY_STREAM = 1       # 1=推灰度 JPEG（编码快一倍、全分辨率更锐）；0=推彩色
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
-<title>IP2 实时检测</title>
+<title>低小慢目标检测 · 实时控制台</title>
 <style>
-body{margin:0;background:#0d0d0d;color:#7CFC00;font:14px/1.6 Consolas,monospace}
-#hud{padding:8px 12px;border-bottom:1px solid #24451f;white-space:pre-wrap}
-img{width:100%;max-width:1280px;display:block;margin:0 auto}
+*{box-sizing:border-box}
+body{margin:0;background:#0b1119;color:#cfe0f0;font:13px/1.55 -apple-system,"Segoe UI",Consolas,monospace}
+.top{display:flex;align-items:center;gap:12px;padding:9px 16px;background:#101a26;border-bottom:1px solid #1e2c3d}
+.top h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.3px}
+.badge{padding:2px 9px;border-radius:10px;font-size:11px;background:#12352a;color:#4ade80;border:1px solid #1c5c43}
+.badge.b2{background:#1a2433;color:#7fb3d5;border-color:#2a3d52}
+.wrap{display:flex;height:calc(100vh - 46px)}
+.video{flex:1;position:relative;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:14px}
+.vbox{position:relative;width:100%;max-width:100%;aspect-ratio:16/9;margin:auto}
+.vbox img{display:block;width:100%;height:100%;object-fit:fill}
+.vbox canvas{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+.panel{width:360px;flex:none;background:#0e1723;border-left:1px solid #1e2c3d;overflow-y:auto;padding:12px}
+.card{background:#111c29;border:1px solid #1e2c3d;border-radius:7px;padding:11px;margin-bottom:11px}
+.card h2{font-size:11px;margin:0 0 9px;color:#6d879e;font-weight:600;letter-spacing:.6px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.m label{display:block;font-size:10px;color:#6d879e;margin-bottom:2px}
+.m b{font-size:17px;font-family:Consolas,monospace;color:#4ade80;font-weight:600}
+.m.b b{color:#60a5fa}
+.ctl{margin-bottom:11px}
+.ctl label{display:flex;justify-content:space-between;font-size:11px;color:#8ea6bd;margin-bottom:5px}
+.ctl b{color:#facc15;font-family:Consolas,monospace}
+input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:#22303f;border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#38bdf8;cursor:pointer}
+.sw{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#8ea6bd;margin-bottom:6px;cursor:pointer}
+.btnrow{display:flex;gap:7px;margin-top:9px}
+button{flex:1;padding:7px;background:#1a2836;color:#cfe0f0;border:1px solid #2a3d52;border-radius:5px;cursor:pointer;font-size:11.5px}
+button:hover{background:#22344a}
+button.rec{background:#3a1520;border-color:#6b2130;color:#f87171}
+table{width:100%;border-collapse:collapse;font-size:11px;font-family:Consolas,monospace}
+th{color:#5f7891;text-align:left;font-weight:500;padding:3px 4px;border-bottom:1px solid #1e2c3d;font-size:10px}
+td{padding:2.5px 4px;border-bottom:1px solid #16212e;color:#9fb6cb}
+td.hi{color:#4ade80}
+canvas.chart{width:100%;height:74px;display:block}
 </style></head><body>
-<div id="hud">实时视频流（MJPEG）…</div>
-<img src="/stream">
+<div class="top">
+  <h1>低小慢目标智能检测与跟踪系统</h1>
+  <span class="badge" id="st">运行中</span>
+  <span class="badge b2" id="bk">pl · 0x43C00000</span>
+</div>
+<div class="wrap">
+  <div class="video"><div class="vbox" id="vbox">
+    <img id="vs" src="/stream">
+    <canvas id="ov" width="640" height="360"></canvas>
+  </div></div>
+  <div class="panel">
+    <div class="card">
+      <h2>实时指标</h2>
+      <div class="grid2">
+        <div class="m"><label>端到端帧率</label><b id="m_fps">--</b></div>
+        <div class="m b"><label>PL 单帧</label><b id="m_pl">--</b></div>
+        <div class="m"><label>采集耗时</label><b id="m_cap">--</b></div>
+        <div class="m b"><label>编码耗时</label><b id="m_enc">--</b></div>
+        <div class="m"><label>候选 / 稳定</label><b id="m_cand">--</b></div>
+        <div class="m b"><label>端到端时延</label><b id="m_lat">--</b></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>参数调节（前端筛选，不改硬件门限）</h2>
+      <div class="ctl"><label>最小峰值 <b id="l_pk">0</b></label>
+        <input type="range" id="s_pk" min="0" max="255" step="5" value="0"></div>
+      <div class="ctl"><label>最多显示 <b id="l_n">64</b></label>
+        <input type="range" id="s_n" min="1" max="64" step="1" value="64"></div>
+      <div class="ctl"><label>轨迹最短长度 <b id="l_h">0</b></label>
+        <input type="range" id="s_h" min="0" max="60" step="1" value="0"></div>
+      <label class="sw"><input type="checkbox" id="c_all"> 显示全部候选</label>
+      <label class="sw"><input type="checkbox" id="c_tr" checked> 显示轨迹</label>
+      <div class="btnrow"><button id="b_snap">截图保存</button></div>
+      <div style="font-size:10.5px;color:#5a6f85;margin-top:8px;line-height:1.5">
+        黄色框 = PL 硬件画在流里的原始框；<span style="color:#4ade80">绿色框</span> = 通过筛选的候选。
+        滑动条只影响网页叠加层，不改 PL 的 CFAR 门限（RTL 无参数寄存器）。
+      </div>
+    </div>
+    <div class="card">
+      <h2>耗时曲线（近 60 帧）</h2>
+      <canvas class="chart" id="chart" width="660" height="148"></canvas>
+    </div>
+    <div class="card">
+      <h2>目标列表</h2>
+      <table><thead><tr><th>ID</th><th>X</th><th>Y</th><th>面积</th><th>峰值</th><th>速度</th></tr></thead>
+      <tbody id="tb"><tr><td colspan="6" style="color:#5a6f85">等待数据…</td></tr></tbody></table>
+    </div>
+  </div>
+</div>
 <script>
+var PK=0, MAXN=64, MINH=0, ALL=false, TRAIL=true;
+var hist=[];
+function $(i){return document.getElementById(i)}
+['s_pk','s_n','s_h'].forEach(function(id){
+  $(id).addEventListener('input',function(){
+    PK=+$('s_pk').value; MAXN=+$('s_n').value; MINH=+$('s_h').value;
+    $('l_pk').textContent=PK; $('l_n').textContent=MAXN; $('l_h').textContent=MINH;
+    draw();
+  });
+});
+$('c_all').addEventListener('change',function(){ALL=this.checked;draw()});
+$('c_tr').addEventListener('change',function(){TRAIL=this.checked;draw()});
+$('b_snap').addEventListener('click',function(){
+  var a=document.createElement('a'); a.href='/snap?q=95';
+  a.download='snap_'+Date.now()+'.jpg'; a.click();
+});
+var last=[];
+function filt(cs){
+  var out=cs.filter(function(c){ return ALL || (c.peak||0)>=PK; });
+  out=out.filter(function(c){ return (c.hits||0)>=MINH; });
+  out.sort(function(a,b){return (b.peak||0)-(a.peak||0)});
+  return out.slice(0,MAXN);
+}
+function draw(){
+  var cv=$('ov'), g=cv.getContext('2d');
+  g.clearRect(0,0,cv.width,cv.height);
+  var sel=filt(last);
+  g.lineWidth=2; g.font='11px Consolas'; g.textBaseline='bottom';
+  sel.forEach(function(c){
+    var a=Math.max(c.area||4,1), d=Math.max(3,Math.round(2*Math.sqrt(a/Math.PI))*2);
+    var x=c.x-d/2, y=c.y-d/2;
+    g.strokeStyle='#4ade80'; g.strokeRect(x,y,d,d);
+    if(TRAIL && c.hits){
+      g.fillStyle='#4ade80';
+      g.fillText('#'+c.id+' '+Math.round(d)+'px', x, y-2);
+    }
+  });
+  return sel;
+}
+function chart(){
+  var cv=$('chart'), g=cv.getContext('2d');
+  var w=cv.width,h=cv.height; g.clearRect(0,0,w,h);
+  if(hist.length<2) return;
+  var mx=Math.max.apply(null,hist)*1.15||1;
+  g.strokeStyle='#38bdf8'; g.lineWidth=1.5; g.beginPath();
+  hist.forEach(function(v,i){
+    var x=i/(hist.length-1)*w, y=h-4-(v/mx)*(h-12);
+    i?g.lineTo(x,y):g.moveTo(x,y);
+  });
+  g.stroke();
+  g.fillStyle='#5f7891'; g.font='10px Consolas';
+  g.fillText(mx.toFixed(1)+' ms', 4, 11);
+}
 setInterval(function(){
   fetch('/info').then(function(r){return r.json()}).then(function(j){
-    var n=(j.cands||[]).length;
-    document.getElementById('hud').textContent =
-      'PL ' + j.pl_fps + ' fps (' + j.PL_ms + ' ms) | 显示 ' + j.fps + ' fps | 采集 ' +
-      j.cap_ms + ' ms | 编码 ' + j.enc_ms + ' ms | 候选 ' + n +
-      (n ? '  ' + JSON.stringify(j.cands) : '');
-  }).catch(function(){});
-}, 500);
+    var cs=j.cands||[];
+    last=cs;
+    $('m_fps').textContent=(j.fps||0).toFixed(1);
+    $('m_pl').textContent=(j.PL_ms||0).toFixed(2)+' ms';
+    $('m_cap').textContent=(j.cap_ms||0).toFixed(1)+' ms';
+    $('m_enc').textContent=(j.enc_ms||0).toFixed(1)+' ms';
+    $('m_cand').textContent=(j.raw||cs.length)+' / '+(j.stable||cs.length);
+    $('m_lat').textContent=(j.lat_ms||0).toFixed(0)+' ms';
+    var sel=draw();
+    hist.push(j.PL_ms||0); if(hist.length>60) hist.shift();
+    chart();
+    var tb=$('tb');
+    if(!sel.length){ tb.innerHTML='<tr><td colspan="6" style="color:#5a6f85">无候选通过当前筛选</td></tr>'; return; }
+    tb.innerHTML=sel.map(function(c){
+      var d=Math.max(3,Math.round(2*Math.sqrt(Math.max(c.area||4,1)/Math.PI))*2);
+      return '<tr><td class="hi">'+c.id+'</td><td>'+c.x+'</td><td>'+c.y+'</td><td>'
+        +d+'px</td><td>'+(c.peak||0)+'</td><td>'+(c.spd||0).toFixed(0)+'</td></tr>';
+    }).join('');
+  }).catch(function(){ $('st').textContent='连接中断'; });
+}, 400);
 </script></body></html>"""
 
 
