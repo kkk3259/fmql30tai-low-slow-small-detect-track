@@ -93,9 +93,12 @@ module ip2_user_op #(
 
     wire [3:0]  led_i;
 
-    // 平台字序号 -> 我们的 6 位字地址（低 6 位原样映射）
-    wire [5:0] ra_word = {itf_ra_awaddr[3:0], 2'b00};
-    wire [5:0] rd_word = {itf_ra_araddr[3:0], 2'b00};
+    // 平台字节地址 -> 我们的 6 位字节地址：低 6 位原样映射；
+    // 平台的 COMPUTE_DONE（字节 0x80）映射到我们的 STATUS（0x0C），读回只取 bit1(done)
+    wire done_sel_w = (itf_ra_awaddr[11:0] == 12'h080);
+    wire done_sel_r = (itf_ra_araddr[11:0] == 12'h080);
+    wire [5:0] ra_word = done_sel_w ? 6'h0C : itf_ra_awaddr[5:0];
+    wire [5:0] rd_word = done_sel_r ? 6'h0C : itf_ra_araddr[5:0];
 
     //==================================================================
     // A. 寄存器口 -> AXI-Lite 写
@@ -136,19 +139,21 @@ module ip2_user_op #(
     reg  [5:0]  ar_addr_q;
     reg         ar_pend;
     reg         r_wait;
+    reg         rd_is_done;
 
     assign itf_ra_arready = ~ar_pend & ~r_wait;
     assign axi_arvalid    = ar_pend;
     assign axi_rready     = r_wait;
-    assign itf_ra_rdata   = axi_rdata;
+    assign itf_ra_rdata   = rd_is_done ? {31'b0, axi_rdata[1]} : axi_rdata;
     assign itf_ra_rvalid  = r_wait;
 
     always @(posedge ra_clk or negedge ra_rst_n) begin
         if (!ra_rst_n) begin
-            ar_pend <= 1'b0; r_wait <= 1'b0; ar_addr_q <= 6'd0;
+            ar_pend <= 1'b0; r_wait <= 1'b0; ar_addr_q <= 6'd0; rd_is_done <= 1'b0;
         end else begin
             if (itf_ra_arvalid && itf_ra_arready) begin
                 ar_addr_q <= rd_word;
+                rd_is_done <= done_sel_r;
                 ar_pend   <= 1'b1;
             end else if (axi_arvalid && axi_arready) begin
                 ar_pend   <= 1'b0;
