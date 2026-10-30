@@ -807,7 +807,9 @@ def main():
                 return 1
 
     # ---- 采集 ----
-    grab = FakeGrabber() if a.src == "test" else Grabber(a.src, gray=True)
+    # 注意：Grabber 默认 size=(1280,720)，但 PL 与显示都只用 640×360。
+    # 不显式指定会让 ffmpeg 输出 4 倍像素、编码慢 4 倍（实测 fps 3.7 → 指定后 ~20）。
+    grab = FakeGrabber() if a.src == "test" else Grabber(a.src, size=(W, H), gray=True)
     grab.start()
     for _ in range(200):
         if grab.latest() is not None:
