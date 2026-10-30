@@ -88,6 +88,7 @@ module ip2_axi_top #(
     output wire        m_axi_bready
 );
     localparam NPIX = W * H;
+    localparam [31:0] NPIX_V = NPIX;
     // 冲刷拍数：整帧喂完后必须继续往链路里塞"假像素"，把流水线里剩下的有效像素顶出来，
     // 否则 CCL 永远数不到第 N 个 valid，也就不会进 S_MERGE/S_OUT（实测：卡在 218212/230400）。
     // 需要的拍数 = 链路总延迟 = TopHat 延迟 + CFAR 中心偏移。
@@ -295,8 +296,8 @@ module ip2_axi_top #(
     // 只有 feed_real 才出队帧缓冲；feed_pad 期间 fifo 停下，避免把缓冲抽干。
     reg  [17:0]  drain_cnt;     // 已灌入的冲刷假像素数
 
-    wire         feed_real = (fst == F_FEED) && (pcount < NPIX[31:0]);
-    wire         feed_pad  = (fst == F_FEED) && (pcount >= NPIX[31:0]) &&
+    wire         feed_real = (fst == F_FEED) && (pcount < NPIX_V);
+    wire         feed_pad  = (fst == F_FEED) && (pcount >= NPIX_V) &&
                              (drain_cnt < DRAIN[17:0]);
     wire         chain_en  = (fst == F_FEED);
     wire         fifo_pop  = fifo_valid && ch_i_ready && feed_real;
@@ -326,7 +327,7 @@ module ip2_axi_top #(
         .base_addr(frame_addr),
         // 多读 512 字节：帧缓冲已按每帧清空，但读主机按 256 字节突发取数，
         // 多读 2 个突发保证整帧 NPIX 个像素全部到位（多余部分下一帧被 clr 丢掉）。
-        .n_bytes(NPIX[31:0] + 32'd512),
+        .n_bytes(NPIX_V + 32'd512),
         .busy(rd_busy), .done(rd_done), .error(rd_error),
         .o_data(rd_data), .o_valid(rd_valid), .o_ready(rd_ready),
         .m_araddr(m_axi_araddr), .m_arlen(m_axi_arlen),
@@ -368,7 +369,7 @@ module ip2_axi_top #(
     assign wr_start = (fst == F_WAIT) && (ocount >= N_BYTES[8:0]) && !wr_busy && !wr_done;
 
     // 帧缓冲是否已装满（读主机把 NPIX 个像素全部搬进 FIFO/帧缓存）
-    wire frame_loaded = rd_done && (fifo_level >= NPIX[AW_F-1:0]);
+    wire frame_loaded = rd_done && (fifo_level >= NPIX);
 
     // 候选表收集：每 4 字节拼成一个 32 位字写进 cand_ram（1 写 1 读 -> 可推断 LUTRAM）
     // 注意：清缓冲只能用 F_RST，不能用 !chain_rst_n（F_WRITE/F_FIN 时它是 0，会把刚收好的表清掉）

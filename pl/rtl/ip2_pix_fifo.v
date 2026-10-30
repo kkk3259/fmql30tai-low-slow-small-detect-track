@@ -29,7 +29,7 @@
 //       本拍 rd_ready 为高即消费掉）。
 module ip2_pix_fifo #(
     parameter DEPTH = 512,                  // 必须是 2 的幂
-    parameter AW    = 9                     // $clog2(DEPTH)
+    parameter AW    = 9                     // (((DEPTH)<=2)?1:((DEPTH)<=4)?2:((DEPTH)<=8)?3:((DEPTH)<=16)?4:((DEPTH)<=32)?5:((DEPTH)<=64)?6:((DEPTH)<=128)?7:((DEPTH)<=256)?8:((DEPTH)<=512)?9:((DEPTH)<=1024)?10:((DEPTH)<=2048)?11:((DEPTH)<=4096)?12:((DEPTH)<=8192)?13:((DEPTH)<=16384)?14:((DEPTH)<=32768)?15:((DEPTH)<=65536)?16:((DEPTH)<=131072)?17:((DEPTH)<=262144)?18:((DEPTH)<=524288)?19:((DEPTH)<=1048576)?20:((DEPTH)<=2097152)?21:((DEPTH)<=4194304)?22:((DEPTH)<=8388608)?23:((DEPTH)<=16777216)?24:((DEPTH)<=33554432)?25:((DEPTH)<=67108864)?26:((DEPTH)<=134217728)?27:((DEPTH)<=268435456)?28:((DEPTH)<=536870912)?29:((DEPTH)<=1073741824)?30:((DEPTH)<=2147483648)?31:32)
 )(
     input  wire        clk,
     input  wire        rst_n,
@@ -52,13 +52,14 @@ module ip2_pix_fifo #(
     // 水位（元素个数，含输出寄存器里那个）
     output wire [AW:0] level
 );
+    localparam [AW:0] DEPTH_V = DEPTH;   // Procise: parameter 不能位选
     reg  [7:0]   mem [0:DEPTH-1];
     reg  [7:0]   dout;                      // 输出寄存器（FWFT）
     reg          dout_v;                    // 输出寄存器里有有效像素
     reg  [AW-1:0] wptr, rptr;               // 写/读地址（自然回绕）
     reg  [AW:0]  count;                     // 内存中的元素个数（不含 dout）
 
-    wire full  = (count == DEPTH[AW:0]);    // 内存满
+    wire full  = (count == DEPTH_V);    // 内存满
     wire take  = dout_v && rd_ready;        // 消费者取走队首
     wire fetch = (count != 0) && (!dout_v || take) && !clr;  // 从内存预取
     wire do_wr = wr_en && !full && !clr;
