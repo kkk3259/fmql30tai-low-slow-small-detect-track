@@ -399,7 +399,10 @@ if (m_rvalid && m_rready && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= line_word
             // 地址必须靠我们自己 +8 递增。所以只有地址“回绕”（新一帧又从帧首读）时才
             // 重装 bus_addr；否则同一 512 位行里的 8 个字会被当成同一个字读 8 遍。
             if (m_arvalid && m_arready) begin
-                if (!bus_started || (m_araddr < bus_addr)) begin
+                // 只在第一笔 AR 装载首地址；之后 bus_addr 由核每拍 +8 自由推进。
+                // 若每次 AR 都重装（无论用哪种条件），行内 8 拍就会重复读同一行，
+                // 表现为横向压 1/8（capdump 已实测）。
+                if (!bus_started) begin
                     bus_started <= 1'b1;
                     bus_addr <= m_araddr;
                 end
