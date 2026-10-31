@@ -332,7 +332,7 @@ if (!core_rst_n) cap_wd <= 9'd0;
 else if (m_rvalid && m_rready && (cap_wd != 9'h1FF)) cap_wd <= cap_wd + 9'd1;
 
 always @(posedge core_clk)
-if (m_rvalid && m_rready && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= line_word[7:0];
+if (m_rvalid && m_rready && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= m_rdata[7:0];
     assign m_rlast   = (bus_left == 8'd0);
 
     always @(posedge core_clk or negedge core_rst_n) begin
