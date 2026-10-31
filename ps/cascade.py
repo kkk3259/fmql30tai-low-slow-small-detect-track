@@ -124,10 +124,8 @@ def main():
         print("候选来源: 手工 --boxes  数量", len(boxes))
     elif a.from_pl:
         import detect3d as d
-        det = d.Detector() if hasattr(d, "Detector") else None
-        if det is None:
-            print("detect3d 里没有 Detector 类，请检查")
-            return 2
+        det = d.Det3D()
+        print("PL: VERSION = 0x%08x  PL-DDR base = 0x%x" % (det.ver, det.base))
         st, cands, dt = det.detect(gray)
         print("候选来源: PL 检测  status=0x%08x  n=%d  %.1f ms" % (st, len(cands), dt))
         boxes = []
