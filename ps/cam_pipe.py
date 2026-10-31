@@ -58,6 +58,7 @@ NMS_IOU = 0.30        # 框去重阈值：交叠/较小框面积 超过它就合
 LAG_FRAMES = 0.0      # 速度外推帧数（补偿端到端时延；0=不外推）
 STREAM_Q = 88         # 推流 JPEG 质量（彩色呈现要清晰些）
 GRAY_STREAM = 0       # 1=推灰度 JPEG（快）；0=推彩色（呈现彩色，处理仍全程灰度）
+GAMMA = 1.0           # 送 PL 前做幂律拉伸（<1 提亮暗部、压缩背景动态范围，实测显著提升召回）
 INVERT = False        # True=把 255-gray 送 PL（等价 Black-Hat，找暗目标，如逆光天空里的鸟）
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
@@ -548,7 +549,12 @@ class Pipeline(object):
             color, gray, t_cap = item
             # 取反开关：等价 Black-Hat（找暗目标）。只在送 PL 的那份上取反，
             # 显示仍用原始灰度，避免画面变负片。
-            gray_pl = (255 - gray) if INVERT else gray
+            if GAMMA != 1.0:
+                lut = np.array([min(255, int(255 * ((i / 255.0) ** GAMMA))) for i in range(256)], np.uint8)
+                gray_pl = cv2.LUT(gray, lut)
+            else:
+                gray_pl = gray
+            gray_pl = (255 - gray_pl) if INVERT else gray_pl
             st, cands, dt = self.hw.run_ms(gray_pl) if MULTI_SCALE else self.hw.run(gray_pl)
             self.pl_ms = 0.8 * self.pl_ms + 0.2 * dt
             self.pl_n += 1
@@ -754,6 +760,7 @@ def main():
     ap.add_argument("--ms-factor", type=int, default=3, help="多尺度第二遍的降采样倍数（3 => 4~60px）")
     ap.add_argument("--ms-factor2", type=int, default=0, help="多尺度第三遍倍数（4 => 补 20~80px；0=关闭）")
     ap.add_argument("--gray", type=int, default=0, help="1=灰度推流(快) 0=彩色(默认)")
+    ap.add_argument("--gamma", type=float, default=1.0, help="送 PL 前的幂律拉伸指数（<1 提亮暗部；实测 0.05~0.08 最优）")
     ap.add_argument("--quality", type=int, default=88, help="推流 JPEG 质量")
     ap.add_argument("--lag", type=float, default=3.0, help="速度外推帧数（补偿时延，0=关闭）")
     ap.add_argument("--cluster-r", type=int, default=12, help="候选聚类半径（像素）")
@@ -773,6 +780,7 @@ def main():
     MS_EVERY = args.ms_every
     LAG_FRAMES = args.lag
     GRAY_STREAM = 1 if args.gray else 0
+    GAMMA = args.gamma
     STREAM_Q = int(args.quality)
     CLUSTER_R = args.cluster_r
     NMS_IOU = args.nms_iou
