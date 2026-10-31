@@ -123,17 +123,13 @@ canvas.chart{width:100%;height:74px;display:block}
       </div>
     </div>
     <div class="card">
-      <h2>参数调节（前端筛选，不改硬件门限）</h2>
-      <div class="ctl"><label>最小峰值 <b id="l_pk">0</b></label>
-        <input type="range" id="s_pk" min="0" max="255" step="5" value="0"></div>
-      <div class="ctl"><label>最多显示 <b id="l_n">64</b></label>
-        <input type="range" id="s_n" min="1" max="64" step="1" value="64"></div>
-      <div class="ctl"><label>轨迹最短长度 <b id="l_h">0</b></label>
-        <input type="range" id="s_h" min="0" max="60" step="1" value="0"></div>
-      <label class="sw"><input type="checkbox" id="c_all"> 显示全部候选</label>
-      <label class="sw"><input type="checkbox" id="c_tr" checked> 显示轨迹</label>
-      <label class="sw" title="不勾：找比背景亮的块（室内白块、灯光）
-勾上：找比背景暗的块（逆光天空里的鸟、黑点）"><input type="checkbox" id="c_inv"> 反相检测<span style="color:#7f96ad">（找暗目标）</span></label>
+      <h2>检测参数（三档）</h2>
+      <div class="ctl"><label>灵敏度 <b id="l_sens">中</b></label>
+        <input type="range" id="s_sens" min="0" max="2" step="1" value="1"></div>
+      <div class="ctl"><label>目标大小 <b id="l_size">自动</b></label>
+        <input type="range" id="s_size" min="0" max="2" step="1" value="1"></div>
+      <div class="ctl"><label>场景 <b id="l_scene">室内亮目标</b></label>
+        <input type="range" id="s_scene" min="0" max="2" step="1" value="0"></div>
       <div class="btnrow"><button id="b_snap">截图保存</button></div>
       <div style="font-size:10.5px;color:#5a6f85;margin-top:8px;line-height:1.5">
         <b>绿框</b> = 已确认目标（连续 ≥2 帧都出现，稳定）　<b>红框</b> = 疑似目标（只出现 1 帧，可能是噪声，会自己消失）<br>滑条只影响网页显示，不改变板子里的 CFAR 门限。</div>
@@ -232,6 +228,18 @@ setInterval(function(){
 }, 400);
 </script>
 
+<script>
+(function(){
+  var N1=["保守","中","激进"], N2=["只看小目标","自动","兼顾大目标"], N3=["室内亮目标","逆光暗目标","混合(拉伸)"];
+  var a=document.getElementById('s_sens'), b=document.getElementById('s_size'), c=document.getElementById('s_scene');
+  function lab(){ document.getElementById('l_sens').textContent=N1[+a.value];
+                   document.getElementById('l_size').textContent=N2[+b.value];
+                   document.getElementById('l_scene').textContent=N3[+c.value]; }
+  function push(){ lab(); fetch('/set?sens='+a.value+'&size='+b.value+'&scene='+c.value).catch(function(){}); }
+  [a,b,c].forEach(function(e){ e.addEventListener('input',lab); e.addEventListener('change',push); });
+  lab();
+})();
+</script>
 </body></html>"""
 
 
@@ -670,6 +678,27 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith("/set"):
             # /set?invert=0|1 —— 反相检测开关（把 255-gray 送 PL = Black-Hat，找暗目标）
             global INVERT, GAMMA, MS_EVERY, STRETCH
+
+            # 三档语义（灵敏度/目标大小/场景）→ 展开成底层参数
+            def _i(key):
+                try:
+                    if key + "=" in self.path:
+                        return int(float(self.path.split(key + "=")[1].split("&")[0]))
+                except Exception:
+                    return -1
+            _sens, _size, _scene = _i("sens"), _i("size"), _i("scene")
+            if 0 <= _sens <= 2:      # 0=保守 1=中 2=激进（gamma 越小越敏感）
+                GAMMA = (0.12, 0.08, 0.05)[_sens]
+            if 0 <= _size <= 2:      # 0=只看小目标 1=自动 2=兼顾大目标
+                MS_EVERY = (3, 2, 1)[_size]
+            if 0 <= _scene <= 2:     # 0=室内亮目标 1=逆光暗目标 2=混合(拉伸)
+                if _scene == 0:
+                    INVERT, STRETCH = False, 0
+                elif _scene == 1:
+                    INVERT, STRETCH = True, 1
+                else:
+                    INVERT, STRETCH = False, 1
+
             def _q(key, cast, lo, hi, cur):
                 try:
                     if key + "=" in self.path:
