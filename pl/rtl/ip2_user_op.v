@@ -358,7 +358,8 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
     wire        dum_bready; wire [31:0] dum_araddr; wire [7:0] dum_arlen; wire [2:0] dum_arsize;
     wire [1:0]  dum_arburst; wire dum_arvalid; wire dum_rready;
 
-    reg        start_req;        // CTRL 写过 start
+    reg        start_req;        // CTRL 写过 start（保留但不再参与启动判定）
+    reg  [6:0]  start_dly;       // 写 start 后的启动延时计数
 
     // ---- 8 行行缓存 FIFO（解决“AR 延迟 1024 clk 期间无事可做”的串行问题）----
     // 平台一次 AR 回一行 64 字节（512 位），AR 之间可以流水；原来的单缓冲 +
@@ -388,21 +389,20 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
             lf_cnt     <= 5'd0;
             lbcnt      <= 6'd0;
             start_req  <= 1'b0;
+            start_dly  <= 7'd0;
             lin_req_t  <= 1'b0;   // 之前漏了复位 -> 一直是 X，toggle 永不出发，AR 一个都不发
         end else begin
             // ---- 嗅探寄存器写：0x00 CTRL(bit0=start)、0x04 FRAME_ADDR ----
-            if (wr_req_ev) begin
-                if (wr_addr_q == 6'h04) frame_base <= wr_data_q;
-                if (wr_addr_q == 6'h00 && wr_data_q[0]) begin
-                    // 只记下"想启动"；真正开始推流等检测器 FSM 的 o_ext_go
-                    start_req <= 1'b1;
-                end
-            end
+            if (wr_req_ev && wr_addr_q == 6'h04) frame_base <= wr_data_q;
 
-            // ---- 检测器开始取数的脉冲（F_RST 末拍）→ 正式开喂 ----
-            if (o_ext_go && start_req) begin
-                start_req <= 1'b0;
-                feed_on   <= 1'b1;
+            // ---- CTRL 写 start：自发延时启动，不依赖 o_ext_go 握手 ----
+            // 之前用 `o_ext_go && start_req` 握手，实测出现"每两帧才启动一次"的交替现象：
+            // 检测器 F_RST 末拍的脉冲与我们的 start_req 消费不同步，一帧被吃掉、一帧正常。
+            // 现在改成：写 start 就把全帧状态清零，延时 96 个核周期（远大于 F_RST 的 32 拍 +
+            // FIFO 清空窗）后无条件开喂，彻底去掉这个握手依赖。
+            if (wr_req_ev && wr_addr_q == 6'h00 && wr_data_q[0]) begin
+                start_dly <= 7'd96;
+                feed_on   <= 1'b0;
                 line_idx  <= 32'd0;
                 inflight  <= 4'd0;
                 px_pushed <= 32'd0;
@@ -410,6 +410,9 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                 lf_rp     <= 5'd0;
                 lf_cnt    <= 5'd0;
                 lbcnt     <= 6'd0;
+            end else if (start_dly != 7'd0) begin
+                start_dly <= start_dly - 7'd1;
+                if (start_dly == 7'd1) feed_on <= 1'b1;
             end
 
             // ---- 发新行请求：在途 < 6 且还有像素没推完 ----
