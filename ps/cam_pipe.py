@@ -130,12 +130,11 @@ canvas.chart{width:100%;height:74px;display:block}
         <input type="range" id="s_h" min="0" max="60" step="1" value="0"></div>
       <label class="sw"><input type="checkbox" id="c_all"> 显示全部候选</label>
       <label class="sw"><input type="checkbox" id="c_tr" checked> 显示轨迹</label>
-      <label class="sw"><input type="checkbox" id="c_inv"> 反相检测（找暗目标：天空/逆光）</label>
+      <label class="sw" title="不勾：检测比背景亮的块（室内白块、灯光、亮目标）
+勾上：检测比背景暗的块（逆光天空里的鸟/无人机、黑点）"><input type="checkbox" id="c_inv"> 反相检测 <span style="color:#7f96ad">（勾上=找<b>暗</b>目标：逆光天空里的鸟；不勾=找<b>亮</b>目标：室内白块）</span></label>
       <div class="btnrow"><button id="b_snap">截图保存</button></div>
       <div style="font-size:10.5px;color:#5a6f85;margin-top:8px;line-height:1.5">
-        黄色框 = PL 硬件画在流里的原始框；<span style="color:#4ade80">绿色框</span> = 通过筛选的候选。
-        滑动条只影响网页叠加层，不改 PL 的 CFAR 门限（RTL 无参数寄存器）。
-      </div>
+        <b>绿框</b> = 已确认目标（连续 ≥2 帧都出现，稳定）　<b>红框</b> = 疑似目标（只出现 1 帧，可能是噪声，会自己消失）<br>滑条只影响网页显示，不改变板子里的 CFAR 门限。</div>
     </div>
     <div class="card">
       <h2>耗时曲线（近 60 帧）</h2>
@@ -183,10 +182,12 @@ function draw(){
   sel.forEach(function(c){
     var a=Math.max(c.area||4,1), d=Math.max(3,Math.round(2*Math.sqrt(a/Math.PI))*2);
     var x=c.x-d/2, y=c.y-d/2;
-    g.strokeStyle='#4ade80'; g.strokeRect(x,y,d,d);
-    if(TRAIL && c.hits){
-      g.fillStyle='#4ade80';
-      g.fillText('#'+c.id+' '+Math.round(d)+'px', x, y-2);
+    var isTrk=(c.hits||0)>=2;                       // 连续 >=2 帧 = 已确认轨迹
+    g.strokeStyle=isTrk?'#22e06a':'#ff5a4d';        // 绿=确认目标，红=疑似
+    g.strokeRect(x,y,d,d);
+    if(isTrk){
+      g.fillStyle='#22e06a';
+      g.fillText(Math.round(d)+'px', x, y-2);       // 只标尺寸，不标 ID（避免数字刷屏）
     }
   });
   return sel;
@@ -228,7 +229,6 @@ setInterval(function(){
   }).catch(function(){ $('st').textContent='连接中断'; });
 }, 400);
 </script>
-<button id="binv" onclick="fetch('/set?invert='+(window.__inv?0:1)).then(function(){window.__inv=!window.__inv;document.getElementById('binv').textContent=window.__inv?'取反:开(黑帽)':'取反:关(白帽)'})" style="position:fixed;right:14px;bottom:14px;z-index:99;padding:10px 16px;font-size:15px;border-radius:8px;border:1px solid #666;background:#222;color:#0f0;cursor:pointer">取反:关(白帽)</button>
 <div id="tune" style="position:fixed;left:14px;bottom:14px;z-index:99;background:rgba(18,22,28,.92);border:1px solid #444;border-radius:10px;padding:10px 14px;color:#cfe3f7;font-size:13px;line-height:2">
   <div>gamma <input type="range" id="t_g" min="0.03" max="1" step="0.01" style="width:130px;vertical-align:middle"> <span id="t_gv">-</span></div>
   <div>多尺度隔帧 <input type="range" id="t_m" min="1" max="4" step="1" style="width:130px;vertical-align:middle"> <span id="t_mv">-</span></div>
@@ -609,25 +609,10 @@ class Pipeline(object):
             c_box = 255 if GRAY_STREAM else (0, 255, 0)
             c_txt = 255 if GRAY_STREAM else (0, 255, 0)
             c_hud = 255 if GRAY_STREAM else (0, 255, 255)
-            for t in shown:
-                # 速度外推：往前推 LAG_FRAMES 帧，抵消端到端时延，让框盖在目标身上
-                x = int(t["x"] + t.get("vx", 0.0) * LAG_FRAMES)
-                y = int(t["y"] + t.get("vy", 0.0) * LAG_FRAMES)
-                x = max(0, min(W - 1, x))
-                y = max(0, min(H - 1, y))
-                r = max(5, min(24, int((t["area"] ** 0.5) / 2) + 3))
-                cv2.rectangle(disp, (x - r, y - r), (x + r, y + r), c_box, 2)
-                side = max(1, int(round((t["area"]) ** 0.5)))
-                spd = t.get("spd", 0)
-                lbl = "#%d %dpx" % (t["id"] % 100, side)
-                if spd >= 8:
-                    lbl += " %d/s" % spd
-                if x < W - 60 and y > 10:
-                    cv2.putText(disp, lbl, (x + 6, y - 6),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, c_txt, 1, cv2.LINE_AA)
-            cv2.putText(disp, "PL %.1fms  lat %.0fms  raw %d  stable %d  cap %.1fms %d fps" %
-                        (self.pl_ms, self.lat_ms, npass, len(shown), self.cap_ms, self.pl_fps()),
-                        (6, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, c_hud, 2, cv2.LINE_AA)
+            # 框不再烧进 JPEG：网页画布统一画（否则同一目标两套框、颜色也冲突）
+            hud = "PL %5.1fms  lat %4.0fms  raw %3d  stable %2d  cap %4.1fms  %3d fps" % (
+                self.pl_ms, self.lat_ms, npass, len(shown), self.cap_ms, self.pl_fps())
+            cv2.putText(disp, hud, (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.40, c_hud, 1, cv2.LINE_AA)
             with self.paint_lock:
                 self.paint = disp
             globals()["g_last_img"] = disp     # 供 /snap 按需出高清单帧
