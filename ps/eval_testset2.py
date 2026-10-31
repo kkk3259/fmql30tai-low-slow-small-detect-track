@@ -71,7 +71,16 @@ def run_scene(hw, path, meta, inv, pmin, amin, track=False, border=0, pre="none"
             gray = cv2.resize(gray, (W, H))
         # inv=0 用原图找亮点；inv=1 取反找暗点；inv="both" 先原图
         base = gray
-        if pre in ("hp", "hp2"):
+        if pre == "clahe":
+            # 局部直方图均衡：把每个局部块的对比度拉满，弱目标会浮出来
+            cl = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            base = cl.apply(base)
+        elif pre == "gamma":
+            # 幂律拉伸（x^g）：提亮暗部，逆光小目标反差增大
+            g = GAMMA_V[0]
+            lut = np.array([min(255, int(255 * ((i / 255.0) ** g))) for i in range(256)], np.uint8)
+            base = cv2.LUT(base, lut)
+        elif pre in ("hp", "hp2"):
             # 局部均值高通：out = 128 + (img - blur31) * gain
             # 云/草/海的慢变纹理被拉平，小目标的局部反差被保留
             gain = 2.0 if pre == "hp" else 3.5
@@ -130,6 +139,9 @@ def run_scene(hw, path, meta, inv, pmin, amin, track=False, border=0, pre="none"
                          for b, v in per_bin.items()})
 
 
+GAMMA_V = [0.5]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default="/root/testset2")
@@ -137,11 +149,13 @@ def main():
     ap.add_argument("--pmin", type=int, default=0)
     ap.add_argument("--amin", type=int, default=2)
     ap.add_argument("--track", type=int, default=0)
+    ap.add_argument("--gamma", type=float, default=0.5, help="gamma 预处理的指数（越小越提亮暗部）")
     ap.add_argument("--pre", default="none",
-                    help="预处理：none | hp（减去 31x31 局部均值，压制云纹、突出目标）| hp2（更强）")
+                    help="预处理：none|hp|hp2|clahe|gamma")
     ap.add_argument("--border", type=int, default=24, help="屏蔽四周边框像素宽度（Top-Hat 边框伪影）")
     ap.add_argument("--out", default="/root/ts2_result.csv")
     a = ap.parse_args()
+    GAMMA_V[0] = a.gamma
 
     hw = cp.HW()
     if a.inv == "auto":
