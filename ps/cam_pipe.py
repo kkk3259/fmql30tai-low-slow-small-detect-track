@@ -227,8 +227,8 @@ setInterval(function(){
     }).join('');
   }).catch(function(){ $('st').textContent='连接中断'; });
 }, 400);
-<button id="binv" onclick="fetch('/set?invert='+(window.__inv?0:1)).then(function(){window.__inv=!window.__inv;document.getElementById('binv').textContent=window.__inv?'取反:开(黑帽)':'取反:关(白帽)'})" style="position:fixed;right:14px;bottom:14px;z-index:99;padding:10px 16px;font-size:15px;border-radius:8px;border:1px solid #666;background:#222;color:#0f0;cursor:pointer">取反:关(白帽)</button>
 </script>
+<button id="binv" onclick="fetch('/set?invert='+(window.__inv?0:1)).then(function(){window.__inv=!window.__inv;document.getElementById('binv').textContent=window.__inv?'取反:开(黑帽)':'取反:关(白帽)'})" style="position:fixed;right:14px;bottom:14px;z-index:99;padding:10px 16px;font-size:15px;border-radius:8px;border:1px solid #666;background:#222;color:#0f0;cursor:pointer">取反:关(白帽)</button>
 <div id="tune" style="position:fixed;left:14px;bottom:14px;z-index:99;background:rgba(18,22,28,.92);border:1px solid #444;border-radius:10px;padding:10px 14px;color:#cfe3f7;font-size:13px;line-height:2">
   <div>gamma <input type="range" id="t_g" min="0.03" max="1" step="0.01" style="width:130px;vertical-align:middle"> <span id="t_gv">-</span></div>
   <div>多尺度隔帧 <input type="range" id="t_m" min="1" max="4" step="1" style="width:130px;vertical-align:middle"> <span id="t_mv">-</span></div>
