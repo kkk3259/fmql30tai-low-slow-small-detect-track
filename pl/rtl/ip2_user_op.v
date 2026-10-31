@@ -129,12 +129,8 @@ module ip2_user_op #(
     // 调试窗口：字节地址 0x90/0x94/0x98/0x9C 读内部计数器（工程调试用，不影响功能）
     wire dbg_sel_r  = (itf_ra_araddr[11:4] == 8'h09);
     // 逻辑分析仪窗口：0xA0 写索引 / 0xA4 读数据 / 0xA8 状态 / 0xAC 清（读 0xA0..0xAF 同一组）
-    wire la_sel     = (itf_ra_araddr[11:4] == 8'h0A);
     reg  [31:0] dbg_ar, dbg_rv, dbg_wd;   // 平台口调试计数器（在 clk 域自增，见第 5 节）
     wire [31:0] dbg_stat;                 // 平台口状态快照（见第 5 节）
-    wire [31:0] la_rdata;                 // 逻辑分析仪读数据（见第 6 节）
-    wire [31:0] la_status;                // {frozen, trig[3:0], wp[9:0]}
-    reg  [7:0]  la_raddr;
 // --- 像素捕获：记录前 256 个"检测器看到的"像素字节（诊断用） ---
 reg  [7:0]  cap_mem [0:255];
 reg  [8:0]  cap_wd;
@@ -161,13 +157,10 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                            (rd_addr12_q[3:2] == 2'd1) ? dbg_rv :
                            (rd_addr12_q[3:2] == 2'd2) ? dbg_wd : dbg_stat;
     wire        dbg_sel_q = (rd_addr12_q[11:4] == 8'h09);
-    wire        la_sel_q  = (rd_addr12_q[11:4] == 8'h0A);
     wire        cap_sel_q = (rd_addr12_q[11:0] == 12'h0B8);
     assign itf_ra_rdata   = rd_is_done_q ? {31'b0, rd_data_q[1]} :
                             cap_sel_q    ? {24'd0, cap_dat_q} :
                             dbg_sel_q    ? dbg_word :
-                            la_sel_q     ? ((rd_addr12_q[3:2] == 2'd0) ? la_rdata :
-                                            (rd_addr12_q[3:2] == 2'd2) ? la_status : 32'd0) :
                             rd_data_q;
 
     reg        wr_pend_v;        // 1 深待发槽：忙时收到的写先存着
@@ -218,6 +211,7 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
     // 3b. 逻辑分析仪写口（ra_clk 域）：0xA0 写索引 / 0xAC 清空
     //-------------------------------------------------------------------------
     reg la_clr_t;
+    reg [7:0] la_raddr;   // 逻辑分析仪索引（本轮已移除 LA，仅保留写口不报错）
     always @(posedge ra_clk or negedge ra_rst_n) begin
         if (!ra_rst_n) begin
             la_raddr   <= 8'd0;
@@ -274,182 +268,168 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
     end
 
     //=========================================================================
-    // 4. AXI-Lite 主侧 + 检测器（core_clk 域）
+    // 3.5 寄存器读写中继（core_clk 域）—— 把 ra 域的请求翻译成检测器的 AXI-Lite 事务
     //=========================================================================
-    reg        axi_awvalid_r, axi_wvalid_r, axi_bready_r, aw_done_r, w_done_r;
-    reg        axi_arvalid_r, axi_rready_r;
-    reg [5:0]  aw_addr_c, ar_addr_c;
-    reg [31:0] aw_data_c;
-
-    wire        axi_awready, axi_wready, axi_bvalid, axi_arready, axi_rvalid;
+    reg  [5:0]  aw_addr_c;
+    reg  [31:0] aw_data_c;
+    reg         axi_awvalid_r, axi_wvalid_r, axi_bready_r;
+    reg  [5:0]  ar_addr_c;
+    reg         axi_arvalid_r, axi_rready_r;
+    reg         aw_done_r, w_done_r;
+    wire        axi_awready, axi_wready;
+    wire [1:0]  axi_bresp;
+    wire        axi_bvalid, axi_arready;
     wire [31:0] axi_rdata;
-    wire [1:0]  axi_bresp, axi_rresp;
-
-    wire [31:0] m_araddr;
-    wire [7:0]  m_arlen;
-    wire [2:0]  m_arsize;
-    wire [1:0]  m_arburst;
-    wire        m_arvalid, m_arready;
-    wire [63:0] m_rdata;
-    wire        m_rlast, m_rvalid, m_rready;
-    wire [31:0] m_awaddr;
-    wire [7:0]  m_awlen;
-    wire [2:0]  m_awsize;
-    wire [1:0]  m_awburst;
-    wire        m_awvalid, m_wvalid, m_wlast, m_bready;
-    wire [63:0] m_wdata;
-    wire [7:0]  m_wstrb;
-
-    reg [511:0] line_data;
-    reg [25:0]  line_tag;
-    reg         line_valid;
-    reg [31:0]  bus_addr;
-    reg         bus_started;   // 是否已经装过首地址（防止复位后 bus_addr=0 时永不重装）
-    reg [7:0]   bus_left;
-    reg         bus_active;
-    reg         lin_pend;
-    reg [9:0]   pend_wd;
-
-    wire [25:0] want_tag  = bus_addr[31:6];
-    wire [2:0]  want_word = bus_addr[5:3];
-    wire        hit       = line_valid && (line_tag == want_tag);
-    // 平台 512 位返回是"字节交织"布局：第 w 个 64 位字的第 b 个字节 = 像素 b*8+w。
-    // 因此取第 k 个字时，要横向汇聚 8 个字的同一字节，才得到连续的 8 个像素。
-    wire [63:0] line_word = { line_data[56 +: 8], line_data[48 +: 8], line_data[40 +: 8], line_data[32 +: 8],
-                              line_data[24 +: 8], line_data[16 +: 8], line_data[ 8 +: 8], line_data[ 0 +: 8] };
-    wire [2:0]  lane_sel  = want_word;
-    wire [63:0] lane_gath = { line_data[{3'd7,3'b000} + lane_sel], line_data[{3'd6,3'b000} + lane_sel],
-                              line_data[{3'd5,3'b000} + lane_sel], line_data[{3'd4,3'b000} + lane_sel],
-                              line_data[{3'd3,3'b000} + lane_sel], line_data[{3'd2,3'b000} + lane_sel],
-                              line_data[{3'd1,3'b000} + lane_sel], line_data[{3'd0,3'b000} + lane_sel] };
-
-    assign m_arready = ~bus_active & ~lin_pend;
-    assign m_rvalid  = bus_active & hit;
-    assign m_rdata   = lane_gath;
-
-always @(posedge core_clk or negedge core_rst_n)
-if (!core_rst_n) cap_wd <= 9'd0;
-else if (m_rvalid && m_rready && (cap_wd != 9'h1FF)) cap_wd <= cap_wd + 9'd1;
-
-always @(posedge core_clk)
-if (m_rvalid && m_rready && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= m_rdata[7:0];
-    assign m_rlast   = (bus_left == 8'd0);
+    wire [1:0]  axi_rresp;
+    wire        axi_rvalid;
 
     always @(posedge core_clk or negedge core_rst_n) begin
         if (!core_rst_n) begin
+            aw_addr_c <= 6'd0; aw_data_c <= 32'd0;
             axi_awvalid_r <= 1'b0; axi_wvalid_r <= 1'b0; axi_bready_r <= 1'b0;
+            ar_addr_c <= 6'd0; axi_arvalid_r <= 1'b0; axi_rready_r <= 1'b0;
             aw_done_r <= 1'b0; w_done_r <= 1'b0;
-            axi_arvalid_r <= 1'b0; axi_rready_r <= 1'b0;
-            aw_addr_c <= 6'd0; aw_data_c <= 32'd0; ar_addr_c <= 6'd0;
             wr_ack_t <= 1'b0; rd_ack_t <= 1'b0; rd_data_c <= 32'd0;
-            line_data <= 512'd0; line_tag <= 26'd0; line_valid <= 1'b0;
-            bus_addr <= 32'd0; bus_left <= 8'd0; bus_active <= 1'b0;
-            bus_started <= 1'b0;
-            lin_req_t <= 1'b0; lin_addr_q <= 32'd0; lin_pend <= 1'b0;
-            pend_wd <= 10'd0;
         end else begin
-            // ---- 写请求 ----
+            // ---- 写 ----
             if (wr_req_ev) begin
                 aw_addr_c     <= wr_addr_q;
                 aw_data_c     <= wr_data_q;
                 axi_awvalid_r <= 1'b1;
                 axi_wvalid_r  <= 1'b1;
             end
-            if (axi_awvalid_r && axi_awready) begin
-                axi_awvalid_r <= 1'b0;
-                aw_done_r     <= 1'b1;
-            end
-            if (axi_wvalid_r  && axi_wready ) begin
-                axi_wvalid_r  <= 1'b0;
-                w_done_r      <= 1'b1;
-            end
+            if (axi_awvalid_r && axi_awready) begin axi_awvalid_r <= 1'b0; aw_done_r <= 1'b1; end
+            if (axi_wvalid_r  && axi_wready ) begin axi_wvalid_r  <= 1'b0; w_done_r  <= 1'b1; end
             if (aw_done_r && w_done_r) axi_bready_r <= 1'b1;
             if (axi_bvalid && axi_bready_r) begin
-                axi_bready_r <= 1'b0;
-                aw_done_r    <= 1'b0;
-                w_done_r     <= 1'b0;
-                wr_ack_t     <= ~wr_ack_t;
+                axi_bready_r <= 1'b0; aw_done_r <= 1'b0; w_done_r <= 1'b0;
+                wr_ack_t <= ~wr_ack_t;
             end
-
-            // ---- 读请求 ----
+            // ---- 读 ----
             if (rd_req_ev) begin
                 ar_addr_c     <= rd_addr_q;
                 axi_arvalid_r <= 1'b1;
-            end
-            if (axi_arvalid_r && axi_arready) begin
-                axi_arvalid_r <= 1'b0;
                 axi_rready_r  <= 1'b1;
             end
+            if (axi_arvalid_r && axi_arready) axi_arvalid_r <= 1'b0;
             if (axi_rvalid && axi_rready_r) begin
-                rd_data_c    <= axi_rdata;
                 axi_rready_r <= 1'b0;
-                rd_ack_t     <= ~rd_ack_t;
-            end
-
-            // ---- 行数据返回 ----
-            if (lin_rdy_ev) begin
-                line_data  <= lin_data_c;
-                line_tag   <= lin_addr_q[31:6];
-                line_valid <= 1'b1;
-                lin_pend   <= 1'b0;
-            end
-
-            // ---- 64 位主口 ----
-            // 注意：主机的 AR 是按「行/突发」发的（araddr=突发首地址），突发内 8 拍的
-            // 地址必须靠我们自己 +8 递增。所以只有地址“回绕”（新一帧又从帧首读）时才
-            // 重装 bus_addr；否则同一 512 位行里的 8 个字会被当成同一个字读 8 遍。
-            if (m_arvalid && m_arready) begin
-                // 只在第一笔 AR 装载首地址；之后 bus_addr 由核每拍 +8 自由推进。
-                // 若每次 AR 都重装（无论用哪种条件），行内 8 拍就会重复读同一行，
-                // 表现为横向压 1/8（capdump 已实测）。
-                if (!bus_started) begin
-                    bus_started <= 1'b1;
-                    bus_addr <= m_araddr;
-                end
-                bus_left   <= m_arlen;
-                bus_active <= 1'b1;
-            end
-
-            if (bus_active && !hit && !lin_pend) begin
-                lin_addr_q <= {want_tag, 6'b0};
-                lin_req_t  <= ~lin_req_t;
-                lin_pend   <= 1'b1;
-            end
-
-            // 看门狗：一行数据等太久就重发请求（防跨域丢事件导致死锁）
-            if (lin_pend) begin
-                if (pend_wd != 10'h3FF) begin
-                    pend_wd <= pend_wd + 10'd1;
-                end else begin
-                    pend_wd   <= 10'd0;
-                    lin_req_t <= ~lin_req_t;
-                end
-            end else begin
-                pend_wd <= 10'd0;
-            end
-
-            if (m_rvalid && m_rready) begin
-                // 每一拍都要前进 8 字节（包括突发最后一拍），否则每个突发会少走 8 字节，
-                // 跨几百个突发后地址整体偏移，表现为坐标逐渐漂移
-                bus_addr <= bus_addr + 32'd8;
-                if (bus_left == 8'd0) begin
-                    bus_active <= 1'b0;
-                end else begin
-                    bus_left <= bus_left - 8'd1;
-                end
+                rd_data_c <= axi_rdata;
+                rd_ack_t  <= ~rd_ack_t;
             end
         end
     end
 
     //=========================================================================
-    // 5. 平台 512 位读（clk 域）
+    // 4. 行流读取（学长 dma.v 的模型）—— core_clk 域发请求、clk 域取数
+    //
+    //   平台数据口：一行一个 AR（地址 = 帧基址 + 64×行号），回来就是 512 位 = 64 字节
+    //   = 64 个连续像素（capdump 实测证实：第 7 行首字节 = 像素 448 的值）。
+    //   所以这里不模拟 64 位突发：一行取回后，按 1 字节/拍直接推进检测器的像素 FIFO。
+    //=========================================================================
+    localparam NPIX_C = W * H;                  // 本帧像素数
+    localparam NLINE  = (NPIX_C + 63) / 64;     // 需要的行数
+
+    reg  [31:0] frame_base;      // 帧基址（从寄存器 0x04 嗅探）
+    reg  [31:0] line_idx;        // 下一个要请求的行号
+    reg         feed_on;         // 正在喂帧
+    reg  [3:0]  inflight;        // 已请求未取回的行数
+    reg  [31:0] px_pushed;       // 已推给检测器的像素数
+
+    // 外部像素直推口的连线（先声明，后面接实例）
+    wire        i_ext_valid;
+    wire [7:0]  i_ext_data;
+    wire        o_ext_ready;
+    wire        o_ext_go;
+    // 实例化时不再使用的 AXI 主口，用哑线兜住
+    wire [31:0] dum_awaddr; wire [7:0] dum_awlen; wire [2:0] dum_awsize; wire [1:0] dum_awburst;
+    wire        dum_awvalid; wire [63:0] dum_wdata; wire [7:0] dum_wstrb; wire dum_wlast; wire dum_wvalid;
+    wire        dum_bready; wire [31:0] dum_araddr; wire [7:0] dum_arlen; wire [2:0] dum_arsize;
+    wire [1:0]  dum_arburst; wire dum_arvalid; wire dum_rready;
+
+    reg        start_req;        // CTRL 写过 start
+    reg  [511:0] lbuf;           // 当前行
+    reg  [5:0]   lbcnt;          // 行内字节计数 0..63
+    reg          lbusy;          // 有一行正在推
+
+    wire [7:0] ext_byte = lbuf[{lbcnt, 3'b000} +: 8];
+    wire       ext_space = o_ext_ready;
+
+    assign i_ext_valid = lbusy;
+    assign i_ext_data  = ext_byte;
+
+    always @(posedge core_clk or negedge core_rst_n) begin
+        if (!core_rst_n) begin
+            frame_base <= 32'h3010_0000;
+            feed_on    <= 1'b0;
+            line_idx   <= 32'd0;
+            inflight   <= 4'd0;
+            px_pushed  <= 32'd0;
+            lbusy      <= 1'b0;
+            lbcnt      <= 6'd0;
+            start_req  <= 1'b0;
+        end else begin
+            // ---- 嗅探寄存器写：0x00 CTRL(bit0=start)、0x04 FRAME_ADDR ----
+            if (wr_req_ev) begin
+                if (wr_addr_q == 6'h04) frame_base <= wr_data_q;
+                if (wr_addr_q == 6'h00 && wr_data_q[0]) begin
+                    // 只记下"想启动"；真正开始推流等检测器 FSM 的 o_ext_go
+                    start_req <= 1'b1;
+                end
+            end
+
+            // ---- 检测器开始取数的脉冲（F_RST 末拍）→ 正式开喂 ----
+            if (o_ext_go && start_req) begin
+                start_req <= 1'b0;
+                feed_on   <= 1'b1;
+                line_idx  <= 32'd0;
+                inflight  <= 4'd0;
+                px_pushed <= 32'd0;
+                lbusy     <= 1'b0;
+                lbcnt     <= 6'd0;
+            end
+
+            // ---- 发新行请求：在途 < 6 且还有像素没推完 ----
+            if (feed_on && !lbusy && (inflight < 4'd6) &&
+                (px_pushed + ({1'b0, inflight} << 6) < NPIX_C)) begin
+                lin_addr_q <= frame_base + (line_idx << 6);
+                lin_req_t  <= ~lin_req_t;
+                line_idx   <= line_idx + 32'd1;
+                inflight   <= inflight + 4'd1;
+            end
+
+            // ---- 收行数据 ----
+            if (lin_rdy_ev) begin
+                lbuf  <= lin_data_c;
+                lbcnt <= 6'd0;
+                lbusy <= 1'b1;
+            end
+
+            // ---- 推像素：1 字节/拍 ----
+            if (lbusy && ext_space) begin
+                px_pushed <= px_pushed + 32'd1;
+                if (lbcnt == 6'd63) begin
+                    lbcnt  <= 6'd0;
+                    lbusy  <= 1'b0;
+                    if (inflight != 4'd0) inflight <= inflight - 4'd1;
+                end else begin
+                    lbcnt <= lbcnt + 6'd1;
+                end
+            end
+
+            if (px_pushed >= NPIX_C) feed_on <= 1'b0;
+        end
+    end
+
+    //=========================================================================
+    // 5. 平台 512 位读（clk 域）：一行一个 AR
     //=========================================================================
     reg         plat_arvalid_q;
     reg  [31:0] plat_araddr_q;
-    reg         req_pend;       // 有 1 个待发的行读请求（请求队列深度 1，避免丢请求）
-    reg         ret_busy;       // 本次事务已收到数据，等下一次 ar 握手才允许再收
+    reg         req_pend;
+    reg         ret_busy;
+    reg  [9:0]  pend_wd;
 
-    // ---- 调试计数器（平台口字节地址 0x90 AR 次数 / 0x94 返回拍数 / 0x98 看门狗触发）----
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             dbg_ar <= 32'd0; dbg_rv <= 32'd0; dbg_wd <= 32'd0;
@@ -459,8 +439,9 @@ if (m_rvalid && m_rready && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= m_rdata[7
             if (pend_wd == 10'h3FF)            dbg_wd <= dbg_wd + 32'd1;
         end
     end
-    assign dbg_stat = {bus_addr[15:0], 8'd0, pend_wd[5:0], 1'b0,
-                       line_valid, req_pend, ret_busy, plat_arvalid_q};
+    assign dbg_stat = {px_pushed[15:0], line_idx[7:0], pend_wd[5:0], 1'b0,
+                       lbusy, req_pend, ret_busy, plat_arvalid_q};
+
     assign itf_araddr  = plat_araddr_q;
     assign itf_arvalid = plat_arvalid_q;
     assign itf_rready  = 1'b1;
@@ -476,33 +457,52 @@ if (m_rvalid && m_rready && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= m_rdata[7
             lin_rdy_t      <= 1'b0;
             req_pend       <= 1'b0;
             ret_busy       <= 1'b0;
+            pend_wd        <= 10'd0;
         end else begin
-            // 请求队列（深度 1）：核心来的行请求先记住，ar 空闲再发，绝不丢
-            if (lin_req_ev) req_pend <= 1'b1;
+            if (lin_req_ev) begin
+                req_pend      <= 1'b1;
+                plat_araddr_q <= lin_addr_q;
+            end
+
+            if (req_pend && !plat_arvalid_q && !ret_busy)
+                plat_arvalid_q <= 1'b1;
 
             if (plat_arvalid_q && itf_arready) begin
                 plat_arvalid_q <= 1'b0;
-                ret_busy       <= 1'b0;      // 新事务开始，允许收本次数据
-            end
-
-            if (req_pend && !plat_arvalid_q) begin
-                plat_araddr_q  <= lin_addr_q;
-                plat_arvalid_q <= 1'b1;
                 req_pend       <= 1'b0;
+                ret_busy       <= 1'b1;
+                pend_wd        <= 10'd0;
             end
 
-            // 数据返回：每笔事务只翻转一次（ret_busy 挡住多拍 rvalid），
-            // 否则 lin_rdy_t 在 200 MHz 连翻两次，50 MHz 核看不到边沿 → 卡死
-            if (itf_rvalid && !ret_busy) begin
+            if (itf_rvalid) begin
                 lin_data_c <= itf_rdata;
                 lin_rdy_t  <= ~lin_rdy_t;
-                ret_busy   <= 1'b1;
+                ret_busy   <= 1'b0;
+            end
+
+            if (plat_arvalid_q) begin
+                if (pend_wd != 10'h3FF) pend_wd <= pend_wd + 10'd1;
+                else begin
+                    pend_wd        <= 10'd0;
+                    req_pend       <= 1'b1;
+                    plat_arvalid_q <= 1'b0;
+                end
             end
         end
     end
 
     //=========================================================================
-    // 6. 检测器本体（core_clk 50 MHz）
+    // 6. 像素捕获（诊断）：记录前 256 个真正送进检测器的字节
+    //=========================================================================
+    always @(posedge core_clk or negedge core_rst_n)
+        if (!core_rst_n) cap_wd <= 9'd0;
+        else if (lbusy && ext_space && (cap_wd != 9'h1FF)) cap_wd <= cap_wd + 9'd1;
+
+    always @(posedge core_clk)
+        if (lbusy && ext_space && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= ext_byte;
+
+    //=========================================================================
+    // 7. 检测器本体（core_clk 50 MHz，像素由外部直推 USE_EXT=1）
     //=========================================================================
     wire [3:0] led_i;
 
@@ -510,11 +510,17 @@ if (m_rvalid && m_rready && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= m_rdata[7
         .W        (W),
         .H        (H),
         .SE       (SE),
-        .MAX_CAND (MAX_CAND)
+        .MAX_CAND (MAX_CAND),
+        .USE_EXT  (1)
     ) u_ip2 (
         .clk           (core_clk),
         .rst_n         (core_rst_n),
         .led           (led_i),
+
+        .i_ext_data    (i_ext_data),
+        .i_ext_valid   (i_ext_valid),
+        .o_ext_ready   (o_ext_ready),
+        .o_ext_go      (o_ext_go),
 
         .s_axi_awaddr  (aw_addr_c),
         .s_axi_awvalid (axi_awvalid_r),
@@ -535,101 +541,34 @@ if (m_rvalid && m_rready && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= m_rdata[7
         .s_axi_rvalid  (axi_rvalid),
         .s_axi_rready  (axi_rready_r),
 
-        .m_axi_araddr  (m_araddr),
-        .m_axi_arlen   (m_arlen),
-        .m_axi_arsize  (m_arsize),
-        .m_axi_arburst (m_arburst),
-        .m_axi_arvalid (m_arvalid),
-        .m_axi_arready (m_arready),
-        .m_axi_rdata   (m_rdata),
+        .m_axi_araddr  (dum_araddr),
+        .m_axi_arlen   (dum_arlen),
+        .m_axi_arsize  (dum_arsize),
+        .m_axi_arburst (dum_arburst),
+        .m_axi_arvalid (dum_arvalid),
+        .m_axi_arready (1'b0),
+        .m_axi_rdata   (64'd0),
         .m_axi_rresp   (2'b00),
-        .m_axi_rlast   (m_rlast),
-        .m_axi_rvalid  (m_rvalid),
-        .m_axi_rready  (m_rready),
+        .m_axi_rlast   (1'b0),
+        .m_axi_rvalid  (1'b0),
+        .m_axi_rready  (dum_rready),
 
-        .m_axi_awaddr  (m_awaddr),
-        .m_axi_awlen   (m_awlen),
-        .m_axi_awsize  (m_awsize),
-        .m_axi_awburst (m_awburst),
-        .m_axi_awvalid (m_awvalid),
+        .m_axi_awaddr  (dum_awaddr),
+        .m_axi_awlen   (dum_awlen),
+        .m_axi_awsize  (dum_awsize),
+        .m_axi_awburst (dum_awburst),
+        .m_axi_awvalid (dum_awvalid),
         .m_axi_awready (1'b0),
-        .m_axi_wdata   (m_wdata),
-        .m_axi_wstrb   (m_wstrb),
-        .m_axi_wlast   (m_wlast),
-        .m_axi_wvalid  (m_wvalid),
+        .m_axi_wdata   (dum_wdata),
+        .m_axi_wstrb   (dum_wstrb),
+        .m_axi_wlast   (dum_wlast),
+        .m_axi_wvalid  (dum_wvalid),
         .m_axi_wready  (1'b0),
         .m_axi_bresp   (2'b00),
         .m_axi_bvalid  (1'b0),
-        .m_axi_bready  (m_bready)
+        .m_axi_bready  (dum_bready)
     );
 
     assign led = led_i[1:0];
-
-    //=========================================================================
-    // 6. 片上逻辑分析仪（OnChip LA）—— 一次编译看全部
-    //
-    //    设计意图（吸取教训）：不要再“报错了再加一个计数器、再编译 40 分钟”。
-    //    这里一次性把数据通路的关键事件全记下来（256 条环形缓冲）：
-    //      1 = 平台 AR 握手（记地址）
-    //      2 = 平台 R 返回（记 ret_busy/lin_rdy_t）
-    //      3 = 核发出行请求（记 pend_wd/req_pend/ret_busy/arvalid）
-    //      4 = 核收到行数据（同上）
-    //      5 = 看门狗超时（**触发冻结**，保留崩溃瞬间的前后现场）
-    //
-    //    读口（平台字节地址）：
-    //      0xA0 写索引（0..255）→ 读 0xA0 得到该条
-    //      0xA8 读状态 {frozen, trig[3:0], 3'd0, wp[7:0]}
-    //      0xAC 写 1 == 清空
-    //    验证完成后把 LA_ON 置 0，这些逻辑会被综合掉，不占资源。
-    //=========================================================================
-    localparam LA_ON = 1'b1;
-
-    reg  [31:0] la_mem [0:255];
-    reg  [7:0]  la_wp;
-    reg         la_frz;
-    reg  [3:0]  la_trig;
-    reg  [2:0]  s_clr;
-
-    always @(posedge clk or negedge rst_n)
-        if (!rst_n) s_clr <= 3'd0; else s_clr <= {s_clr[1:0], la_clr_t};
-    wire la_clr_ev = s_clr[2] ^ s_clr[1];
-
-    wire ev_ar = plat_arvalid_q && itf_arready;
-    wire ev_r  = itf_rvalid;
-    wire ev_wd = (pend_wd == 10'h3FF);
-
-    generate if (LA_ON) begin : g_la
-        always @(posedge clk or negedge rst_n) begin
-            if (!rst_n) begin
-                la_wp <= 8'd0; la_frz <= 1'b0; la_trig <= 4'd0;
-            end else if (la_clr_ev) begin
-                la_wp <= 8'd0; la_frz <= 1'b0; la_trig <= 4'd0;
-            end else if (!la_frz) begin
-                if (ev_ar) begin
-                    la_mem[la_wp[5:0]] <= {4'h1, 4'h0, plat_araddr_q[23:0]};
-                    la_wp <= la_wp + 8'd1;
-                end else if (ev_r) begin
-                    la_mem[la_wp[5:0]] <= {4'h2, 4'h0, ret_busy, lin_rdy_t, 22'd0};
-                    la_wp <= la_wp + 8'd1;
-                end else if (lin_req_ev) begin
-                    la_mem[la_wp[5:0]] <= {4'h3, {2'b00, pend_wd}, req_pend, ret_busy, plat_arvalid_q, 8'd0};
-                    la_wp <= la_wp + 8'd1;
-                end else if (lin_rdy_ev) begin
-                    la_mem[la_wp[5:0]] <= {4'h4, 12'd0, req_pend, ret_busy, plat_arvalid_q, 12'd0};
-                    la_wp <= la_wp + 8'd1;
-                end else if (ev_wd) begin
-                    la_mem[la_wp[5:0]] <= {4'h5, 28'd0};
-                    la_wp   <= la_wp + 8'd1;
-                    la_frz  <= 1'b1;
-                    la_trig <= 4'h1;
-                end
-            end
-        end
-        assign la_rdata  = la_mem[la_raddr];
-        assign la_status = {la_frz, la_trig, 3'd0, la_wp};
-    end else begin : g_la_off
-        assign la_rdata  = 32'd0;
-        assign la_status = 32'd0;
-    end endgenerate
 
 endmodule

@@ -34,12 +34,19 @@ module ip2_axi_top #(
     parameter FLOOR = 2,        // CFAR 底噪
     parameter MODE = 0,         // 0=Top-Hat(亮目标) 1=Black-Hat(暗目标)
     parameter DENOISE = 1,      // CCL 去孤立点（板级打开，抑制候选表抖动）
+    parameter USE_EXT  = 0,     // 1=像素由外部直推（三域平台行流模式），0=AXI 主口（独立版）
     parameter [31:0] DEF_FRAME_ADDR  = 32'h3010_0000,
     parameter [31:0] DEF_RESULT_ADDR = 32'h3100_0000
 )(
     input  wire        clk,
     input  wire        rst_n,
     output wire [3:0]  led,
+
+    // ---------------- 外部像素直推口（USE_EXT=1 时有效，仿学长 dma.v 的行流模型）----
+    input  wire [7:0]  i_ext_data,
+    input  wire        i_ext_valid,
+    output wire        o_ext_ready,
+    output wire        o_ext_go,        // 一行流模式：一帧开始取数的脉冲
 
     // ---------------- AXI4-Lite 从口（PS 控制） ----------------
     input  wire [5:0]  s_axi_awaddr,
@@ -316,13 +323,23 @@ module ip2_axi_top #(
     // 清掉上一帧残留的 120 字节，避免整帧像素流平移）。
     wire fifo_clr = (fst == F_RST) && (rstc < 5'd16);
 
+    wire       ext_mode      = (USE_EXT != 0);
+    // ext 模式下：F_RST 期间 FIFO 会被清空，所以这段时间的写入要丢掉；
+    // 真正的推流从 rd_start（F_RST 末拍）之后才算数。
+    wire       ext_wr_ok     = (fst != F_RST);
+    wire       fifo_wr_en    = ext_mode ? (i_ext_valid && ext_wr_ok) : rd_valid;
+    wire [7:0] fifo_wr_data  = ext_mode ? i_ext_data  : rd_data;
+    assign     o_ext_ready   = ~fifo_full;
+    assign     o_ext_go      = rd_start;
+
     ip2_pix_fifo #(.DEPTH(262144), .AW(AW_F)) u_pixfifo (
         .clk(clk), .rst_n(rst_n), .clr(fifo_clr),
-        .wr_en(rd_valid), .wr_data(rd_data), .wr_full(fifo_full),
+        .wr_en(fifo_wr_en), .wr_data(fifo_wr_data), .wr_full(fifo_full),
         .rd_data(fifo_data), .rd_valid(fifo_valid), .rd_ready(ch_i_ready && feed_real),
         .level(fifo_level)
     );
 
+    generate if (USE_EXT == 0) begin : g_rd_master
     ip2_axi_master_rd #(.FIFO_AW(6), .BURST(32)) u_rd (
         .clk(clk), .rst_n(rst_n),
         .start(rd_start),
@@ -338,6 +355,28 @@ module ip2_axi_top #(
         .m_rdata(m_axi_rdata), .m_rresp(m_axi_rresp), .m_rlast(m_axi_rlast),
         .m_rvalid(m_axi_rvalid), .m_rready(m_axi_rready)
     );
+    end else begin : g_no_master
+        reg [17:0] ext_cnt;
+        always @(posedge clk) begin
+            if (!rst_n)        ext_cnt <= 18'd0;
+            else if (rd_start) ext_cnt <= 18'd0;
+            else if (fifo_wr_en) ext_cnt <= ext_cnt + 18'd1;
+        end
+        assign rd_data  = 8'd0;
+        assign rd_valid = 1'b0;
+        assign rd_busy  = 1'b0;
+        assign rd_done  = (ext_cnt >= NPIX_V);
+        assign rd_error = 1'b0;
+        assign m_axi_araddr  = 32'd0;
+        assign m_axi_arlen   = 8'd0;
+        assign m_axi_arsize  = 3'd0;
+        assign m_axi_arburst = 2'd0;
+        assign m_axi_arvalid = 1'b0;
+        assign m_axi_rready  = 1'b0;
+    end endgenerate
+
+    // 非 ext 模式下 o_ext_go 也要有驱动
+    wire ext_go_unused = o_ext_go;
 
     ip2_top_stream #(.W(W), .H(H), .MAX_CAND(MAX_CAND), .SE(SE), .MODE(MODE), .K(K), .FLOOR(FLOOR),
                      .DENOISE(DENOISE)) u_chain (
