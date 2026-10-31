@@ -4,8 +4,8 @@
 //   参数 K/FLOOR 用 -P 覆盖：iverilog ... -Ptb_k_cmp.K=0 -Ptb_k_cmp.FLOOR=2
 `timescale 1ns/1ps
 module tb_k_cmp;
-    parameter W = 640;
-    parameter H = 360;
+    parameter W = 320;
+    parameter H = 180;
     parameter SE = 5;
     parameter MODE = 0;
     parameter DENOISE = 1;
@@ -67,17 +67,21 @@ module tb_k_cmp;
         repeat (32) @(posedge clk);
         rst_n = 1;
 
-        // 喂整帧
-        for (i = 0; i < NPIX; i = i + 1) begin
+        // 喂整帧：irdy 低时保持数据和 valid，只被接收才推进（否则丢像素）
+        i = 0;
+        while (i < NPIX) begin
             din = mem[i]; vin = 1;
             @(posedge clk);
-            while (!irdy) begin vin = 0; @(posedge clk); vin = 1; end
+            #1;
+            if (irdy) i = i + 1;
         end
-        // 补喂
-        vin = 1; din = 8'd0;
-        for (i = 0; i < PADN; i = i + 1) begin
+        // 补喂 PADN 个 0
+        i = 0;
+        while (i < PADN) begin
+            din = 8'd0; vin = 1;
             @(posedge clk);
-            while (!irdy) begin vin = 0; @(posedge clk); vin = 1; end
+            #1;
+            if (irdy) i = i + 1;
         end
         vin = 0;
         repeat (20000) @(posedge clk);
