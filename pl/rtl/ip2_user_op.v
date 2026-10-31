@@ -1,34 +1,25 @@
-//==============================================================================
-// ip2_user_op.v —— 把 IP2 检测器接到 FMSH FPAI 平台的“自定义算子”接口
+//=============================================================================
+// ip2_user_op.v —— 把自研检测器（ip2_axi_top）接到 FMSH 三域平台的“自定义算子”接口
 //
-// 平台给自定义算子两个口（见 ai7030_edif_top.v）：
-//   1) 寄存器口 itf_ra_*  : 32 位，awaddr 是“字序号”（不是字节地址），
-//                          awready 恒 1；读有 1 拍延迟（arvalid→rvalid）
-//   2) 数据口   itf_*     : 512 位宽，每拍 64 字节，地址 +64 递增
+// 平台接口：
+//   1) 寄存器口 itf_ra_* : 32 位，字节地址（ra_clk = gp_clk = 50 MHz）
+//   2) 数据口   itf_*    : 512 位，每拍 64 字节，地址 +64（clk = hp_clk = 200 MHz）
 //
-// 本模块做两件事：
-//   A. 寄存器口  <-> 我们 ip2_axi_top 的 AXI-Lite 从口（6 位字地址）
-//   B. 平台 512 位读 <-> 我们 ip2_axi_top 的 64 位 AXI 读主口（64 字节行缓存）
-//
-// 寄存器映射（平台字序号 index；PS 侧 byte addr = 0x400C0000 + 4*index）
-//   0x00 W  CTRL         bit0 = start（写 1 启动一帧）
-//   0x01 W  FRAME_ADDR   PL DDR 里帧数据的字节地址
-//   0x02 R  STATUS       [7:0]=n_cand [30]=err [31]=done
-//   0x03 R  VERSION      0x00010000
-//   0x04 R  FRAME_ID
-//   0x08~0x10 R          36 字节兼容视图（9 个字，byte0 = n_cand）
-//   0x20 R  DONE         和 STATUS[31] 同义（兼容学长 demo 的地址）
-//   0x77 W  任意写       软复位（兼容学长 demo）
-//==============================================================================
+// 【v2 关键改动：把检测器核降到 50 MHz】
+//   v1 把核直接接在 hp_clk(200 MHz) 上，实测 WNS = -11.938 ns
+//   （最差路径 u_cfar/wpa_reg[2]_replica -> q1_ws2_reg[25]/D，数据路径 16.8 ns），
+//   核在 200 MHz 下算错 -> FSM 卡死 -> 占死 PL-DDR 读通道 -> 整板 AXI 挂死。
+//   v2：core_clk = clk/4 = 50 MHz（同源分频），核 + AXI 主口 + 行缓存都在 core_clk；
+//       两个时钟域之间一律用 toggle 握手（数据先稳定、再翻转），不依赖异步 FIFO。
+//=============================================================================
 `timescale 1ns / 1ps
 
 module ip2_user_op #(
-    parameter integer W = 640,
-    parameter integer H = 360,
-    parameter integer SE = 21,
-    parameter integer MAX_CAND = 64
+    parameter W        = 640,
+    parameter H        = 360,
+    parameter SE       = 5,
+    parameter MAX_CAND = 16
 ) (
-    // ---------------- 平台寄存器口（gp_clk 域） ----------------
     input  wire [31:0] itf_ra_awaddr,
     input  wire [31:0] itf_ra_awdata,
     input  wire        itf_ra_awvalid,
@@ -40,7 +31,6 @@ module ip2_user_op #(
     output wire        itf_ra_rvalid,
     input  wire        itf_ra_rready,
 
-    // ---------------- 平台数据口（hp_clk 域，512 位） ----------------
     output wire [31:0]  itf_awaddr,
     output wire [511:0] itf_awdata,
     output wire         itf_awvalid,
@@ -54,25 +44,158 @@ module ip2_user_op #(
 
     output wire [1:0]  led,
 
-    // ---------------- 时钟复位 ----------------
-    input  wire        clk,          // hp_clk
-    input  wire        ra_clk,       // gp_clk
-    input  wire        rst_n,        // ~hp_clk_rst
-    input  wire        ra_rst_n      // ~gp_clk_rst
+    input  wire        clk,          // hp_clk 200 MHz
+    input  wire        ra_clk,       // gp_clk  50 MHz
+    input  wire        rst_n,
+    input  wire        ra_rst_n
 );
 
-    //================= 所有内部 net 先声明 =================
-    // AXI-Lite 主（由本模块驱动我们检测器的从口）
-    wire        axi_awvalid, axi_awready;
-    wire        axi_wvalid,  axi_wready;
-    wire [1:0]  axi_bresp;
-    wire        axi_bvalid,  axi_bready;
-    wire        axi_arvalid, axi_arready;
-    wire [31:0] axi_rdata;
-    wire [1:0]  axi_rresp;
-    wire        axi_rvalid,  axi_rready;
+    //=========================================================================
+    // 0. core_clk = clk / 4 = 50 MHz
+    //=========================================================================
+    reg [1:0] div_cnt;
+    reg       core_clk;
 
-    // AXI 读主（检测器 -> 本模块的转换逻辑）
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            div_cnt  <= 2'd0;
+            core_clk <= 1'b0;
+        end else if (div_cnt == 2'd1) begin
+            div_cnt  <= 2'd0;
+            core_clk <= ~core_clk;
+        end else begin
+            div_cnt <= div_cnt + 2'd1;
+        end
+    end
+
+    reg [1:0] core_rst_sync;
+    always @(posedge core_clk or negedge rst_n) begin
+        if (!rst_n) core_rst_sync <= 2'b00;
+        else        core_rst_sync <= {core_rst_sync[0], 1'b1};
+    end
+    wire core_rst_n = core_rst_sync[1];
+
+    //=========================================================================
+    // 1. 跨域所有 toggle / 数据寄存器声明
+    //=========================================================================
+    reg        wr_t;            // ra   -> core（写请求）
+    reg [5:0]  wr_addr_q;
+    reg [31:0] wr_data_q;
+    reg        wr_ack_t;        // core -> ra  （写完成）
+
+    reg        rd_t;            // ra   -> core（读请求）
+    reg [5:0]  rd_addr_q;
+    reg        rd_is_done_q;
+    reg        rd_ack_t;        // core -> ra  （读完成）
+    reg [31:0] rd_data_c;       // core 域锁存的读数据
+
+    reg        lin_req_t;       // core -> clk （行读请求）
+    reg [31:0] lin_addr_q;
+    reg        lin_rdy_t;       // clk  -> core（行数据就绪）
+    reg [511:0] lin_data_c;     // clk 域锁存的 512 位行
+
+    //=========================================================================
+    // 2. 同步器：2FF + 边沿检测
+    //=========================================================================
+    reg [2:0] s_wr_req, s_rd_req, s_lin_rdy, s_lin_req, s_wr_ack, s_rd_ack;
+
+    always @(posedge core_clk or negedge core_rst_n)
+        if (!core_rst_n) s_wr_req <= 3'd0; else s_wr_req <= {s_wr_req[1:0], wr_t};
+    always @(posedge core_clk or negedge core_rst_n)
+        if (!core_rst_n) s_rd_req <= 3'd0; else s_rd_req <= {s_rd_req[1:0], rd_t};
+    always @(posedge core_clk or negedge core_rst_n)
+        if (!core_rst_n) s_lin_rdy <= 3'd0; else s_lin_rdy <= {s_lin_rdy[1:0], lin_rdy_t};
+
+    always @(posedge ra_clk or negedge ra_rst_n)
+        if (!ra_rst_n) s_wr_ack <= 3'd0; else s_wr_ack <= {s_wr_ack[1:0], wr_ack_t};
+    always @(posedge ra_clk or negedge ra_rst_n)
+        if (!ra_rst_n) s_rd_ack <= 3'd0; else s_rd_ack <= {s_rd_ack[1:0], rd_ack_t};
+
+    always @(posedge clk or negedge rst_n)
+        if (!rst_n) s_lin_req <= 3'd0; else s_lin_req <= {s_lin_req[1:0], lin_req_t};
+
+    wire wr_req_ev  = s_wr_req[2]  ^ s_wr_req[1];
+    wire rd_req_ev  = s_rd_req[2]  ^ s_rd_req[1];
+    wire lin_rdy_ev = s_lin_rdy[2] ^ s_lin_rdy[1];
+    wire lin_req_ev = s_lin_req[2] ^ s_lin_req[1];
+    wire wr_ack_ev  = s_wr_ack[2]  ^ s_wr_ack[1];
+    wire rd_ack_ev  = s_rd_ack[2]  ^ s_rd_ack[1];
+
+    //=========================================================================
+    // 3. 寄存器口（ra_clk 域）
+    //=========================================================================
+    wire done_sel_w = (itf_ra_awaddr[11:0] == 12'h080);
+    wire done_sel_r = (itf_ra_araddr[11:0] == 12'h080);
+    // 调试窗口：字节地址 0x90/0x94/0x98/0x9C 读内部计数器（工程调试用，不影响功能）
+    wire dbg_sel_r  = (itf_ra_araddr[11:4] == 8'h09);
+    reg  [31:0] dbg_ar, dbg_rv, dbg_wd;   // 平台口调试计数器（在 clk 域自增，见第 5 节）
+    wire [31:0] dbg_stat;                 // 平台口状态快照（见第 5 节）
+    wire [5:0] ra_word = done_sel_w ? 6'h0C : itf_ra_awaddr[5:0];
+    wire [5:0] rd_word = done_sel_r ? 6'h0C : itf_ra_araddr[5:0];
+
+    reg        wr_busy, rd_busy;
+    reg [31:0] rd_data_q;
+    reg        rvalid_r;
+    reg [11:0] rd_addr12_q;      // 读地址快照（用于调试窗口选择）
+
+    assign itf_ra_awready = ~wr_busy;
+    assign itf_ra_arready = ~rd_busy;
+    assign itf_ra_rvalid  = rvalid_r;
+    wire [31:0] dbg_word = (rd_addr12_q[3:2] == 2'd0) ? dbg_ar :
+                           (rd_addr12_q[3:2] == 2'd1) ? dbg_rv :
+                           (rd_addr12_q[3:2] == 2'd2) ? dbg_wd : dbg_stat;
+    wire        dbg_sel_q = (rd_addr12_q[11:4] == 8'h09);
+    assign itf_ra_rdata   = rd_is_done_q ? {31'b0, rd_data_q[1]} :
+                            dbg_sel_q    ? dbg_word : rd_data_q;
+
+    always @(posedge ra_clk or negedge ra_rst_n) begin
+        if (!ra_rst_n) begin
+            wr_t <= 1'b0; wr_addr_q <= 6'd0; wr_data_q <= 32'd0; wr_busy <= 1'b0;
+        end else begin
+            if (wr_ack_ev) wr_busy <= 1'b0;
+            if (itf_ra_awvalid && !wr_busy) begin
+                wr_addr_q <= ra_word;
+                wr_data_q <= itf_ra_awdata;
+                wr_t      <= ~wr_t;
+                wr_busy   <= 1'b1;
+            end
+        end
+    end
+
+    always @(posedge ra_clk or negedge ra_rst_n) begin
+        if (!ra_rst_n) begin
+            rd_t <= 1'b0; rd_addr_q <= 6'd0; rd_is_done_q <= 1'b0; rd_busy <= 1'b0;
+            rd_data_q <= 32'd0; rvalid_r <= 1'b0;
+        end else begin
+            if (rd_ack_ev) begin
+                rd_busy   <= 1'b0;
+                rd_data_q <= rd_data_c;
+                rvalid_r  <= 1'b1;
+            end else if (rvalid_r) begin
+                rvalid_r  <= 1'b0;
+            end
+            if (itf_ra_arvalid && !rd_busy) begin
+                rd_addr_q    <= rd_word;
+                rd_addr12_q  <= itf_ra_araddr[11:0];
+                rd_is_done_q <= done_sel_r;
+                rd_t         <= ~rd_t;
+                rd_busy      <= 1'b1;
+            end
+        end
+    end
+
+    //=========================================================================
+    // 4. AXI-Lite 主侧 + 检测器（core_clk 域）
+    //=========================================================================
+    reg        axi_awvalid_r, axi_wvalid_r, axi_bready_r, aw_done_r, w_done_r;
+    reg        axi_arvalid_r, axi_rready_r;
+    reg [5:0]  aw_addr_c, ar_addr_c;
+    reg [31:0] aw_data_c;
+
+    wire        axi_awready, axi_wready, axi_bvalid, axi_arready, axi_rvalid;
+    wire [31:0] axi_rdata;
+    wire [1:0]  axi_bresp, axi_rresp;
+
     wire [31:0] m_araddr;
     wire [7:0]  m_arlen;
     wire [2:0]  m_arsize;
@@ -80,149 +203,116 @@ module ip2_user_op #(
     wire        m_arvalid, m_arready;
     wire [63:0] m_rdata;
     wire        m_rlast, m_rvalid, m_rready;
-
-    // AXI 写主（本设计不使用，悬空）
     wire [31:0] m_awaddr;
     wire [7:0]  m_awlen;
     wire [2:0]  m_awsize;
     wire [1:0]  m_awburst;
-    wire        m_awvalid;
+    wire        m_awvalid, m_wvalid, m_wlast, m_bready;
     wire [63:0] m_wdata;
     wire [7:0]  m_wstrb;
-    wire        m_wlast, m_wvalid, m_bready;
 
-    wire [3:0]  led_i;
-
-    // 平台字节地址 -> 我们的 6 位字节地址：低 6 位原样映射；
-    // 平台的 COMPUTE_DONE（字节 0x80）映射到我们的 STATUS（0x0C），读回只取 bit1(done)
-    wire done_sel_w = (itf_ra_awaddr[11:0] == 12'h080);
-    wire done_sel_r = (itf_ra_araddr[11:0] == 12'h080);
-    wire [5:0] ra_word = done_sel_w ? 6'h0C : itf_ra_awaddr[5:0];
-    wire [5:0] rd_word = done_sel_r ? 6'h0C : itf_ra_araddr[5:0];
-
-    //==================================================================
-    // A. 寄存器口 -> AXI-Lite 写
-    //==================================================================
-    reg  [5:0]  aw_addr_q;
-    reg  [31:0] aw_data_q;
-    reg         aw_pend;
-    reg         w_pend;
-    reg         b_wait;
-
-    assign itf_ra_awready = ~aw_pend & ~b_wait;
-    assign axi_awvalid    = aw_pend;
-    assign axi_wvalid     = w_pend;
-    assign axi_bready     = b_wait;
-
-    always @(posedge ra_clk or negedge ra_rst_n) begin
-        if (!ra_rst_n) begin
-            aw_pend <= 1'b0; w_pend <= 1'b0; b_wait <= 1'b0;
-            aw_addr_q <= 6'd0; aw_data_q <= 32'd0;
-        end else begin
-            if (itf_ra_awvalid && itf_ra_awready) begin
-                aw_addr_q <= ra_word;
-                aw_data_q <= itf_ra_awdata;
-                aw_pend   <= 1'b1;
-                w_pend    <= 1'b1;
-            end else begin
-                if (axi_awvalid && axi_awready) aw_pend <= 1'b0;
-                if (axi_wvalid  && axi_wready ) w_pend  <= 1'b0;
-            end
-            if (axi_bvalid)                b_wait <= 1'b1;
-            else if (b_wait && axi_bready) b_wait <= 1'b0;
-        end
-    end
-
-    //==================================================================
-    // B. 寄存器口 -> AXI-Lite 读
-    //==================================================================
-    reg  [5:0]  ar_addr_q;
-    reg         ar_pend;
-    reg         r_wait;
-    reg         rd_is_done;
-
-    assign itf_ra_arready = ~ar_pend & ~r_wait;
-    assign axi_arvalid    = ar_pend;
-    assign axi_rready     = r_wait;
-    assign itf_ra_rdata   = rd_is_done ? {31'b0, axi_rdata[1]} : axi_rdata;
-    assign itf_ra_rvalid  = r_wait;
-
-    always @(posedge ra_clk or negedge ra_rst_n) begin
-        if (!ra_rst_n) begin
-            ar_pend <= 1'b0; r_wait <= 1'b0; ar_addr_q <= 6'd0; rd_is_done <= 1'b0;
-        end else begin
-            if (itf_ra_arvalid && itf_ra_arready) begin
-                ar_addr_q <= rd_word;
-                rd_is_done <= done_sel_r;
-                ar_pend   <= 1'b1;
-            end else if (axi_arvalid && axi_arready) begin
-                ar_pend   <= 1'b0;
-            end
-            if (axi_rvalid)                r_wait <= 1'b1;
-            else if (r_wait && axi_rready) r_wait <= 1'b0;
-        end
-    end
-
-    //==================================================================
-    // C. 平台 512 位读 -> 我们的 64 位 AXI 读主口
-    //==================================================================
-    reg  [511:0] line_data;
-    reg  [25:0]  line_tag;
-    reg          line_valid;
-
-    reg  [31:0]  bus_addr;
-    reg  [7:0]   bus_left;
-    reg          bus_active;
-
-    reg  [31:0]  plat_araddr_q;
-    reg          plat_arvalid_q;
-    reg          fetch_busy;
+    reg [511:0] line_data;
+    reg [25:0]  line_tag;
+    reg         line_valid;
+    reg [31:0]  bus_addr;
+    reg [7:0]   bus_left;
+    reg         bus_active;
+    reg         lin_pend;
+    reg [9:0]   pend_wd;
 
     wire [25:0] want_tag  = bus_addr[31:6];
     wire [2:0]  want_word = bus_addr[5:3];
     wire        hit       = line_valid && (line_tag == want_tag);
     wire [63:0] line_word = line_data[{want_word, 3'b000} +: 64];
 
-    assign itf_araddr  = plat_araddr_q;
-    assign itf_arvalid = plat_arvalid_q;
-    assign itf_rready  = fetch_busy;
-
-    assign m_arready = ~bus_active & ~fetch_busy & ~plat_arvalid_q;
+    assign m_arready = ~bus_active & ~lin_pend;
     assign m_rvalid  = bus_active & hit;
     assign m_rdata   = line_word;
     assign m_rlast   = (bus_left == 8'd0);
 
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
+    always @(posedge core_clk or negedge core_rst_n) begin
+        if (!core_rst_n) begin
+            axi_awvalid_r <= 1'b0; axi_wvalid_r <= 1'b0; axi_bready_r <= 1'b0;
+            aw_done_r <= 1'b0; w_done_r <= 1'b0;
+            axi_arvalid_r <= 1'b0; axi_rready_r <= 1'b0;
+            aw_addr_c <= 6'd0; aw_data_c <= 32'd0; ar_addr_c <= 6'd0;
+            wr_ack_t <= 1'b0; rd_ack_t <= 1'b0; rd_data_c <= 32'd0;
             line_data <= 512'd0; line_tag <= 26'd0; line_valid <= 1'b0;
             bus_addr <= 32'd0; bus_left <= 8'd0; bus_active <= 1'b0;
-            plat_araddr_q <= 32'd0; plat_arvalid_q <= 1'b0; fetch_busy <= 1'b0;
+            lin_req_t <= 1'b0; lin_addr_q <= 32'd0; lin_pend <= 1'b0;
+            pend_wd <= 10'd0;
         end else begin
-            // 接主口突发请求
+            // ---- 写请求 ----
+            if (wr_req_ev) begin
+                aw_addr_c     <= wr_addr_q;
+                aw_data_c     <= wr_data_q;
+                axi_awvalid_r <= 1'b1;
+                axi_wvalid_r  <= 1'b1;
+            end
+            if (axi_awvalid_r && axi_awready) begin
+                axi_awvalid_r <= 1'b0;
+                aw_done_r     <= 1'b1;
+            end
+            if (axi_wvalid_r  && axi_wready ) begin
+                axi_wvalid_r  <= 1'b0;
+                w_done_r      <= 1'b1;
+            end
+            if (aw_done_r && w_done_r) axi_bready_r <= 1'b1;
+            if (axi_bvalid && axi_bready_r) begin
+                axi_bready_r <= 1'b0;
+                aw_done_r    <= 1'b0;
+                w_done_r     <= 1'b0;
+                wr_ack_t     <= ~wr_ack_t;
+            end
+
+            // ---- 读请求 ----
+            if (rd_req_ev) begin
+                ar_addr_c     <= rd_addr_q;
+                axi_arvalid_r <= 1'b1;
+            end
+            if (axi_arvalid_r && axi_arready) begin
+                axi_arvalid_r <= 1'b0;
+                axi_rready_r  <= 1'b1;
+            end
+            if (axi_rvalid && axi_rready_r) begin
+                rd_data_c    <= axi_rdata;
+                axi_rready_r <= 1'b0;
+                rd_ack_t     <= ~rd_ack_t;
+            end
+
+            // ---- 行数据返回 ----
+            if (lin_rdy_ev) begin
+                line_data  <= lin_data_c;
+                line_tag   <= lin_addr_q[31:6];
+                line_valid <= 1'b1;
+                lin_pend   <= 1'b0;
+            end
+
+            // ---- 64 位主口 ----
             if (m_arvalid && m_arready) begin
                 bus_addr   <= m_araddr;
                 bus_left   <= m_arlen;
                 bus_active <= 1'b1;
             end
 
-            // 平台读发起/撤销
-            if (plat_arvalid_q && itf_arready) plat_arvalid_q <= 1'b0;
-
-            if (bus_active && !hit && !fetch_busy && !plat_arvalid_q) begin
-                plat_araddr_q  <= {want_tag, 6'b0};
-                plat_arvalid_q <= 1'b1;
-                fetch_busy     <= 1'b1;
+            if (bus_active && !hit && !lin_pend) begin
+                lin_addr_q <= {want_tag, 6'b0};
+                lin_req_t  <= ~lin_req_t;
+                lin_pend   <= 1'b1;
             end
 
-            // 平台读返回：填行缓存
-            if (fetch_busy && itf_rvalid) begin
-                line_data  <= itf_rdata;
-                line_tag   <= plat_araddr_q[31:6];
-                line_valid <= 1'b1;
-                fetch_busy <= 1'b0;
+            // 看门狗：一行数据等太久就重发请求（防跨域丢事件导致死锁）
+            if (lin_pend) begin
+                if (pend_wd != 10'h3FF) begin
+                    pend_wd <= pend_wd + 10'd1;
+                end else begin
+                    pend_wd   <= 10'd0;
+                    lin_req_t <= ~lin_req_t;
+                end
+            end else begin
+                pend_wd <= 10'd0;
             end
 
-            // 回数据给主口
             if (m_rvalid && m_rready) begin
                 if (bus_left == 8'd0) begin
                     bus_active <= 1'b0;
@@ -234,37 +324,99 @@ module ip2_user_op #(
         end
     end
 
-    //==================================================================
-    // D. 检测器本体
-    //==================================================================
+    //=========================================================================
+    // 5. 平台 512 位读（clk 域）
+    //=========================================================================
+    reg         plat_arvalid_q;
+    reg  [31:0] plat_araddr_q;
+    reg         req_pend;       // 有 1 个待发的行读请求（请求队列深度 1，避免丢请求）
+    reg         ret_busy;       // 本次事务已收到数据，等下一次 ar 握手才允许再收
+
+    // ---- 调试计数器（平台口字节地址 0x90 AR 次数 / 0x94 返回拍数 / 0x98 看门狗触发）----
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            dbg_ar <= 32'd0; dbg_rv <= 32'd0; dbg_wd <= 32'd0;
+        end else begin
+            if (plat_arvalid_q && itf_arready) dbg_ar <= dbg_ar + 32'd1;
+            if (itf_rvalid)                    dbg_rv <= dbg_rv + 32'd1;
+            if (pend_wd == 10'h3FF)            dbg_wd <= dbg_wd + 32'd1;
+        end
+    end
+    assign dbg_stat = {bus_addr[15:0], 8'd0, pend_wd[5:0], 1'b0,
+                       line_valid, req_pend, ret_busy, plat_arvalid_q};
+    assign itf_araddr  = plat_araddr_q;
+    assign itf_arvalid = plat_arvalid_q;
+    assign itf_rready  = 1'b1;
+    assign itf_awaddr  = 32'd0;
+    assign itf_awdata  = 512'd0;
+    assign itf_awvalid = 1'b0;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            plat_arvalid_q <= 1'b0;
+            plat_araddr_q  <= 32'd0;
+            lin_data_c     <= 512'd0;
+            lin_rdy_t      <= 1'b0;
+            req_pend       <= 1'b0;
+            ret_busy       <= 1'b0;
+        end else begin
+            // 请求队列（深度 1）：核心来的行请求先记住，ar 空闲再发，绝不丢
+            if (lin_req_ev) req_pend <= 1'b1;
+
+            if (plat_arvalid_q && itf_arready) begin
+                plat_arvalid_q <= 1'b0;
+                ret_busy       <= 1'b0;      // 新事务开始，允许收本次数据
+            end
+
+            if (req_pend && !plat_arvalid_q) begin
+                plat_araddr_q  <= lin_addr_q;
+                plat_arvalid_q <= 1'b1;
+                req_pend       <= 1'b0;
+            end
+
+            // 数据返回：每笔事务只翻转一次（ret_busy 挡住多拍 rvalid），
+            // 否则 lin_rdy_t 在 200 MHz 连翻两次，50 MHz 核看不到边沿 → 卡死
+            if (itf_rvalid && !ret_busy) begin
+                lin_data_c <= itf_rdata;
+                lin_rdy_t  <= ~lin_rdy_t;
+                ret_busy   <= 1'b1;
+            end
+        end
+    end
+
+    //=========================================================================
+    // 6. 检测器本体（core_clk 50 MHz）
+    //=========================================================================
+    wire [3:0] led_i;
+
     ip2_axi_top #(
         .W        (W),
         .H        (H),
         .SE       (SE),
         .MAX_CAND (MAX_CAND)
     ) u_ip2 (
-        .clk           (clk),
-        .rst_n         (rst_n),
+        .clk           (core_clk),
+        .rst_n         (core_rst_n),
         .led           (led_i),
 
-        .s_axi_awaddr  (aw_addr_q),
-        .s_axi_awvalid (axi_awvalid),
+        .s_axi_awaddr  (aw_addr_c),
+        .s_axi_awvalid (axi_awvalid_r),
         .s_axi_awready (axi_awready),
-        .s_axi_wdata   (aw_data_q),
+        .s_axi_wdata   (aw_data_c),
         .s_axi_wstrb   (4'hF),
-        .s_axi_wvalid  (axi_wvalid),
+        .s_axi_wvalid  (axi_wvalid_r),
         .s_axi_wready  (axi_wready),
         .s_axi_bresp   (axi_bresp),
         .s_axi_bvalid  (axi_bvalid),
-        .s_axi_bready  (axi_bready),
+        .s_axi_bready  (axi_bready_r),
 
-        .s_axi_araddr  (ar_addr_q),
-        .s_axi_arvalid (axi_arvalid),
+        .s_axi_araddr  (ar_addr_c),
+        .s_axi_arvalid (axi_arvalid_r),
         .s_axi_arready (axi_arready),
         .s_axi_rdata   (axi_rdata),
         .s_axi_rresp   (axi_rresp),
         .s_axi_rvalid  (axi_rvalid),
-        .s_axi_rready  (axi_rready),
+        .s_axi_rready  (axi_rready_r),
 
         .m_axi_araddr  (m_araddr),
         .m_axi_arlen   (m_arlen),
@@ -294,9 +446,6 @@ module ip2_user_op #(
         .m_axi_bready  (m_bready)
     );
 
-    assign itf_awaddr  = 32'd0;
-    assign itf_awdata  = 512'd0;
-    assign itf_awvalid = 1'b0;
-    assign led         = led_i[1:0];
+    assign led = led_i[1:0];
 
 endmodule

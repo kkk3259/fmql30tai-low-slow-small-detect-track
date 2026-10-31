@@ -28,7 +28,7 @@ def main():
 
     mem = dev.defaultMemRegion()
     chunk = None
-    for args in ((W * H,), (W * H, False, 64), (W * H, True, 64)):
+    for args in ((W * H + 32768,), (W * H + 32768, False, 64), (W * H,), (W * H, False, 64)):
         try:
             chunk = mem.malloc(*args)
             print("[2] malloc%r ok" % (args,))

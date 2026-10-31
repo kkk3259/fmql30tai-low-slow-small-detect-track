@@ -54,9 +54,10 @@ MS_FACTOR2 = 4        # 第三遍倍数（4 => 补 20~80px）
 MS_EVERY = 1          # 多尺度第二/三遍每 N 帧做一次（2 => 隔帧，省一半 PL 时间）
 MS_CNT = 0            # 帧计数
 CLUSTER_R = 12        # 候选聚类半径（像素）：相距小于它的候选合并成一个目标
-NMS_IOU = 0.45        # 框去重阈值：交叠/较小框面积 超过它就合并
+NMS_IOU = 0.30        # 框去重阈值：交叠/较小框面积 超过它就合并（0.45->0.30，压掉同一目标的重合框）
 LAG_FRAMES = 0.0      # 速度外推帧数（补偿端到端时延；0=不外推）
-GRAY_STREAM = 1       # 1=推灰度 JPEG（编码快一倍、全分辨率更锐）；0=推彩色
+STREAM_Q = 88         # 推流 JPEG 质量（彩色呈现要清晰些）
+GRAY_STREAM = 0       # 1=推灰度 JPEG（快）；0=推彩色（呈现彩色，处理仍全程灰度）
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <title>低小慢目标检测 · 实时控制台</title>
@@ -127,6 +128,7 @@ canvas.chart{width:100%;height:74px;display:block}
         <input type="range" id="s_h" min="0" max="60" step="1" value="0"></div>
       <label class="sw"><input type="checkbox" id="c_all"> 显示全部候选</label>
       <label class="sw"><input type="checkbox" id="c_tr" checked> 显示轨迹</label>
+      <label class="sw"><input type="checkbox" id="c_inv" __INVCHK__> 反相检测（找暗目标：天空/逆光）</label>
       <div class="btnrow"><button id="b_snap">截图保存</button></div>
       <div style="font-size:10.5px;color:#5a6f85;margin-top:8px;line-height:1.5">
         黄色框 = PL 硬件画在流里的原始框；<span style="color:#4ade80">绿色框</span> = 通过筛选的候选。
@@ -157,6 +159,9 @@ function $(i){return document.getElementById(i)}
 });
 $('c_all').addEventListener('change',function(){ALL=this.checked;draw()});
 $('c_tr').addEventListener('change',function(){TRAIL=this.checked;draw()});
+$('c_inv').addEventListener('change',function(){
+  fetch('/set?invert='+(this.checked?1:0)).catch(function(){});
+});
 $('b_snap').addEventListener('click',function(){
   var a=document.createElement('a'); a.href='/snap?q=95';
   a.download='snap_'+Date.now()+'.jpg'; a.click();
@@ -618,7 +623,7 @@ class Pipeline(object):
                 continue
             last = img
             t0 = time.time()
-            ok, enc = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+            ok, enc = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), STREAM_Q])
             self.enc_ms = 0.8 * self.enc_ms + 0.2 * (time.time() - t0) * 1000
             if ok:
                 self.enc_n += 1
@@ -651,6 +656,23 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps(g_info).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path.startswith("/set"):
+            # /set?invert=0|1 —— 反相检测开关（把 255-gray 送 PL = Black-Hat，找暗目标）
+            global INVERT
+            try:
+                if "invert=" in self.path:
+                    INVERT = self.path.split("invert=")[1].split("&")[0].strip() in ("1", "true", "on")
+                body = json.dumps({"invert": 1 if INVERT else 0}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+            except Exception as e:
+                body = json.dumps({"err": str(e)}).encode()
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -726,7 +748,8 @@ def main():
                     help="时域差分：候选周围 13x13 内变化像素占比低于此值则丢弃（0=关闭；建议 0.10~0.20）")
     ap.add_argument("--ms-factor", type=int, default=3, help="多尺度第二遍的降采样倍数（3 => 4~60px）")
     ap.add_argument("--ms-factor2", type=int, default=0, help="多尺度第三遍倍数（4 => 补 20~80px；0=关闭）")
-    ap.add_argument("--gray", type=int, default=1, help="1=灰度推流(快) 0=彩色")
+    ap.add_argument("--gray", type=int, default=0, help="1=灰度推流(快) 0=彩色(默认)")
+    ap.add_argument("--quality", type=int, default=88, help="推流 JPEG 质量")
     ap.add_argument("--lag", type=float, default=3.0, help="速度外推帧数（补偿时延，0=关闭）")
     ap.add_argument("--cluster-r", type=int, default=12, help="候选聚类半径（像素）")
     ap.add_argument("--nms-iou", type=float, default=0.45, help="框去重阈值")
@@ -745,6 +768,7 @@ def main():
     MS_EVERY = args.ms_every
     LAG_FRAMES = args.lag
     GRAY_STREAM = 1 if args.gray else 0
+    STREAM_Q = int(args.quality)
     CLUSTER_R = args.cluster_r
     NMS_IOU = args.nms_iou
     MOTION_FRAC = args.motion_frac
