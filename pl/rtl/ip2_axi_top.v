@@ -30,8 +30,8 @@ module ip2_axi_top #(
     parameter H = 360,
     parameter MAX_CAND = 64,
     parameter SE = 21,          // Top-Hat 结构元边长（奇数）：21 可检 ≤20 px 目标
-    parameter K = 1,            // CFAR 系数：判决 x > mean + K*sd + FLOOR
-    parameter FLOOR = 3,        // CFAR 底噪
+    parameter K = 0,            // CFAR 系数：判决 x > mean + K*sd + FLOOR
+    parameter FLOOR = 2,        // CFAR 底噪
     parameter MODE = 0,         // 0=Top-Hat(亮目标) 1=Black-Hat(暗目标)
     parameter DENOISE = 1,      // CCL 去孤立点（板级打开，抑制候选表抖动）
     parameter [31:0] DEF_FRAME_ADDR  = 32'h3010_0000,
