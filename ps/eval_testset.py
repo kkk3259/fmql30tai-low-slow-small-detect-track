@@ -43,7 +43,7 @@ def match(cands, g, tol):
     return best, bd
 
 
-def run_scene(hw, path, meta, inv, track=0, amin=2, pmax=0):
+def run_scene(hw, path, meta, inv, track=0, amin=2, pmax=0, pmin=0):
     cap = cv2.VideoCapture(path)
     gt = meta["gt"]
     gt_by_f = {}
@@ -63,7 +63,7 @@ def run_scene(hw, path, meta, inv, track=0, amin=2, pmax=0):
         if inv:
             gray = 255 - gray
         st, cands, dt = hw.run(gray)
-        cands = [c for c in (cands or []) if c["area"] >= amin]
+        cands = [c for c in (cands or []) if c["area"] >= amin and c["peak"] >= pmin]
         if trk is not None:
             cands = cp.nms_tracks(trk.update(cands, 20.0), 0.3)
         gs = gt_by_f.get(f, [])
@@ -95,6 +95,7 @@ def main():
     ap.add_argument("--dir", default="/root/testset")
     ap.add_argument("--inv", default="auto")
     ap.add_argument("--track", type=int, default=0)
+    ap.add_argument("--pmin", type=int, default=0, help="峰值门槛，低于它的候选直接丢")
     ap.add_argument("--out", default="/root/testset_result.csv")
     a = ap.parse_args()
 
@@ -110,7 +111,7 @@ def main():
             continue
         for inv in modes:
             t0 = time.time()
-            r = run_scene(hw, mp4, meta, inv, a.track)
+            r = run_scene(hw, mp4, meta, inv, a.track, pmin=a.pmin)
             r.update(name=meta["name"], bg=meta["bg"], dark=int(meta["dark"]),
                      size=int(meta["size"]), contrast=int(meta["contrast"]), inv=inv)
             rows.append(r)

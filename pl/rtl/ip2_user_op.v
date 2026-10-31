@@ -128,8 +128,13 @@ module ip2_user_op #(
     wire done_sel_r = (itf_ra_araddr[11:0] == 12'h080);
     // 调试窗口：字节地址 0x90/0x94/0x98/0x9C 读内部计数器（工程调试用，不影响功能）
     wire dbg_sel_r  = (itf_ra_araddr[11:4] == 8'h09);
+    // 逻辑分析仪窗口：0xA0 写索引 / 0xA4 读数据 / 0xA8 状态 / 0xAC 清（读 0xA0..0xAF 同一组）
+    wire la_sel     = (itf_ra_araddr[11:4] == 8'h0A);
     reg  [31:0] dbg_ar, dbg_rv, dbg_wd;   // 平台口调试计数器（在 clk 域自增，见第 5 节）
     wire [31:0] dbg_stat;                 // 平台口状态快照（见第 5 节）
+    wire [31:0] la_rdata;                 // 逻辑分析仪读数据（见第 6 节）
+    wire [31:0] la_status;                // {frozen, trig[3:0], wp[9:0]}
+    reg  [7:0]  la_raddr;                 // 读地址（ra 域）
     wire [5:0] ra_word = done_sel_w ? 6'h0C : itf_ra_awaddr[5:0];
     wire [5:0] rd_word = done_sel_r ? 6'h0C : itf_ra_araddr[5:0];
 
@@ -146,8 +151,12 @@ module ip2_user_op #(
                            (rd_addr12_q[3:2] == 2'd1) ? dbg_rv :
                            (rd_addr12_q[3:2] == 2'd2) ? dbg_wd : dbg_stat;
     wire        dbg_sel_q = (rd_addr12_q[11:4] == 8'h09);
+    wire        la_sel_q  = (rd_addr12_q[11:4] == 8'h0A);
     assign itf_ra_rdata   = rd_is_done_q ? {31'b0, rd_data_q[1]} :
-                            dbg_sel_q    ? dbg_word : rd_data_q;
+                            dbg_sel_q    ? dbg_word :
+                            la_sel_q     ? ((rd_addr12_q[3:2] == 2'd0) ? la_rdata :
+                                            (rd_addr12_q[3:2] == 2'd2) ? la_status : 32'd0) :
+                            rd_data_q;
 
     always @(posedge ra_clk or negedge ra_rst_n) begin
         if (!ra_rst_n) begin
@@ -163,10 +172,28 @@ module ip2_user_op #(
         end
     end
 
+    //-------------------------------------------------------------------------
+    // 3b. 逻辑分析仪写口（ra_clk 域）：0xA0 写索引 / 0xAC 清空
+    //-------------------------------------------------------------------------
+    reg la_clr_t;
+    always @(posedge ra_clk or negedge ra_rst_n) begin
+        if (!ra_rst_n) begin
+            la_raddr   <= 8'd0;
+            la_clr_t   <= 1'b0;
+        end else begin
+            if (itf_ra_awvalid && itf_ra_awready) begin
+                if (itf_ra_awaddr[11:4] == 8'h0A && itf_ra_awaddr[3:2] == 2'd0)
+                    la_raddr <= itf_ra_awdata[7:0];
+                if (itf_ra_awaddr[11:0] == 12'h0AC)
+                    la_clr_t <= ~la_clr_t;
+            end
+        end
+    end
+
     always @(posedge ra_clk or negedge ra_rst_n) begin
         if (!ra_rst_n) begin
             rd_t <= 1'b0; rd_addr_q <= 6'd0; rd_is_done_q <= 1'b0; rd_busy <= 1'b0;
-            rd_data_q <= 32'd0; rvalid_r <= 1'b0;
+            rd_data_q <= 32'd0; rvalid_r <= 1'b0; rd_tmo <= 12'd0;
         end else begin
             // 超时保护：读请求若在 N 个 ra 拍内拿不到核的回应，强制返回 0xDEADBEEF。
             // 目的：即使核（clk 域）死掉，PS 侧也绝不能被挂住——否则整板锁死只能断电。
@@ -461,5 +488,72 @@ module ip2_user_op #(
     );
 
     assign led = led_i[1:0];
+
+    //=========================================================================
+    // 6. 片上逻辑分析仪（OnChip LA）—— 一次编译看全部
+    //
+    //    设计意图（吸取教训）：不要再“报错了再加一个计数器、再编译 40 分钟”。
+    //    这里一次性把数据通路的关键事件全记下来（256 条环形缓冲）：
+    //      1 = 平台 AR 握手（记地址）
+    //      2 = 平台 R 返回（记 ret_busy/lin_rdy_t）
+    //      3 = 核发出行请求（记 pend_wd/req_pend/ret_busy/arvalid）
+    //      4 = 核收到行数据（同上）
+    //      5 = 看门狗超时（**触发冻结**，保留崩溃瞬间的前后现场）
+    //
+    //    读口（平台字节地址）：
+    //      0xA0 写索引（0..255）→ 读 0xA0 得到该条
+    //      0xA8 读状态 {frozen, trig[3:0], 3'd0, wp[7:0]}
+    //      0xAC 写 1 == 清空
+    //    验证完成后把 LA_ON 置 0，这些逻辑会被综合掉，不占资源。
+    //=========================================================================
+    localparam LA_ON = 1'b1;
+
+    reg  [31:0] la_mem [0:255];
+    reg  [7:0]  la_wp;
+    reg         la_frz;
+    reg  [3:0]  la_trig;
+    reg  [2:0]  s_clr;
+
+    always @(posedge clk or negedge rst_n)
+        if (!rst_n) s_clr <= 3'd0; else s_clr <= {s_clr[1:0], la_clr_t};
+    wire la_clr_ev = s_clr[2] ^ s_clr[1];
+
+    wire ev_ar = plat_arvalid_q && itf_arready;
+    wire ev_r  = itf_rvalid;
+    wire ev_wd = (pend_wd == 10'h3FF);
+
+    generate if (LA_ON) begin : g_la
+        always @(posedge clk or negedge rst_n) begin
+            if (!rst_n) begin
+                la_wp <= 8'd0; la_frz <= 1'b0; la_trig <= 4'd0;
+            end else if (la_clr_ev) begin
+                la_wp <= 8'd0; la_frz <= 1'b0; la_trig <= 4'd0;
+            end else if (!la_frz) begin
+                if (ev_ar) begin
+                    la_mem[la_wp] <= {4'h1, 4'h0, plat_araddr_q[23:0]};
+                    la_wp <= la_wp + 8'd1;
+                end else if (ev_r) begin
+                    la_mem[la_wp] <= {4'h2, 4'h0, ret_busy, lin_rdy_t, 22'd0};
+                    la_wp <= la_wp + 8'd1;
+                end else if (lin_req_ev) begin
+                    la_mem[la_wp] <= {4'h3, {2'b00, pend_wd}, req_pend, ret_busy, plat_arvalid_q, 8'd0};
+                    la_wp <= la_wp + 8'd1;
+                end else if (lin_rdy_ev) begin
+                    la_mem[la_wp] <= {4'h4, 12'd0, req_pend, ret_busy, plat_arvalid_q, 12'd0};
+                    la_wp <= la_wp + 8'd1;
+                end else if (ev_wd) begin
+                    la_mem[la_wp] <= {4'h5, 28'd0};
+                    la_wp   <= la_wp + 8'd1;
+                    la_frz  <= 1'b1;
+                    la_trig <= 4'h1;
+                end
+            end
+        end
+        assign la_rdata  = la_mem[la_raddr];
+        assign la_status = {la_frz, la_trig, 3'd0, la_wp};
+    end else begin : g_la_off
+        assign la_rdata  = 32'd0;
+        assign la_status = 32'd0;
+    end endgenerate
 
 endmodule
