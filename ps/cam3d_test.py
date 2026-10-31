@@ -23,7 +23,7 @@ REG = 0x400C0000
 R_CTRL, R_FADDR, R_RADDR, R_STATUS = 0x00, 0x04, 0x08, 0x0C
 R_WIN, R_AR = 0x10, 0x90
 NPIX = 640 * 360
-X_SHIFT = 125            # 三域里测得的恒定列偏移（x_true = (x_det + 125) % 640）
+X_SHIFT = 640 - 63       # 三域实测：x_det = x_true + 63（约一条 64 像素），x_true = (x_det + 577) % 640
 BORDER = 24              # 上下边带过滤（pad 伪目标在 y≈359）
 
 
@@ -86,14 +86,15 @@ class PL3D(object):
 
 
 class NPU(object):
-    def __init__(self, jsn, raw):
+    def __init__(self, jsn, raw, dev=None):
         from icraft.xir import Network
         import icraft.xrt as xrt
         from icraft.zg330backend import ZG330Backend
         from icraft.host_backend import HostBackend
         self.net = Network.CreateFromJsonFile(jsn)
         self.net.lazyLoadParamsFromFile(raw)
-        dev = xrt.Device.Open("axi://zg330aiu?npu=0x40000000&dma=0x80000000")
+        if dev is None:
+            dev = xrt.Device.Open("axi://zg330aiu?npu=0x40000000&dma=0x80000000")
         self.sess = xrt.Session.Create(
             [ZG330Backend, HostBackend], self.net.view(0),
             [dev, xrt.HostDevice.Default()])
@@ -101,6 +102,11 @@ class NPU(object):
         self.xrt = xrt
 
     def predict(self, img128):
+        import cv2 as _cv2
+        if img128.ndim == 2:                      # 灰度 -> 3 通道（模型要 NHWC 3 通道）
+            img128 = _cv2.cvtColor(img128, _cv2.COLOR_GRAY2BGR)
+        if img128.shape[:2] != (128, 128):
+            img128 = _cv2.resize(img128, (128, 128), interpolation=_cv2.INTER_AREA)
         op = self.net.ops[0].outputs[0]
         tt = op.tensorType()
         tt.setShape([1, 128, 128, 3])

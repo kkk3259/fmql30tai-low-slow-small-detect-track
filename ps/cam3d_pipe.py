@@ -38,8 +38,8 @@ STATE = {
 JPEG = {"buf": None, "seq": 0}
 INFER = {"npu": 1, "pmin": 0, "running": True}
 TMP = {
-    "clip": os.path.join(os.path.dirname(os.path.abspath(__file__)), "cls128_drone_ZG.json"),
-    "raw": os.path.join(os.path.dirname(os.path.abspath(__file__)), "cls128_drone_ZG.raw"),
+    "clip": "/root/npu/cls128_drone_ZG.json",
+    "raw": "/root/npu/cls128_drone_ZG.raw",
 }
 
 
@@ -86,7 +86,7 @@ def infer_loop(pl, net):
             t1 = time.time()
             for c in keep:
                 side = max(16, int(round(2.5 * (c["area"] ** 0.5))))
-                patch = crop(gray, c["x"], c["y"], side=side, out=128)
+                patch = crop(gray, c["x"], c["y"], side=side)
                 try:
                     pr = net.predict(patch)
                     c["p"] = float(pr[1])
@@ -209,7 +209,7 @@ def main():
     net = None
     if a.npu and os.path.exists(TMP["clip"]) and os.path.exists(TMP["raw"]):
         try:
-            net = NPU(TMP["clip"], TMP["raw"])
+            net = NPU(TMP["clip"], TMP["raw"], dev=pl.dev)
             print("NPU ok", flush=True)
         except Exception as e:                                     # noqa: BLE001
             print("NPU 不可用，降级为纯 PL：%s" % e, flush=True)
