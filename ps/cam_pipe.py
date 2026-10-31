@@ -58,6 +58,7 @@ NMS_IOU = 0.30        # 框去重阈值：交叠/较小框面积 超过它就合
 LAG_FRAMES = 0.0      # 速度外推帧数（补偿端到端时延；0=不外推）
 STREAM_Q = 88         # 推流 JPEG 质量（彩色呈现要清晰些）
 GRAY_STREAM = 0       # 1=推灰度 JPEG（快）；0=推彩色（呈现彩色，处理仍全程灰度）
+INVERT = False        # True=把 255-gray 送 PL（等价 Black-Hat，找暗目标，如逆光天空里的鸟）
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <title>低小慢目标检测 · 实时控制台</title>
@@ -225,6 +226,7 @@ setInterval(function(){
     }).join('');
   }).catch(function(){ $('st').textContent='连接中断'; });
 }, 400);
+<button id="binv" onclick="fetch('/set?invert='+(window.__inv?0:1)).then(function(){window.__inv=!window.__inv;document.getElementById('binv').textContent=window.__inv?'取反:开(黑帽)':'取反:关(白帽)'})" style="position:fixed;right:14px;bottom:14px;z-index:99;padding:10px 16px;font-size:15px;border-radius:8px;border:1px solid #666;background:#222;color:#0f0;cursor:pointer">取反:关(白帽)</button>
 </script></body></html>"""
 
 
@@ -544,7 +546,10 @@ class Pipeline(object):
                 time.sleep(0.002)
                 continue
             color, gray, t_cap = item
-            st, cands, dt = self.hw.run_ms(gray) if MULTI_SCALE else self.hw.run(gray)
+            # 取反开关：等价 Black-Hat（找暗目标）。只在送 PL 的那份上取反，
+            # 显示仍用原始灰度，避免画面变负片。
+            gray_pl = (255 - gray) if INVERT else gray
+            st, cands, dt = self.hw.run_ms(gray_pl) if MULTI_SCALE else self.hw.run(gray_pl)
             self.pl_ms = 0.8 * self.pl_ms + 0.2 * dt
             self.pl_n += 1
             # ---- 时域差分（借鉴帧差法）：只保留“相对上一帧有变化”的候选，静止背景直接滤掉 ----
@@ -564,7 +569,7 @@ class Pipeline(object):
                     kept = [c for c in cands if c.get("mv", 0.0) >= MOTION_FRAC]
                     nmv = len(cands) - len(kept)
                     cands = kept
-            self.prev_gray = gray.copy()
+            self.prev_gray = gray_pl.copy()
             cands = cluster_cands(cands, CLUSTER_R)
             _t0 = time.time()
             cands = reject_lines(cands)
