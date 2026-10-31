@@ -48,7 +48,10 @@ def main():
         if (rdw(reg, R_AR) - a0) > 100:
             break
     st = rdw(reg, R_STATUS)
-    print("STATUS = 0x%08X  done=%d err=%d n_cand=%d" % (st, st & 1, (st >> 2) & 1, (st >> 8) & 0xFF))
+    ar_grew = rdw(reg, R_AR) - a0
+    print("STATUS = 0x%08X  done=%d err=%d n_cand=%d  AR += %d  %s"
+          % (st, st & 1, (st >> 2) & 1, (st >> 8) & 0xFF, ar_grew,
+             "帧真跑了" if ar_grew > 3000 else "*** 帧没跑，下面是旧数据 ***"))
 
     words = []
     for i in range(NW):
