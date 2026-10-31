@@ -498,7 +498,7 @@ module ip2_axi_top #(
                 if (frame_loaded) begin
                     fst  <= F_FEED;
                     wdog <= 32'd0;
-                end else if (wdog > 32'd12_000_000) begin
+                end else if (wdog > 32'd64_000_000) begin
                     err_flag <= 1'b1;      // 读帧超时
                     err_code <= 8'd2;
                     fst      <= F_FIN;
@@ -527,7 +527,7 @@ module ip2_axi_top #(
                 end else if (drain_cnt >= DRAIN[17:0]) begin
                     fst  <= F_WAIT;
                     wdog <= 32'd0;
-                end else if (wdog > 32'd32_000_000) begin
+                end else if (wdog > 32'd64_000_000) begin
                     err_flag <= 1'b1;      // 链路吃不到像素（帧缓冲断粮）
                     err_code <= 8'd3;
                     fst      <= F_FIN;
@@ -539,7 +539,7 @@ module ip2_axi_top #(
                     n_cand_r <= legacy_ram[0][7:0];
                     wdog     <= 32'd0;
                     fst      <= F_WRITE;
-                end else if (wdog > 32'd40_000_000) begin
+                end else if (wdog > 32'd64_000_000) begin
                     err_flag <= 1'b1;     // 超时：链路没吐完候选表（0.8 s）
                     err_code <= 8'd4;
                     fst      <= F_FIN;
