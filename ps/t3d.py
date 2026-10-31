@@ -46,10 +46,17 @@ def main():
     reg.write(REG + R_RADDR, base)
     time.sleep(0.02)
 
-    a0 = rdw(reg, R_AR)
-    t0 = time.time()
-    reg.write(REG + R_CTRL, 1)
     st = 0
+    for attempt in range(4):
+        a0 = rdw(reg, R_AR)
+        t0 = time.time()
+        reg.write(REG + R_CTRL, 0)
+        time.sleep(0.005)
+        reg.write(REG + R_CTRL, 1)
+        time.sleep(0.030)
+        if (rdw(reg, R_AR) - a0) > 100:
+            break
+        print("  第 %d 次触发 AR 没涨，重试" % (attempt + 1))
     for _ in range(3000):
         st = rdw(reg, R_STATUS)
         if st & 1:
