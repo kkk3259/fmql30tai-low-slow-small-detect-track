@@ -46,6 +46,7 @@ g_lock = threading.Lock()
 g_jpeg = None
 g_info = {}
 g_stop = False
+BORDER = 24          # 边界过滤（像素）：上/下/左/右这么大的边带不参与检测
 MOTION_FRAC = 0.0     # 时域差分：变化像素占比门限（0=关闭），由 --motion-frac 设置
 MOTION_THR = 8        # 时域差分：逐像素变化门限
 MULTI_SCALE = 0       # 1=开启多尺度
@@ -579,6 +580,11 @@ class Pipeline(object):
                 gray_pl = cv2.LUT(gray_pl, lut)
             gray_pl = (255 - gray_pl) if INVERT else gray_pl
             st, cands, dt = self.hw.run_ms(gray_pl) if MULTI_SCALE else self.hw.run(gray_pl)
+            # 边界过滤：画面上沿是墙/天花板亮带，下沿是桌面，左右是边框，都是常驻误报
+            _n0 = len(cands)
+            cands = [c for c in cands
+                     if int(c["y"]) >= BORDER and int(c["y"]) <= H - 8
+                     and 8 <= int(c["x"]) <= W - 8]
             self.pl_ms = 0.8 * self.pl_ms + 0.2 * dt
             self.pl_n += 1
             # ---- 时域差分（借鉴帧差法）：只保留“相对上一帧有变化”的候选，静止背景直接滤掉 ----
