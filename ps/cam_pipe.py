@@ -130,7 +130,7 @@ canvas.chart{width:100%;height:74px;display:block}
         <input type="range" id="s_h" min="0" max="60" step="1" value="0"></div>
       <label class="sw"><input type="checkbox" id="c_all"> 显示全部候选</label>
       <label class="sw"><input type="checkbox" id="c_tr" checked> 显示轨迹</label>
-      <label class="sw"><input type="checkbox" id="c_inv" __INVCHK__> 反相检测（找暗目标：天空/逆光）</label>
+      <label class="sw"><input type="checkbox" id="c_inv"> 反相检测（找暗目标：天空/逆光）</label>
       <div class="btnrow"><button id="b_snap">截图保存</button></div>
       <div style="font-size:10.5px;color:#5a6f85;margin-top:8px;line-height:1.5">
         黄色框 = PL 硬件画在流里的原始框；<span style="color:#4ade80">绿色框</span> = 通过筛选的候选。
