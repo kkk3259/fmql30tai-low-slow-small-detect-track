@@ -368,6 +368,7 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
             lbusy      <= 1'b0;
             lbcnt      <= 6'd0;
             start_req  <= 1'b0;
+            lin_req_t  <= 1'b0;   // 之前漏了复位 -> 一直是 X，toggle 永不出发，AR 一个都不发
         end else begin
             // ---- 嗅探寄存器写：0x00 CTRL(bit0=start)、0x04 FRAME_ADDR ----
             if (wr_req_ev) begin
@@ -391,8 +392,8 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
 
             // ---- 发新行请求：在途 < 6 且还有像素没推完 ----
             if (feed_on && !lbusy && (inflight < 4'd1) &&
-                (px_pushed + ({1'b0, inflight} << 6) < NPIX_C)) begin
-                lin_addr_q <= frame_base + (line_idx << 6);
+                (px_pushed + ({1'b0, inflight} << 3) < NPIX_C)) begin
+                lin_addr_q <= frame_base + (line_idx << 3);
                 lin_req_t  <= ~lin_req_t;
                 line_idx   <= line_idx + 32'd1;
                 inflight   <= inflight + 4'd1;
@@ -400,7 +401,7 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
 
             // ---- 收行数据 ----
             if (lin_rdy_ev) begin
-                lbuf  <= lin_data_c;
+                lbuf  <= {448'b0, lin_data_c[63:0]};
                 lbcnt <= 6'd0;
                 lbusy <= 1'b1;
             end
@@ -408,7 +409,7 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
             // ---- 推像素：1 字节/拍 ----
             if (lbusy && ext_space) begin
                 px_pushed <= px_pushed + 32'd1;
-                if (lbcnt == 6'd63) begin
+                if (lbcnt == 6'd7) begin
                     lbcnt  <= 6'd0;
                     lbusy  <= 1'b0;
                     if (inflight != 4'd0) inflight <= inflight - 4'd1;
