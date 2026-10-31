@@ -312,11 +312,19 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
     wire [25:0] want_tag  = bus_addr[31:6];
     wire [2:0]  want_word = bus_addr[5:3];
     wire        hit       = line_valid && (line_tag == want_tag);
-    wire [63:0] line_word = line_data[{want_word, 3'b000} +: 64];
+    // 平台 512 位返回是"字节交织"布局：第 w 个 64 位字的第 b 个字节 = 像素 b*8+w。
+    // 因此取第 k 个字时，要横向汇聚 8 个字的同一字节，才得到连续的 8 个像素。
+    wire [63:0] line_word = { line_data[56 +: 8], line_data[48 +: 8], line_data[40 +: 8], line_data[32 +: 8],
+                              line_data[24 +: 8], line_data[16 +: 8], line_data[ 8 +: 8], line_data[ 0 +: 8] };
+    wire [2:0]  lane_sel  = want_word;
+    wire [63:0] lane_gath = { line_data[{3'd7,3'b000} + lane_sel], line_data[{3'd6,3'b000} + lane_sel],
+                              line_data[{3'd5,3'b000} + lane_sel], line_data[{3'd4,3'b000} + lane_sel],
+                              line_data[{3'd3,3'b000} + lane_sel], line_data[{3'd2,3'b000} + lane_sel],
+                              line_data[{3'd1,3'b000} + lane_sel], line_data[{3'd0,3'b000} + lane_sel] };
 
     assign m_arready = ~bus_active & ~lin_pend;
     assign m_rvalid  = bus_active & hit;
-    assign m_rdata   = line_word;
+    assign m_rdata   = lane_gath;
 
 always @(posedge core_clk or negedge core_rst_n)
 if (!core_rst_n) cap_wd <= 9'd0;

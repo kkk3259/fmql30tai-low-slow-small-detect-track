@@ -466,7 +466,11 @@ module ip2_axi_top #(
                 end
             end
             F_FEED: begin
-                if (rd_error) begin
+                // 注意：这里的读是「冲刷拍」（读满一帧后额外多读 512+32W 字节，
+                // 目的只是把 CFAR/CCL 流水线里的余量顶出来），平台对这个越界区间
+                // 会回非 OKAY 的 RRESP。这类错误不影响已经进 FIFO 的整帧像素，
+                // 所以只在 F_FILL（真正搬帧）里把 rd_error 当致命错误。
+                if (rd_error && !frame_loaded) begin
                     err_flag <= 1'b1;
                     err_code <= 8'd1;
                 end
