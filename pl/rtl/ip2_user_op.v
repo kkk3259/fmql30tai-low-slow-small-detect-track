@@ -390,7 +390,7 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
             end
 
             // ---- 发新行请求：在途 < 6 且还有像素没推完 ----
-            if (feed_on && !lbusy && (inflight < 4'd6) &&
+            if (feed_on && !lbusy && (inflight < 4'd1) &&
                 (px_pushed + ({1'b0, inflight} << 6) < NPIX_C)) begin
                 lin_addr_q <= frame_base + (line_idx << 6);
                 lin_req_t  <= ~lin_req_t;
