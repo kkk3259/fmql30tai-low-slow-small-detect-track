@@ -393,8 +393,13 @@ if (m_rvalid && m_rready && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= line_word
             end
 
             // ---- 64 位主口 ----
+            // 注意：主机的 AR 是按「行/突发」发的（araddr=突发首地址），突发内 8 拍的
+            // 地址必须靠我们自己 +8 递增。所以只有地址“回绕”（新一帧又从帧首读）时才
+            // 重装 bus_addr；否则同一 512 位行里的 8 个字会被当成同一个字读 8 遍。
             if (m_arvalid && m_arready) begin
-                bus_addr   <= m_araddr;
+                if (m_araddr <= bus_addr) begin
+                    bus_addr <= m_araddr;
+                end
                 bus_left   <= m_arlen;
                 bus_active <= 1'b1;
             end
