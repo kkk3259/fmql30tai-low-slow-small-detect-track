@@ -94,6 +94,104 @@ def fig6():
 
 
 # ============================================================
+# 图 1（重画）：系统整体框图
+#   原图两处问题：③ 未标形态学方向（与图 6 不一致）；
+#                 ⑧ 写「HDMI 显示器 720P60」—— 为实测证伪，实际是网页 MJPEG 推流
+# ============================================================
+def fig1():
+    fig, ax = plt.subplots(figsize=(13.6, 6.4))
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 46)
+    ax.axis("off")
+
+    ax.text(50, 43.4, "低小慢空间目标智能检测与跟踪系统 · 整体框图",
+            ha="center", va="center", fontsize=16.5, fontweight="bold", color="#1B3A5C")
+
+    # ---- 三层色带 ----
+    bands = [(3.0, 12.0, "PS", "#DCE8F5", BLUE),
+             (15.5, 46.0, "PL 可编程逻辑", "#FDF2D0", ORANGE),
+             (62.0, 11.5, "NPU", "#E3F2E8", GREEN),
+             (74.0, 23.0, "PS", "#DCE8F5", BLUE)]
+    for x, w, name, fc, ec in bands:
+        ax.add_patch(FancyBboxPatch((x, 36.6), w, 3.6, boxstyle="square,pad=0",
+                                    facecolor=fc, edgecolor=ec, linewidth=1.4, alpha=0.85))
+        ax.text(x + w / 2, 38.4, "【%s】" % name, ha="center", va="center",
+                fontsize=11, fontweight="bold", color="#1B3A5C")
+
+    # ---- 8 个环节 ----
+    stages = [
+        (8.5,  "① 采集调度",    "V4L2 / 序列回放",       "#DCE8F5", BLUE),
+        (21.0, "② 图像预处理",  "灰度化 + 2× 降采样",     "#FDF2D0", ORANGE),
+        (33.5, "③ 形态学增强",  "Top-Hat / Black-Hat\nMODE 可切，SE=21", "#FDF2D0", ORANGE),
+        (46.0, "④ CFAR 检测",   "K=1.0，窗 31×31",       "#FDF2D0", ORANGE),
+        (58.5, "⑤ 候选提取",    "8 连通 CCL\n面积 16 位",  "#FDF2D0", ORANGE),
+        (71.0, "⑥ ROI 精判别",  "ZG330 NPU\n7.955 ms/帧",  "#E3F2E8", GREEN),
+        (83.5, "⑦ 多目标跟踪",  "卡尔曼 + 贪心匹配",       "#DCE8F5", BLUE),
+        (95.0, "⑧ 输出与显示",  "网页 MJPEG 推流",        "#DCE8F5", BLUE),
+    ]
+    for x, title, sub, fc, ec in stages:
+        ax.add_patch(FancyBboxPatch((x - 5.4, 24.0), 10.8, 9.4,
+                                    boxstyle="round,pad=0.32,rounding_size=0.7",
+                                    facecolor=fc, edgecolor=ec, linewidth=1.7))
+        ax.text(x, 31.2, title, ha="center", va="center", fontsize=9.8,
+                fontweight="bold", color="#1B3A5C")
+        ax.text(x, 27.3, sub, ha="center", va="center", fontsize=7.8,
+                color="#404040", linespacing=1.45)
+
+    for i in range(len(stages) - 1):
+        x0 = stages[i][0] + 5.4
+        x1 = stages[i + 1][0] - 5.4
+        ax.add_patch(FancyArrowPatch((x0 + 0.15, 28.7), (x1 - 0.15, 28.7),
+                                     arrowstyle="-|>", mutation_scale=13,
+                                     linewidth=1.5, color="#7F8C8D"))
+
+    # ---- 输入 / 输出 ----
+    ax.add_patch(FancyBboxPatch((3.1, 8.5), 10.8, 7.6, boxstyle="round,pad=0.3,rounding_size=0.7",
+                                facecolor="#ECEFF1", edgecolor=GRAY, linewidth=1.5))
+    ax.text(8.5, 13.4, "USB 摄像头", ha="center", fontsize=9.4, fontweight="bold", color="#37474F")
+    ax.text(8.5, 10.6, "640×480 MJPG\n→ 裁 640×360", ha="center", fontsize=7.6,
+            color="#546E7A", linespacing=1.4)
+    ax.add_patch(FancyArrowPatch((8.5, 16.3), (8.5, 23.8), arrowstyle="-|>",
+                                 mutation_scale=14, linewidth=1.6, color=GRAY))
+
+    ax.add_patch(FancyBboxPatch((89.6, 8.5), 10.8, 7.6, boxstyle="round,pad=0.3,rounding_size=0.7",
+                                facecolor="#ECEFF1", edgecolor=GRAY, linewidth=1.5))
+    ax.text(95.0, 13.4, "上位机浏览器", ha="center", fontsize=9.4, fontweight="bold", color="#37474F")
+    ax.text(95.0, 10.6, "http://<板IP>:8080\n（无需专用客户端）", ha="center", fontsize=7.6,
+            color="#546E7A", linespacing=1.4)
+    ax.add_patch(FancyArrowPatch((95.0, 23.8), (95.0, 16.3), arrowstyle="-|>",
+                                 mutation_scale=14, linewidth=1.6, color=GRAY))
+
+    # ---- 数据流标注 ----
+    flows = [(14.9, "彩色帧"), (27.4, "灰度帧"), (39.9, "增强图"),
+             (52.4, "二值图"), (64.9, "候选列表"), (77.4, ""), (89.9, "航迹列表")]
+    for x, name in flows:
+        if name:
+            ax.text(x, 21.6, name, ha="center", fontsize=7.6, color="#B5651D")
+
+    # ---- 实测指标条 ----
+    ax.add_patch(FancyBboxPatch((3.0, 1.2), 94.0, 5.4,
+                                boxstyle="round,pad=0.25,rounding_size=0.5",
+                                facecolor="#EAF2FB", edgecolor=BLUE, linewidth=1.3))
+    ax.text(50, 5.1, "实测指标（640×360，板上真机）", ha="center", fontsize=9.6,
+            fontweight="bold", color="#1B3A5C")
+    metrics = [
+        ("PL 四尺度", "13.8 ms / 24.3 fps"),
+        ("PL 单遍", "10.6 ms / 40.5 fps"),
+        ("NPU 单帧", "7.955 ms"),
+        ("端到端时延", "41~43 ms"),
+        ("尺寸覆盖", "2 ~ 80 px"),
+        ("候选容量", "64 个"),
+    ]
+    for i, (k, v) in enumerate(metrics):
+        x = 9.5 + i * 15.6
+        ax.text(x, 3.35, k, ha="center", fontsize=7.6, color="#5A6F85")
+        ax.text(x, 2.05, v, ha="center", fontsize=8.4, fontweight="bold", color=BLUE)
+
+    save(fig, "图1_系统整体框图.png")
+
+
+# ============================================================
 # 图 13：帧率配置对比
 # ============================================================
 def fig13():
@@ -342,6 +440,7 @@ def fig17():
 
 if __name__ == "__main__":
     print("生成报告补充图 → %s\n" % OUT)
+    fig1()
     fig6()
     fig13()
     fig14()
