@@ -130,6 +130,10 @@ module ip2_user_op #(
     wire dbg_sel_r  = (itf_ra_araddr[11:4] == 8'h09);
     // 逻辑分析仪窗口：0xA0 写索引 / 0xA4 读数据 / 0xA8 状态 / 0xAC 清（读 0xA0..0xAF 同一组）
     reg  [31:0] dbg_ar, dbg_rv, dbg_wd;   // 平台口调试计数器（在 clk 域自增，见第 5 节）
+    reg  [511:0] raw_word;                // 平台第一笔原始返回（快照）
+    reg          raw_got;
+    reg  [31:0]  dbg_req;                 // 核心发出的行请求数
+    reg  [7:0]   raw_idx;                 // 快照字节索引（ra 域写入）
     wire [31:0] dbg_stat;                 // 平台口状态快照（见第 5 节）
 // --- 像素捕获：记录前 256 个"检测器看到的"像素字节（诊断用） ---
 reg  [7:0]  cap_mem [0:255];
@@ -158,7 +162,12 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                            (rd_addr12_q[3:2] == 2'd2) ? dbg_wd : dbg_stat;
     wire        dbg_sel_q = (rd_addr12_q[11:4] == 8'h09);
     wire        cap_sel_q = (rd_addr12_q[11:0] == 12'h0B8);
+    wire        req_sel_q = (rd_addr12_q[11:0] == 12'h0A0);
+    wire        raw_sel_q = (rd_addr12_q[11:0] == 12'h0C4);
+    wire [7:0]  raw_dat_q = raw_word[{raw_idx, 3'b000} +: 8];
     assign itf_ra_rdata   = rd_is_done_q ? {31'b0, rd_data_q[1]} :
+                            raw_sel_q    ? {24'd0, raw_dat_q} :
+                            req_sel_q    ? dbg_req :
                             cap_sel_q    ? {24'd0, cap_dat_q} :
                             dbg_sel_q    ? dbg_word :
                             rd_data_q;
@@ -225,6 +234,8 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                 // 像素捕获索引：0xB4 写要看的字节下标
                 if (itf_ra_awaddr[11:0] == 12'h0B4)
                     cap_idx <= itf_ra_awdata[7:0];
+                if (itf_ra_awaddr[11:0] == 12'h0C0)
+                    raw_idx <= itf_ra_awdata[7:0];
             end
         end
     end
@@ -406,6 +417,7 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                 (px_pushed + ({1'b0, inflight} << 6) < NPIX_C)) begin
                 lin_addr_q <= frame_base + (line_idx << 6);
                 lin_req_t  <= ~lin_req_t;
+                dbg_req    <= dbg_req + 32'd1;
                 line_idx   <= line_idx + 32'd1;
                 inflight   <= inflight + 4'd1;
             end
@@ -456,8 +468,9 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
             if (pend_wd == 10'h3FF)            dbg_wd <= dbg_wd + 32'd1;
         end
     end
-    assign dbg_stat = {px_pushed[15:0], line_idx[7:0], pend_wd[5:0], 1'b0,
-                       !lf_empty, req_pend, ret_busy, plat_arvalid_q};
+    // 32 位对齐：line_idx[15:0] | lf_cnt[4:0] | inflight[3:0] | adq_cnt[2:0] | feed_on | lf_empty | arv | 1'b0
+    assign dbg_stat = {line_idx[15:0], lf_cnt[4:0], inflight[3:0], adq_cnt[2:0],
+                       feed_on, lf_empty, plat_arvalid_q, 1'b0};
 
     assign itf_araddr  = plat_araddr_q;
     assign itf_arvalid = plat_arvalid_q;
@@ -474,6 +487,8 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
             lin_rdy_t      <= 1'b0;
             req_pend       <= 1'b0;
             ret_busy       <= 1'b0;
+            raw_word       <= 512'd0;
+            raw_got        <= 1'b0;
             pend_wd        <= 10'd0;
             adq_wp         <= 2'd0;
             adq_rp         <= 2'd0;
@@ -500,6 +515,10 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                 pend_wd        <= 10'd0;
             end
 
+            if (itf_rvalid && !raw_got) begin
+                raw_word <= itf_rdata;      // 抓第一笔原始返回
+                raw_got  <= 1'b1;
+            end
             if (itf_rvalid) begin
                 lin_data_c <= itf_rdata;
                 lin_rdy_t  <= ~lin_rdy_t;
