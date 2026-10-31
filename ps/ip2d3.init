@@ -1,0 +1,47 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          ip2d3
+# Required-Start:    $local_fs
+# Required-Stop:     $local_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: 3-domain realtime pipeline (cam3d_pipe.py)
+### END INIT INFO
+
+DIR=/root/ip2
+PY=/usr/bin/python3
+LOG=/root/ip2/ip2d3.log
+PID=/var/run/ip2d3.pid
+ARGS="--port 8080 --npu 1"
+
+run() {
+    cd "$DIR" || exit 1
+    start-stop-daemon --start --quiet --background --make-pidfile --pidfile "$PID" \
+        --startas /bin/sh -- -c "exec $PY -u $DIR/cam3d_pipe.py $ARGS >> $LOG 2>&1"
+}
+
+case "$1" in
+  start)
+    pkill -9 -f 'cam_pipe[.]py' 2>/dev/null
+    pkill -9 -f 'cam3d_pipe[.]py' 2>/dev/null
+    sleep 1
+    run
+    echo "ip2d3 started"
+    ;;
+  stop)
+    pkill -9 -f 'cam3d_pipe[.]py' 2>/dev/null
+    rm -f "$PID"
+    echo "ip2d3 stopped"
+    ;;
+  restart)
+    $0 stop; sleep 1; $0 start
+    ;;
+  status)
+    pgrep -af 'cam3d_pipe[.]py' || echo "not running"
+    ;;
+  *)
+    echo "usage: $0 {start|stop|restart|status}"
+    exit 1
+    ;;
+esac
+exit 0
