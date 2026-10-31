@@ -348,14 +348,21 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
     wire [1:0]  dum_arburst; wire dum_arvalid; wire dum_rready;
 
     reg        start_req;        // CTRL 写过 start
-    reg  [511:0] lbuf;           // 当前行
-    reg  [5:0]   lbcnt;          // 行内字节计数 0..63
-    reg          lbusy;          // 有一行正在推
 
-    wire [7:0] ext_byte = lbuf[{lbcnt, 3'b000} +: 8];
+    // ---- 8 行行缓存 FIFO（解决“AR 延迟 1024 clk 期间无事可做”的串行问题）----
+    // 平台一次 AR 回一行 64 字节（512 位），AR 之间可以流水；原来的单缓冲 +
+    // inflight<1 使每行必须等满 1024 个 clk，3600 行累计 ~19 ms，撞检测器看门狗。
+    localparam LF_DEPTH = 16;
+    reg  [511:0] lfifo [0:LF_DEPTH-1];
+    reg  [4:0]   lf_wp, lf_rp, lf_cnt;
+    reg  [5:0]   lbcnt;          // 当前行内字节计数 0..63
+    wire         lf_empty = (lf_cnt == 5'd0);
+    wire         lf_full  = (lf_cnt == 5'd16);
+
+    wire [7:0] ext_byte  = lfifo[lf_rp][{lbcnt, 3'b000} +: 8];
     wire       ext_space = o_ext_ready;
 
-    assign i_ext_valid = lbusy;
+    assign i_ext_valid = !lf_empty;
     assign i_ext_data  = ext_byte;
 
     always @(posedge core_clk or negedge core_rst_n) begin
@@ -365,7 +372,9 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
             line_idx   <= 32'd0;
             inflight   <= 4'd0;
             px_pushed  <= 32'd0;
-            lbusy      <= 1'b0;
+            lf_wp      <= 5'd0;
+            lf_rp      <= 5'd0;
+            lf_cnt     <= 5'd0;
             lbcnt      <= 6'd0;
             start_req  <= 1'b0;
             lin_req_t  <= 1'b0;   // 之前漏了复位 -> 一直是 X，toggle 永不出发，AR 一个都不发
@@ -386,12 +395,14 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                 line_idx  <= 32'd0;
                 inflight  <= 4'd0;
                 px_pushed <= 32'd0;
-                lbusy     <= 1'b0;
+                lf_wp     <= 5'd0;
+                lf_rp     <= 5'd0;
+                lf_cnt    <= 5'd0;
                 lbcnt     <= 6'd0;
             end
 
             // ---- 发新行请求：在途 < 6 且还有像素没推完 ----
-            if (feed_on && !lbusy && (inflight < 4'd1) &&
+            if (feed_on && (({1'b0, lf_cnt} + {1'b0, inflight}) < 5'd16) &&
                 (px_pushed + ({1'b0, inflight} << 6) < NPIX_C)) begin
                 lin_addr_q <= frame_base + (line_idx << 6);
                 lin_req_t  <= ~lin_req_t;
@@ -401,18 +412,19 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
 
             // ---- 收行数据 ----
             if (lin_rdy_ev) begin
-                lbuf  <= lin_data_c;
-                lbcnt <= 6'd0;
-                lbusy <= 1'b1;
+                lfifo[lf_wp] <= lin_data_c;
+                lf_wp        <= lf_wp + 5'd1;
+                lf_cnt       <= lf_cnt + 5'd1;
+                inflight     <= inflight - 4'd1;
             end
 
             // ---- 推像素：1 字节/拍 ----
-            if (lbusy && ext_space) begin
+            if (!lf_empty && ext_space) begin
                 px_pushed <= px_pushed + 32'd1;
                 if (lbcnt == 6'd63) begin
                     lbcnt  <= 6'd0;
-                    lbusy  <= 1'b0;
-                    if (inflight != 4'd0) inflight <= inflight - 4'd1;
+                    lf_rp  <= lf_rp + 5'd1;      // 这行推完，弹出
+                    lf_cnt <= lf_cnt - 5'd1;
                 end else begin
                     lbcnt <= lbcnt + 6'd1;
                 end
@@ -429,6 +441,10 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
     reg  [31:0] plat_araddr_q;
     reg         req_pend;
     reg         ret_busy;
+    reg  [31:0] adq [0:3];
+    reg  [1:0]  adq_wp, adq_rp;
+    reg  [2:0]  adq_cnt;
+    wire        adq_empty = (adq_cnt == 3'd0);
     reg  [9:0]  pend_wd;
 
     always @(posedge clk or negedge rst_n) begin
@@ -441,7 +457,7 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
         end
     end
     assign dbg_stat = {px_pushed[15:0], line_idx[7:0], pend_wd[5:0], 1'b0,
-                       lbusy, req_pend, ret_busy, plat_arvalid_q};
+                       !lf_empty, req_pend, ret_busy, plat_arvalid_q};
 
     assign itf_araddr  = plat_araddr_q;
     assign itf_arvalid = plat_arvalid_q;
@@ -459,18 +475,27 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
             req_pend       <= 1'b0;
             ret_busy       <= 1'b0;
             pend_wd        <= 10'd0;
+            adq_wp         <= 2'd0;
+            adq_rp         <= 2'd0;
+            adq_cnt        <= 3'd0;
         end else begin
-            if (lin_req_ev) begin
-                req_pend      <= 1'b1;
-                plat_araddr_q <= lin_addr_q;
+            // 请求地址 4 深队列：允许最多 4 个 AR 在平台侧排队，不再等上一笔回来
+            if (lin_req_ev && (adq_cnt != 3'd4)) begin
+                adq[adq_wp] <= lin_addr_q;
+                adq_wp      <= adq_wp + 2'd1;
+                adq_cnt     <= adq_cnt + 3'd1;
             end
 
-            if (req_pend && !plat_arvalid_q && !ret_busy)
+            // 队列非空且当前没在举 arvalid -> 从队头取一个地址发出去
+            if (!adq_empty && !plat_arvalid_q) begin
+                plat_araddr_q  <= adq[adq_rp];
                 plat_arvalid_q <= 1'b1;
+            end
 
             if (plat_arvalid_q && itf_arready) begin
                 plat_arvalid_q <= 1'b0;
-                req_pend       <= 1'b0;
+                adq_rp         <= adq_rp + 2'd1;
+                adq_cnt        <= adq_cnt - 3'd1;
                 ret_busy       <= 1'b1;
                 pend_wd        <= 10'd0;
             end
@@ -497,10 +522,10 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
     //=========================================================================
     always @(posedge core_clk or negedge core_rst_n)
         if (!core_rst_n) cap_wd <= 9'd0;
-        else if (lbusy && ext_space && (cap_wd != 9'h1FF)) cap_wd <= cap_wd + 9'd1;
+        else if (!lf_empty && ext_space && (cap_wd != 9'h1FF)) cap_wd <= cap_wd + 9'd1;
 
     always @(posedge core_clk)
-        if (lbusy && ext_space && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= ext_byte;
+        if (!lf_empty && ext_space && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= ext_byte;
 
     //=========================================================================
     // 7. 检测器本体（core_clk 50 MHz，像素由外部直推 USE_EXT=1）

@@ -126,7 +126,7 @@ initial begin
     $display("TB TIMEOUT pushed=%0d req=%0d ar=%0d", dut.px_pushed, dut.line_idx, dut.dbg_ar);
     $display("  feed_on=%b start_req=%b o_ext_go=%b lin_req_t=%b s_lin_req=%b req_pend=%b arv_q=%b ret_busy=%b lbusy=%b",
              dut.feed_on, dut.start_req, dut.o_ext_go, dut.lin_req_t, dut.s_lin_req,
-             dut.req_pend, dut.plat_arvalid_q, dut.ret_busy, dut.lbusy);
+             dut.req_pend, dut.plat_arvalid_q, dut.ret_busy, dut.lf_cnt);
     $display("  ext_ready=%b ext_cnt? fst=%0d", dut.o_ext_ready, dut.u_ip2.fst);
     $display("VERDICT TIME-FAIL");
     $finish;
