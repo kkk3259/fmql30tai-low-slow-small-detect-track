@@ -530,19 +530,19 @@ module ip2_user_op #(
                 la_wp <= 8'd0; la_frz <= 1'b0; la_trig <= 4'd0;
             end else if (!la_frz) begin
                 if (ev_ar) begin
-                    la_mem[la_wp] <= {4'h1, 4'h0, plat_araddr_q[23:0]};
+                    la_mem[la_wp[5:0]] <= {4'h1, 4'h0, plat_araddr_q[23:0]};
                     la_wp <= la_wp + 8'd1;
                 end else if (ev_r) begin
-                    la_mem[la_wp] <= {4'h2, 4'h0, ret_busy, lin_rdy_t, 22'd0};
+                    la_mem[la_wp[5:0]] <= {4'h2, 4'h0, ret_busy, lin_rdy_t, 22'd0};
                     la_wp <= la_wp + 8'd1;
                 end else if (lin_req_ev) begin
-                    la_mem[la_wp] <= {4'h3, {2'b00, pend_wd}, req_pend, ret_busy, plat_arvalid_q, 8'd0};
+                    la_mem[la_wp[5:0]] <= {4'h3, {2'b00, pend_wd}, req_pend, ret_busy, plat_arvalid_q, 8'd0};
                     la_wp <= la_wp + 8'd1;
                 end else if (lin_rdy_ev) begin
-                    la_mem[la_wp] <= {4'h4, 12'd0, req_pend, ret_busy, plat_arvalid_q, 12'd0};
+                    la_mem[la_wp[5:0]] <= {4'h4, 12'd0, req_pend, ret_busy, plat_arvalid_q, 12'd0};
                     la_wp <= la_wp + 8'd1;
                 end else if (ev_wd) begin
-                    la_mem[la_wp] <= {4'h5, 28'd0};
+                    la_mem[la_wp[5:0]] <= {4'h5, 28'd0};
                     la_wp   <= la_wp + 8'd1;
                     la_frz  <= 1'b1;
                     la_trig <= 4'h1;
