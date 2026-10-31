@@ -54,7 +54,7 @@ def greedy_match(cands, gts):
     return out, used_c
 
 
-def run_scene(hw, path, meta, inv, pmin, amin, track=False):
+def run_scene(hw, path, meta, inv, pmin, amin, track=False, border=0, pre="none"):
     cap = cv2.VideoCapture(path)
     gt_by_f = {g["frame"]: g["targets"] for g in meta["gt"]}
     n_tp = n_fp = n_cand = n_gt = 0
@@ -69,11 +69,34 @@ def run_scene(hw, path, meta, inv, pmin, amin, track=False):
         gray = cv2.cvtColor(fr, cv2.COLOR_BGR2GRAY)
         if gray.shape[:2] != (H, W):
             gray = cv2.resize(gray, (W, H))
-        if inv:
-            gray = (255 - gray).astype(np.uint8)
-        st, cands, dt = hw.run(gray)
+        # inv=0 用原图找亮点；inv=1 取反找暗点；inv="both" 先原图
+        base = gray
+        if pre in ("hp", "hp2"):
+            # 局部均值高通：out = 128 + (img - blur31) * gain
+            # 云/草/海的慢变纹理被拉平，小目标的局部反差被保留
+            gain = 2.0 if pre == "hp" else 3.5
+            bg = cv2.blur(base, (31, 31)).astype(np.float32)
+            hp = np.clip(128 + (base.astype(np.float32) - bg) * gain, 0, 255).astype(np.uint8)
+            base = hp
+        gray_in = base if (inv == 0 or inv == "both") else (255 - base).astype(np.uint8)
+        st, cands, dt = hw.run(gray_in)
         cands = [c for c in (cands or [])
                  if c["area"] >= amin and c["peak"] >= pmin]
+        if inv == "both":
+            # 双极性：同一帧先按亮点找一遍，再取反找一遍，两路候选并集
+            gray_inv = (255 - base).astype(np.uint8)
+            _st, cands2, _dt = hw.run(gray_inv)
+            cands2 = [c for c in (cands2 or [])
+                      if c["area"] >= amin and c["peak"] >= pmin]
+            merged = list(cands)
+            for c2 in cands2:
+                if all(((c2["x"] - c1["x"]) ** 2 + (c2["y"] - c1["y"]) ** 2) > 64 for c1 in merged):
+                    merged.append(c2)
+            cands = merged
+        # 边框伪影屏蔽：Top-Hat 因果窗口在图像四周必然产生高对比假边
+        if border > 0:
+            cands = [c for c in cands
+                     if border <= c["x"] < W - border and border <= c["y"] < H - border]
         if track:
             cands = cp.nms_tracks(trk.update(cands, 20.0), 0.3)
 
@@ -114,11 +137,19 @@ def main():
     ap.add_argument("--pmin", type=int, default=0)
     ap.add_argument("--amin", type=int, default=2)
     ap.add_argument("--track", type=int, default=0)
+    ap.add_argument("--pre", default="none",
+                    help="预处理：none | hp（减去 31x31 局部均值，压制云纹、突出目标）| hp2（更强）")
+    ap.add_argument("--border", type=int, default=24, help="屏蔽四周边框像素宽度（Top-Hat 边框伪影）")
     ap.add_argument("--out", default="/root/ts2_result.csv")
     a = ap.parse_args()
 
     hw = cp.HW()
-    modes = [0, 1] if a.inv == "auto" else [int(a.inv)]
+    if a.inv == "auto":
+        modes = [0, 1]
+    elif a.inv == "both":
+        modes = ["both"]
+    else:
+        modes = [int(a.inv)]
 
     rows = []
     for jf in sorted(glob.glob(os.path.join(a.dir, "*.json"))):
@@ -129,10 +160,10 @@ def main():
         if not os.path.exists(mp4):
             continue
         for inv in modes:
-            r = run_scene(hw, mp4, meta, inv, a.pmin, a.amin, bool(a.track))
+            r = run_scene(hw, mp4, meta, inv, a.pmin, a.amin, bool(a.track), a.border, a.pre)
             rows.append(dict(name=meta["name"], bg=meta["bg"], kind=meta["kind"],
-                             inv=inv, **r))
-            print("%-18s inv=%d  召回 %5.1f%%  精确 %5.1f%%  候选 %4.1f/帧  误差 %4.1fpx"
+                             inv=str(inv), **r))
+            print("%-18s inv=%-4s 召回 %5.1f%%  精确 %5.1f%%  候选 %4.1f/帧  误差 %4.1fpx"
                   % (meta["name"], inv, r["recall"], r["prec"],
                      r["cand_per_frame"], r["err"]))
             for k, v in r["per_bin"].items():
@@ -147,9 +178,9 @@ def main():
             w.writerows(rows)
         print("\n=== 平均 ===")
         for inv in modes:
-            sel = [r for r in rows if r["inv"] == inv]
+            sel = [r for r in rows if r["inv"] == str(inv)]
             if sel:
-                print("inv=%d  平均召回 %.1f%%  平均精确 %.1f%%  平均候选 %.1f/帧"
+                print("inv=%-4s 平均召回 %.1f%%  平均精确 %.1f%%  平均候选 %.1f/帧"
                       % (inv,
                          np.mean([r["recall"] for r in sel]),
                          np.mean([r["prec"] for r in sel]),

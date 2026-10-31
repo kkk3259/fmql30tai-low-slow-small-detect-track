@@ -110,7 +110,7 @@ def draw_bird(sz):
     pts_r = np.array([[cx, cy], [cx + s * 0.48, cy - s * 0.26], [cx + s * 0.30, cy + s * 0.02]], np.int32)
     cv2.fillPoly(c, [pts_l, pts_r], 255)
     cv2.ellipse(c, (cx, cy + s // 12), (s // 7, s // 5), 0, 0, 360, 255, -1)
-    cv2.line(c, (cx, cy + s // 8), (cx, cy + s // 2), 255, max(1, s // 18))
+    cv2.line(c, (cx, cy + s // 8), (cx, cy + s // 2), 255, max(2, s // 10))
     return c
 
 
@@ -120,17 +120,17 @@ def draw_drone(sz):
     cv2.circle(c, (cx, cy), s // 7, 255, -1)
     for dx, dy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
         ex, ey = cx + dx * s // 3, cy + dy * s // 3
-        cv2.line(c, (cx, cy), (ex, ey), 255, max(1, s // 14))
-        cv2.circle(c, (ex, ey), s // 9, 160, max(1, s // 22))
+        cv2.line(c, (cx, cy), (ex, ey), 255, max(2, s // 8))
+        cv2.circle(c, (ex, ey), s // 9, 160, max(2, s // 14))
     return c
 
 
 def draw_plane(sz):
     c, s = _canvas(sz)
     cx, cy = s // 2, s // 2
-    cv2.line(c, (cx - s // 2, cy), (cx + s // 2, cy), 255, max(1, s // 7))
-    cv2.line(c, (cx, cy - s // 3), (cx, cy + s // 3), 255, max(1, s // 8))
-    cv2.line(c, (cx - s // 2, cy - s // 6), (cx - s // 3, cy), 255, max(1, s // 14))
+    cv2.line(c, (cx - s // 2, cy), (cx + s // 2, cy), 255, max(2, s // 6))
+    cv2.line(c, (cx, cy - s // 3), (cx, cy + s // 3), 255, max(2, s // 7))
+    cv2.line(c, (cx - s // 2, cy - s // 6), (cx - s // 3, cy), 255, max(2, s // 8))
     return c
 
 
@@ -145,8 +145,8 @@ def draw_man(sz):
     c, s = _canvas(sz)
     cv2.circle(c, (s // 2, s // 5), max(1, s // 5), 255, -1)
     cv2.rectangle(c, (s // 3, s // 3), (s - s // 3, s - s // 3), 255, -1)
-    cv2.line(c, (s // 2, s - s // 3), (s // 3, s - s // 10), 255, max(1, s // 8))
-    cv2.line(c, (s // 2, s - s // 3), (s - s // 3, s - s // 10), 255, max(1, s // 8))
+    cv2.line(c, (s // 2, s - s // 3), (s // 3, s - s // 10), 255, max(2, s // 7))
+    cv2.line(c, (s // 2, s - s // 3), (s - s // 3, s - s // 10), 255, max(2, s // 7))
     return c
 
 
@@ -163,6 +163,9 @@ def sprite(kind, sz, angle):
     sigma = 0.35 + 0.02 * sz
     k = int(max(3, sigma * 6)) | 1
     small = cv2.GaussianBlur(small, (k, k), sigma)
+    m = float(small.max())
+    if m > 1e-6:
+        small = small / m          # 峰值归一化：保证合成后目标中心真的偏离 ct 个灰度
     return small
 
 
@@ -254,7 +257,8 @@ def make_scene(name, bg_name, kind, sz_rng, ct_rng, count, polarity, seed):
             y0 = int(np.clip(y0, 0, H - s))
             patch = img[y0:y0 + s, x0:x0 + s]
             sign = 1.0 if o["pol"] == "bright" else -1.0
-            img[y0:y0 + s, x0:x0 + s] = np.clip(patch + sign * o["ct"] * a, 0, 255)
+            # 剪影只占 bbox 的一部分，合成前按 3.0 倍补偿，使“可测量的反差”落在 20~80 灰度
+            img[y0:y0 + s, x0:x0 + s] = np.clip(patch + sign * o["ct"] * 3.0 * a, 0, 255)
             gt.append(dict(cx=round(float(o["x"]), 1), cy=round(float(o["y"]), 1),
                            size=int(s), ct=round(o["ct"], 1), pol=o["pol"]))
 

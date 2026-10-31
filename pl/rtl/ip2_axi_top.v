@@ -30,6 +30,8 @@ module ip2_axi_top #(
     parameter H = 360,
     parameter MAX_CAND = 64,
     parameter SE = 21,          // Top-Hat 结构元边长（奇数）：21 可检 ≤20 px 目标
+    parameter K = 1,            // CFAR 系数：判决 x > mean + K*sd + FLOOR
+    parameter FLOOR = 3,        // CFAR 底噪
     parameter MODE = 0,         // 0=Top-Hat(亮目标) 1=Black-Hat(暗目标)
     parameter DENOISE = 1,      // CCL 去孤立点（板级打开，抑制候选表抖动）
     parameter [31:0] DEF_FRAME_ADDR  = 32'h3010_0000,
@@ -327,7 +329,7 @@ module ip2_axi_top #(
         .base_addr(frame_addr),
         // 多读 512 字节：帧缓冲已按每帧清空，但读主机按 256 字节突发取数，
         // 多读 2 个突发保证整帧 NPIX 个像素全部到位（多余部分下一帧被 clr 丢掉）。
-        .n_bytes(NPIX_V + 32'd512),
+        .n_bytes(NPIX_V + 32'd512 + (32*W)),
         .busy(rd_busy), .done(rd_done), .error(rd_error),
         .o_data(rd_data), .o_valid(rd_valid), .o_ready(rd_ready),
         .m_araddr(m_axi_araddr), .m_arlen(m_axi_arlen),
@@ -337,7 +339,7 @@ module ip2_axi_top #(
         .m_rvalid(m_axi_rvalid), .m_rready(m_axi_rready)
     );
 
-    ip2_top_stream #(.W(W), .H(H), .MAX_CAND(MAX_CAND), .SE(SE), .MODE(MODE),
+    ip2_top_stream #(.W(W), .H(H), .MAX_CAND(MAX_CAND), .SE(SE), .MODE(MODE), .K(K), .FLOOR(FLOOR),
                      .DENOISE(DENOISE)) u_chain (
         .clk(clk), .rst_n(chain_rst_n),
         .i_data(feed_real ? fifo_data : 8'd0),

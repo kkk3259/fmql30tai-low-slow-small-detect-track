@@ -11,7 +11,9 @@ module ip2_top_stream #(
     parameter MAX_CAND = 5,
     parameter SE = 5,           // Top-Hat 结构元边长（奇数）：默认 5
     parameter MODE = 0,         // 0=Top-Hat(亮目标) 1=Black-Hat(暗目标)
-    parameter DENOISE = 0       // 1=CCL 去孤立点（板级顶层打开）
+    parameter DENOISE = 0,      // 1=CCL 去孤立点（板级顶层打开）
+    parameter K = 1,            // CFAR 系数（x > mean + K*sd + FLOOR）
+    parameter FLOOR = 3         // CFAR 底噪
 )(
     input  wire clk,
     input  wire rst_n,
@@ -45,7 +47,7 @@ module ip2_top_stream #(
         .i_data(i_data), .i_valid(i_valid), .i_ready(th_ready),
         .o_data(th_data), .o_valid(th_valid), .o_ready(cf_ready)
     );
-    cfar_threshold_stream #(.W(W), .H(H)) u_cfar (
+    cfar_threshold_stream #(.W(W), .H(H), .K(K), .FLOOR(FLOOR)) u_cfar (
         .clk(clk), .rst_n(rst_n),
         .i_data(th_data), .i_valid(th_valid), .i_ready(cf_ready),
         .o_data(cf_data), .o_enh(cf_enh), .o_valid(cf_valid), .o_ready(1'b1)
