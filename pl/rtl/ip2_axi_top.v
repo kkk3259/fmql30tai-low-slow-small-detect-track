@@ -546,21 +546,12 @@ module ip2_axi_top #(
                 end
             end
             F_WRITE: begin
-                wdog <= wdog + 32'd1;
-                if (wr_done) begin
-                    if (wr_error) begin
-                        err_flag <= 1'b1;
-                        err_code <= 8'd6;
-                    end
-                    done_flag <= 1'b1;
-                    frm_cnt   <= frm_cnt + 8'd1;
-                    fst       <= F_FIN;
-                end else if (wdog > 32'd1_000_000) begin
-                    err_flag <= 1'b1;     // 超时：写回没完成
-                    err_code <= 8'd5;
-                    fst      <= F_FIN;
-                end
+                // 候选表走寄存器窗口，不写 DDR：直接判完成，避免等 wr_done 卡死
+                done_flag <= 1'b1;
+                frm_cnt   <= frm_cnt + 8'd1;
+                fst       <= F_FIN;
             end
+            
             F_FIN: begin
                 fst <= F_IDLE;
             end
