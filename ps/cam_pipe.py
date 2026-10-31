@@ -231,23 +231,7 @@ setInterval(function(){
   }).catch(function(){ $('st').textContent='连接中断'; });
 }, 400);
 </script>
-<div id="tune" style="position:fixed;left:14px;bottom:14px;z-index:99;background:rgba(18,22,28,.92);border:1px solid #444;border-radius:10px;padding:10px 14px;color:#cfe3f7;font-size:13px;line-height:2">
-  <div>gamma <input type="range" id="t_g" min="0.03" max="1" step="0.01" style="width:130px;vertical-align:middle"> <span id="t_gv">-</span></div>
-  <div>多尺度隔帧 <input type="range" id="t_m" min="1" max="4" step="1" style="width:130px;vertical-align:middle"> <span id="t_mv">-</span></div>
-</div>
-<script>
-(function(){
-  var g=document.getElementById('t_g'), m=document.getElementById('t_m');
-  function show(){document.getElementById('t_gv').textContent=g.value;document.getElementById('t_mv').textContent=m.value;}
-  function push(){show();fetch('/set?gamma='+g.value+'&msk='+m.value).catch(function(){});}
-  g.addEventListener('input',show); g.addEventListener('change',push);
-  m.addEventListener('input',show); m.addEventListener('change',push);
-  function sync(){fetch('/info').then(function(r){return r.json()}).then(function(o){
-    if(o.gamma!==undefined){g.value=o.gamma;} if(o.msk!==undefined){m.value=o.msk;} show();
-  }).catch(function(){});}
-  setTimeout(sync,600);
-})();
-</script>
+
 </body></html>"""
 
 
