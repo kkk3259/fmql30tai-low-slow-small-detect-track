@@ -130,8 +130,8 @@ canvas.chart{width:100%;height:74px;display:block}
         <input type="range" id="s_h" min="0" max="60" step="1" value="0"></div>
       <label class="sw"><input type="checkbox" id="c_all"> 显示全部候选</label>
       <label class="sw"><input type="checkbox" id="c_tr" checked> 显示轨迹</label>
-      <label class="sw" title="不勾：检测比背景亮的块（室内白块、灯光、亮目标）
-勾上：检测比背景暗的块（逆光天空里的鸟/无人机、黑点）"><input type="checkbox" id="c_inv"> 反相检测 <span style="color:#7f96ad">（勾上=找<b>暗</b>目标：逆光天空里的鸟；不勾=找<b>亮</b>目标：室内白块）</span></label>
+      <label class="sw" title="不勾：找比背景亮的块（室内白块、灯光）
+勾上：找比背景暗的块（逆光天空里的鸟、黑点）"><input type="checkbox" id="c_inv"> 反相检测<span style="color:#7f96ad">（找暗目标）</span></label>
       <div class="btnrow"><button id="b_snap">截图保存</button></div>
       <div style="font-size:10.5px;color:#5a6f85;margin-top:8px;line-height:1.5">
         <b>绿框</b> = 已确认目标（连续 ≥2 帧都出现，稳定）　<b>红框</b> = 疑似目标（只出现 1 帧，可能是噪声，会自己消失）<br>滑条只影响网页显示，不改变板子里的 CFAR 门限。</div>
