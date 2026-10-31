@@ -33,7 +33,8 @@ TAG = {1: "AR握手", 2: "R返回", 3: "核发请求", 4: "核收数据", 5: "�
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--clear", action="store_true")
-    ap.add_argument("--limit", type=int, default=256)
+    ap.add_argument("--limit", type=int, default=64)
+    ap.add_argument("--depth", type=int, default=64)
     a = ap.parse_args()
 
     dev = Device.Open("axi://zg330aiu?npu=0x40000000&dma=0x80000000")
@@ -51,7 +52,8 @@ def main():
     if frozen:
         print("  ⚠ 已冻结（看门狗触发），下面是崩溃前后现场")
 
-    n = min(a.limit, wp if not frozen else 256)
+    wp = wp & (a.depth - 1)
+    n = min(a.limit, wp if not frozen else a.depth)
     print("共 %d 条记录：" % n)
     counts = {}
     for i in range(n):
