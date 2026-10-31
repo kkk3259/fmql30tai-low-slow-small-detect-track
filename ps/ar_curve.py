@@ -37,7 +37,9 @@ def main():
 
     ch = mem.malloc(NPIX)
     ch.write(0, img.tobytes(), NPIX)
-    base = ch.begin().addr()
+    bp = ch.begin if not callable(ch.begin) else ch.begin()
+    ad = getattr(bp, "addr", None)
+    base = ad() if callable(ad) else ad
     print("PL-DDR base = 0x%X" % base)
 
     reg.write(REG + R_FADDR, base)
