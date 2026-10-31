@@ -144,8 +144,13 @@ module ip2_user_op #(
     reg [11:0] rd_addr12_q;      // 读地址快照（用于调试窗口选择）
     reg [11:0] rd_tmo;           // 读超时计数（防 PS 被挂死）
 
-    assign itf_ra_awready = ~wr_busy;
-    assign itf_ra_arready = ~rd_busy;
+    // 官方 reg_ctrl 语义：写口永远接（awready=1），绝不因为内部忙而拒绝事务，
+    // 否则平台那条 AXI-Lite 写永远等不到完成，PS 会卡死在总线上。
+    assign itf_ra_awready = 1'b1;
+    // 读口：未在返回、且没有正在等核回应时才接。
+    // 注意：arready=0 是标准 AXI 反压，PS 会等；只有"永远不回应"才会挂死，
+    // 而 rd_tmo 已经保证了最多 4095 拍必回（0xDEADBEEF），所以这里拒绝是安全的。
+    assign itf_ra_arready = ~rvalid_r & ~rd_busy;
     assign itf_ra_rvalid  = rvalid_r;
     wire [31:0] dbg_word = (rd_addr12_q[3:2] == 2'd0) ? dbg_ar :
                            (rd_addr12_q[3:2] == 2'd1) ? dbg_rv :
@@ -158,16 +163,46 @@ module ip2_user_op #(
                                             (rd_addr12_q[3:2] == 2'd2) ? la_status : 32'd0) :
                             rd_data_q;
 
+    reg        wr_pend_v;        // 1 深待发槽：忙时收到的写先存着
+    reg [ 5:0] wr_pend_addr;
+    reg [31:0] wr_pend_data;
+    reg [11:0] wr_tmo;           // 写超时计数（防核死掉后 PS 写被挂住）
+
     always @(posedge ra_clk or negedge ra_rst_n) begin
         if (!ra_rst_n) begin
             wr_t <= 1'b0; wr_addr_q <= 6'd0; wr_data_q <= 32'd0; wr_busy <= 1'b0;
+            wr_pend_v <= 1'b0; wr_pend_addr <= 6'd0; wr_pend_data <= 32'd0;
+            wr_tmo <= 12'd0;
         end else begin
-            if (wr_ack_ev) wr_busy <= 1'b0;
-            if (itf_ra_awvalid && !wr_busy) begin
-                wr_addr_q <= ra_word;
-                wr_data_q <= itf_ra_awdata;
-                wr_t      <= ~wr_t;
-                wr_busy   <= 1'b1;
+            if (wr_ack_ev) begin
+                wr_busy <= 1'b0;
+                wr_tmo  <= 12'd0;
+            end else if (wr_busy) begin
+                if (wr_tmo != 12'hFFF) wr_tmo <= wr_tmo + 12'd1;
+                else begin                 // 核 82us 没回应：强制解锁，PS 不再被挂
+                    wr_busy <= 1'b0;
+                    wr_tmo  <= 12'd0;
+                end
+            end
+            // 新来的写：不忙 -> 直接发；忙 -> 存进待发槽（覆盖最老的）
+            if (itf_ra_awvalid) begin
+                if (!wr_busy && !wr_pend_v) begin
+                    wr_addr_q <= ra_word;
+                    wr_data_q <= itf_ra_awdata;
+                    wr_t      <= ~wr_t;
+                    wr_busy   <= 1'b1;
+                end else begin
+                    wr_pend_v    <= 1'b1;
+                    wr_pend_addr <= ra_word;
+                    wr_pend_data <= itf_ra_awdata;
+                end
+            end else if (wr_pend_v && !wr_busy) begin
+                // 忙完了，把待发槽里的补发出去
+                wr_addr_q  <= wr_pend_addr;
+                wr_data_q  <= wr_pend_data;
+                wr_t       <= ~wr_t;
+                wr_busy    <= 1'b1;
+                wr_pend_v  <= 1'b0;
             end
         end
     end

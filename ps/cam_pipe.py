@@ -228,6 +228,23 @@ setInterval(function(){
   }).catch(function(){ $('st').textContent='连接中断'; });
 }, 400);
 <button id="binv" onclick="fetch('/set?invert='+(window.__inv?0:1)).then(function(){window.__inv=!window.__inv;document.getElementById('binv').textContent=window.__inv?'取反:开(黑帽)':'取反:关(白帽)'})" style="position:fixed;right:14px;bottom:14px;z-index:99;padding:10px 16px;font-size:15px;border-radius:8px;border:1px solid #666;background:#222;color:#0f0;cursor:pointer">取反:关(白帽)</button>
+<div id="tune" style="position:fixed;left:14px;bottom:14px;z-index:99;background:rgba(18,22,28,.92);border:1px solid #444;border-radius:10px;padding:10px 14px;color:#cfe3f7;font-size:13px;line-height:2">
+  <div>gamma <input type="range" id="t_g" min="0.03" max="1" step="0.01" style="width:130px;vertical-align:middle"> <span id="t_gv">-</span></div>
+  <div>多尺度隔帧 <input type="range" id="t_m" min="1" max="4" step="1" style="width:130px;vertical-align:middle"> <span id="t_mv">-</span></div>
+</div>
+<script>
+(function(){
+  var g=document.getElementById('t_g'), m=document.getElementById('t_m');
+  function show(){document.getElementById('t_gv').textContent=g.value;document.getElementById('t_mv').textContent=m.value;}
+  function push(){show();fetch('/set?gamma='+g.value+'&msk='+m.value).catch(function(){});}
+  g.addEventListener('input',show); g.addEventListener('change',push);
+  m.addEventListener('input',show); m.addEventListener('change',push);
+  function sync(){fetch('/info').then(function(r){return r.json()}).then(function(o){
+    if(o.gamma!==undefined){g.value=o.gamma;} if(o.msk!==undefined){m.value=o.msk;} show();
+  }).catch(function(){});}
+  setTimeout(sync,600);
+})();
+</script>
 </script></body></html>"""
 
 
@@ -640,7 +657,8 @@ class Pipeline(object):
                 self.enc_n += 1
                 with g_lock:
                     globals()["g_jpeg"] = enc.tobytes()
-                g_info.update({"fps": round(self.enc_n / max(time.time() - self.pl_t0, 1e-6), 1),
+                g_info.update({"gamma": round(GAMMA, 3), "msk": MS_EVERY,
+                       "fps": round(self.enc_n / max(time.time() - self.pl_t0, 1e-6), 1),
                                "enc_ms": round(self.enc_ms, 2)})
 
     def start(self):
@@ -673,11 +691,22 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path.startswith("/set"):
             # /set?invert=0|1 —— 反相检测开关（把 255-gray 送 PL = Black-Hat，找暗目标）
-            global INVERT
+            global INVERT, GAMMA, MS_EVERY
+            def _q(key, cast, lo, hi, cur):
+                try:
+                    if key + "=" in self.path:
+                        v = float(self.path.split(key + "=")[1].split("&")[0])
+                        return max(lo, min(hi, cast(v)))
+                except Exception:
+                    pass
+                return cur
             try:
                 if "invert=" in self.path:
                     INVERT = self.path.split("invert=")[1].split("&")[0].strip() in ("1", "true", "on")
-                body = json.dumps({"invert": 1 if INVERT else 0}).encode()
+                GAMMA    = _q("gamma", float, 0.03, 1.0, GAMMA)
+                MS_EVERY = _q("msk",   int,   1,    4,   MS_EVERY)
+                body = json.dumps({"invert": 1 if INVERT else 0,
+                                   "gamma": round(GAMMA, 3), "msk": MS_EVERY}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
             except Exception as e:
@@ -772,7 +801,7 @@ def main():
                     help="时域差分：逐像素灰度变化门限（默认 8）")
     args = ap.parse_args()
 
-    global MOTION_FRAC, MOTION_THR, MULTI_SCALE, MS_FACTOR, MS_FACTOR2, MS_EVERY
+    global MOTION_FRAC, MOTION_THR, MULTI_SCALE, MS_FACTOR, MS_FACTOR2, MS_EVERY, GAMMA, INVERT
     global LAG_FRAMES, CLUSTER_R, NMS_IOU, GRAY_STREAM
     MULTI_SCALE = args.multi_scale
     MS_FACTOR = args.ms_factor
