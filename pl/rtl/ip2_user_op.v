@@ -137,6 +137,7 @@ module ip2_user_op #(
     reg [31:0] rd_data_q;
     reg        rvalid_r;
     reg [11:0] rd_addr12_q;      // 读地址快照（用于调试窗口选择）
+    reg [11:0] rd_tmo;           // 读超时计数（防 PS 被挂死）
 
     assign itf_ra_awready = ~wr_busy;
     assign itf_ra_arready = ~rd_busy;
@@ -167,10 +168,22 @@ module ip2_user_op #(
             rd_t <= 1'b0; rd_addr_q <= 6'd0; rd_is_done_q <= 1'b0; rd_busy <= 1'b0;
             rd_data_q <= 32'd0; rvalid_r <= 1'b0;
         end else begin
+            // 超时保护：读请求若在 N 个 ra 拍内拿不到核的回应，强制返回 0xDEADBEEF。
+            // 目的：即使核（clk 域）死掉，PS 侧也绝不能被挂住——否则整板锁死只能断电。
+            if (rd_busy && !rd_ack_ev) begin
+                if (rd_tmo != 12'hFFF) rd_tmo <= rd_tmo + 12'd1;
+                else begin
+                    rd_busy   <= 1'b0;
+                    rd_data_q <= 32'hDEAD_BEEF;
+                    rvalid_r  <= 1'b1;
+                    rd_tmo    <= 12'd0;
+                end
+            end
             if (rd_ack_ev) begin
                 rd_busy   <= 1'b0;
                 rd_data_q <= rd_data_c;
                 rvalid_r  <= 1'b1;
+                rd_tmo    <= 12'd0;
             end else if (rvalid_r) begin
                 rvalid_r  <= 1'b0;
             end
@@ -180,6 +193,7 @@ module ip2_user_op #(
                 rd_is_done_q <= done_sel_r;
                 rd_t         <= ~rd_t;
                 rd_busy      <= 1'b1;
+                rd_tmo       <= 12'd0;
             end
         end
     end
