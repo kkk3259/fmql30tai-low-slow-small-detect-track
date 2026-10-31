@@ -29,7 +29,7 @@ module ip2_axi_top #(
     parameter W = 640,
     parameter H = 360,
     parameter MAX_CAND = 64,
-    parameter SE = 21,          // Top-Hat 结构元边长（奇数）：21 可检 ≤20 px 目标
+    parameter SE = 31,          // Top-Hat 结构元边长（奇数）：21 可检 ≤20 px 目标
     parameter K = 0,            // CFAR 系数：判决 x > mean + K*sd + FLOOR
     parameter FLOOR = 2,        // CFAR 底噪
     parameter MODE = 0,         // 0=Top-Hat(亮目标) 1=Black-Hat(暗目标)
@@ -527,7 +527,7 @@ module ip2_axi_top #(
                 end else if (drain_cnt >= DRAIN[17:0]) begin
                     fst  <= F_WAIT;
                     wdog <= 32'd0;
-                end else if (wdog > 32'd4_000_000) begin
+                end else if (wdog > 32'd32_000_000) begin
                     err_flag <= 1'b1;      // 链路吃不到像素（帧缓冲断粮）
                     err_code <= 8'd3;
                     fst      <= F_FIN;

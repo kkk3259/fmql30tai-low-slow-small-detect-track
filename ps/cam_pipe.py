@@ -148,12 +148,11 @@ canvas.chart{width:100%;height:74px;display:block}
 <script>
 var PK=0, MAXN=64, MINH=0, ALL=false, TRAIL=true;
 var hist=[];
-function $(i){return document.getElementById(i)}
+function $(id){var e=document.getElementById(id);if(e)return e;return {value:'0',checked:false,textContent:'',innerHTML:'',style:{},addEventListener:function(){},appendChild:function(){}};}
 ['s_pk','s_n','s_h'].forEach(function(id){
   $(id).addEventListener('input',function(){
-    PK=+$('s_pk').value; MAXN=+$('s_n').value; MINH=+$('s_h').value;
-    $('l_pk').textContent=PK; $('l_n').textContent=MAXN; $('l_h').textContent=MINH;
-    draw();
+    PK=+0; MAXN=+64; MINH=+0;
+          draw();
   });
 });
 $('c_all').addEventListener('change',function(){ALL=this.checked;draw()});
@@ -422,8 +421,8 @@ class Tracker(object):
     性能：候选按峰值预剪（MAX_IN），track 池上限 MAX_TRACKS，避免 O(候选×track) 爆炸。
     """
 
-    MATCH_R = 12       # 匹配半径（像素，棋盘距离）
-    MIN_HITS = 2       # 命中多少帧才显示
+    MATCH_R = 12       # 基础匹配半径（像素）；实际按速度放大，见 update()
+    MIN_HITS = 1       # 命中多少帧才显示（1=第一帧就出红框，2=绿框）
     MAX_MISS = 10      # 连续丢失多少帧才删除
     MAX_SHOW = 64      # 最多显示多少个
     PEAK_MIN = 0       # 候选峰值下限
@@ -448,8 +447,14 @@ class Tracker(object):
                 if used[i]:
                     continue
                 t = self.tracks[i]
-                d = max(abs(t["x"] - cx), abs(t["y"] - cy))
-                if d <= self.MATCH_R and d < bestd:
+                spd = abs(t.get("vx", 0.0)) + abs(t.get("vy", 0.0))
+                pr = int(10 + 2.5 * spd)           # 半径随速度放大：静止 10px，跑 20px/帧 -> 60px
+                if pr > 90:
+                    pr = 90
+                px = t["x"] + t.get("vx", 0.0)     # 按速度预测当前位置再比距离
+                py = t["y"] + t.get("vy", 0.0)
+                d = max(abs(px - cx), abs(py - cy))
+                if d <= pr and d < bestd:
                     best, bestd = i, d
             if best >= 0:
                 t = self.tracks[best]
