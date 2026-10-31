@@ -97,6 +97,15 @@ class Det3D(object):
                     st=self.reg.read(REG + 0x9C) & 0xffffffff)
 
 
+def cap_dump(reg):
+    """读前 256 个"检测器看到的"像素字节（0xB4 写索引 / 0xB8 读数据）。"""
+    out = bytearray()
+    for i in range(256):
+        reg.write(REG + 0xB4, i)
+        out.append(reg.read(REG + 0xB8) & 0xFF)
+    return bytes(out)
+
+
 def draw(gray, cands, hud=""):
     img = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR) if cv2 is not None else None
     if img is None:

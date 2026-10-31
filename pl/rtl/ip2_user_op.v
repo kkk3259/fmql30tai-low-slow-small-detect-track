@@ -134,7 +134,12 @@ module ip2_user_op #(
     wire [31:0] dbg_stat;                 // 平台口状态快照（见第 5 节）
     wire [31:0] la_rdata;                 // 逻辑分析仪读数据（见第 6 节）
     wire [31:0] la_status;                // {frozen, trig[3:0], wp[9:0]}
-    reg  [7:0]  la_raddr;                 // 读地址（ra 域）
+    reg  [7:0]  la_raddr;
+// --- 像素捕获：记录前 256 个"检测器看到的"像素字节（诊断用） ---
+reg  [7:0]  cap_mem [0:255];
+reg  [8:0]  cap_wd;
+reg  [7:0]  cap_idx;
+reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
     wire [5:0] ra_word = done_sel_w ? 6'h0C : itf_ra_awaddr[5:0];
     wire [5:0] rd_word = done_sel_r ? 6'h0C : itf_ra_araddr[5:0];
 
@@ -157,7 +162,9 @@ module ip2_user_op #(
                            (rd_addr12_q[3:2] == 2'd2) ? dbg_wd : dbg_stat;
     wire        dbg_sel_q = (rd_addr12_q[11:4] == 8'h09);
     wire        la_sel_q  = (rd_addr12_q[11:4] == 8'h0A);
+    wire        cap_sel_q = (rd_addr12_q[11:0] == 12'h0B8);
     assign itf_ra_rdata   = rd_is_done_q ? {31'b0, rd_data_q[1]} :
+                            cap_sel_q    ? {24'd0, cap_dat_q} :
                             dbg_sel_q    ? dbg_word :
                             la_sel_q     ? ((rd_addr12_q[3:2] == 2'd0) ? la_rdata :
                                             (rd_addr12_q[3:2] == 2'd2) ? la_status : 32'd0) :
@@ -221,6 +228,9 @@ module ip2_user_op #(
                     la_raddr <= itf_ra_awdata[7:0];
                 if (itf_ra_awaddr[11:0] == 12'h0AC)
                     la_clr_t <= ~la_clr_t;
+                // 像素捕获索引：0xB4 写要看的字节下标
+                if (itf_ra_awaddr[11:0] == 12'h0B4)
+                    cap_idx <= itf_ra_awdata[7:0];
             end
         end
     end
@@ -253,6 +263,9 @@ module ip2_user_op #(
                 rd_addr_q    <= rd_word;
                 rd_addr12_q  <= itf_ra_araddr[11:0];
                 rd_is_done_q <= done_sel_r;
+                // 像素捕获读口：0xB8 返回 cap_mem[cap_idx]
+                if (itf_ra_araddr[11:0] == 12'h0B8)
+                    cap_dat_q <= cap_mem[cap_idx];
                 rd_t         <= ~rd_t;
                 rd_busy      <= 1'b1;
                 rd_tmo       <= 12'd0;
@@ -304,6 +317,13 @@ module ip2_user_op #(
     assign m_arready = ~bus_active & ~lin_pend;
     assign m_rvalid  = bus_active & hit;
     assign m_rdata   = line_word;
+
+always @(posedge core_clk or negedge core_rst_n)
+if (!core_rst_n) cap_wd <= 9'd0;
+else if (m_rvalid && m_rready && (cap_wd != 9'h1FF)) cap_wd <= cap_wd + 9'd1;
+
+always @(posedge core_clk)
+if (m_rvalid && m_rready && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= line_word[7:0];
     assign m_rlast   = (bus_left == 8'd0);
 
     always @(posedge core_clk or negedge core_rst_n) begin
