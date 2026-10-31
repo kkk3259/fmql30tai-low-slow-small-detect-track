@@ -58,7 +58,9 @@ NMS_IOU = 0.30        # 框去重阈值：交叠/较小框面积 超过它就合
 LAG_FRAMES = 0.0      # 速度外推帧数（补偿端到端时延；0=不外推）
 STREAM_Q = 88         # 推流 JPEG 质量（彩色呈现要清晰些）
 GRAY_STREAM = 0       # 1=推灰度 JPEG（快）；0=推彩色（呈现彩色，处理仍全程灰度）
-GAMMA = 1.0           # 送 PL 前做幂律拉伸（<1 提亮暗部、压缩背景动态范围，实测显著提升召回）
+GAMMA = 1.0
+STRETCH = 0            # 0=不处理 1=百分比拉伸(1%~99%) 2=CLAHE 局部对比度均衡
+_CLAHE = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))           # 送 PL 前做幂律拉伸（<1 提亮暗部、压缩背景动态范围，实测显著提升召回）
 INVERT = False        # True=把 255-gray 送 PL（等价 Black-Hat，找暗目标，如逆光天空里的鸟）
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
@@ -567,11 +569,17 @@ class Pipeline(object):
             color, gray, t_cap = item
             # 取反开关：等价 Black-Hat（找暗目标）。只在送 PL 的那份上取反，
             # 显示仍用原始灰度，避免画面变负片。
+            gray_pl = gray
+            # 自动对比度：手机/相机拍屏幕时目标与背景只差十几灰阶，PL 侧 Top-Hat 前先拉满
+            if STRETCH == 1:
+                lo, hi = np.percentile(gray_pl, (1, 99))
+                if hi > lo + 8:
+                    gray_pl = np.clip((gray_pl.astype(np.float32) - lo) * (255.0 / (hi - lo)), 0, 255).astype(np.uint8)
+            elif STRETCH == 2:
+                gray_pl = _CLAHE.apply(gray_pl)
             if GAMMA != 1.0:
                 lut = np.array([min(255, int(255 * ((i / 255.0) ** GAMMA))) for i in range(256)], np.uint8)
-                gray_pl = cv2.LUT(gray, lut)
-            else:
-                gray_pl = gray
+                gray_pl = cv2.LUT(gray_pl, lut)
             gray_pl = (255 - gray_pl) if INVERT else gray_pl
             st, cands, dt = self.hw.run_ms(gray_pl) if MULTI_SCALE else self.hw.run(gray_pl)
             self.pl_ms = 0.8 * self.pl_ms + 0.2 * dt
@@ -643,7 +651,7 @@ class Pipeline(object):
                 self.enc_n += 1
                 with g_lock:
                     globals()["g_jpeg"] = enc.tobytes()
-                g_info.update({"gamma": round(GAMMA, 3), "msk": MS_EVERY,
+                g_info.update({"gamma": round(GAMMA, 3), "msk": MS_EVERY, "stretch": STRETCH,
                        "fps": round(self.enc_n / max(time.time() - self.pl_t0, 1e-6), 1),
                                "enc_ms": round(self.enc_ms, 2)})
 
@@ -677,7 +685,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path.startswith("/set"):
             # /set?invert=0|1 —— 反相检测开关（把 255-gray 送 PL = Black-Hat，找暗目标）
-            global INVERT, GAMMA, MS_EVERY
+            global INVERT, GAMMA, MS_EVERY, STRETCH
             def _q(key, cast, lo, hi, cur):
                 try:
                     if key + "=" in self.path:
@@ -690,6 +698,7 @@ class Handler(BaseHTTPRequestHandler):
                 if "invert=" in self.path:
                     INVERT = self.path.split("invert=")[1].split("&")[0].strip() in ("1", "true", "on")
                 GAMMA    = _q("gamma", float, 0.03, 1.0, GAMMA)
+                STRETCH  = _q("stretch", int, 0, 2, STRETCH)
                 MS_EVERY = _q("msk",   int,   1,    4,   MS_EVERY)
                 body = json.dumps({"invert": 1 if INVERT else 0,
                                    "gamma": round(GAMMA, 3), "msk": MS_EVERY}).encode()
@@ -776,6 +785,7 @@ def main():
     ap.add_argument("--ms-factor2", type=int, default=0, help="多尺度第三遍倍数（4 => 补 20~80px；0=关闭）")
     ap.add_argument("--gray", type=int, default=0, help="1=灰度推流(快) 0=彩色(默认)")
     ap.add_argument("--gamma", type=float, default=1.0, help="送 PL 前的幂律拉伸指数（<1 提亮暗部；实测 0.05~0.08 最优）")
+    ap.add_argument("--stretch", type=int, default=1, help="0=关 1=百分比拉伸 2=CLAHE（默认 1，显著提升低对比度场景）")
     ap.add_argument("--quality", type=int, default=88, help="推流 JPEG 质量")
     ap.add_argument("--lag", type=float, default=3.0, help="速度外推帧数（补偿时延，0=关闭）")
     ap.add_argument("--cluster-r", type=int, default=12, help="候选聚类半径（像素）")
@@ -787,7 +797,7 @@ def main():
                     help="时域差分：逐像素灰度变化门限（默认 8）")
     args = ap.parse_args()
 
-    global MOTION_FRAC, MOTION_THR, MULTI_SCALE, MS_FACTOR, MS_FACTOR2, MS_EVERY, GAMMA, INVERT
+    global MOTION_FRAC, MOTION_THR, MULTI_SCALE, MS_FACTOR, MS_FACTOR2, MS_EVERY, GAMMA, INVERT, STRETCH
     global LAG_FRAMES, CLUSTER_R, NMS_IOU, GRAY_STREAM
     MULTI_SCALE = args.multi_scale
     MS_FACTOR = args.ms_factor
@@ -796,6 +806,7 @@ def main():
     LAG_FRAMES = args.lag
     GRAY_STREAM = 1 if args.gray else 0
     GAMMA = args.gamma
+    STRETCH = args.stretch
     STREAM_Q = int(args.quality)
     CLUSTER_R = args.cluster_r
     NMS_IOU = args.nms_iou
