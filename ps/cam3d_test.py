@@ -23,7 +23,7 @@ REG = 0x400C0000
 R_CTRL, R_FADDR, R_RADDR, R_STATUS = 0x00, 0x04, 0x08, 0x0C
 R_WIN, R_AR = 0x10, 0x90
 NPIX = 640 * 360
-X_SHIFT = 640 - 63       # 三域实测：x_det = x_true + 63（约一条 64 像素），x_true = (x_det + 577) % 640
+X_SHIFT = 62             # 预热后实测稳定：x_det = x_true - 62，故 +62 还原
 BORDER = 24              # 上下边带过滤（pad 伪目标在 y≈359）
 
 
