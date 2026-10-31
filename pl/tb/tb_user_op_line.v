@@ -55,26 +55,49 @@ ip2_user_op #(.W(W), .H(H), .SE(5), .MAX_CAND(8)) dut (
     .clk(clk), .ra_clk(ra_clk), .rst_n(rst_n), .ra_rst_n(ra_rst_n)
 );
 
-// 平台时序：AR 握手 → 锁地址 → 2 拍后 rvalid → 1 拍撤销
+// 平台时序（v2）：接受最多 8 个 AR 排队，按序 2 拍后回 512 位数据
+//   真平台就是这种“流水接受、顺序返回”的行为；旧模型只能挂 1 个 AR，会把流水掩盖成丢包
+reg [31:0] pq [0:7];
+reg [3:0]  pq_wp, pq_rp, pq_cnt;
+reg        resp_pend;
+reg [1:0]  rv_cnt2;
+reg [5:0]  cool;   // 响应间隔（真平台 ~1024 clk/行，这里取 64 足够跨域）
+assign itf_arready = (pq_cnt < 4'd8);
+
 always @(posedge clk) begin
     if (!rst_n) begin
-        plat_rv <= 1'b0; rv_cnt <= 2'd0; plat_busy <= 1'b0; ar_addr_l <= 32'd0;
+        pq_wp <= 4'd0; pq_rp <= 4'd0; pq_cnt <= 4'd0;
+        plat_rv <= 1'b0; rv_cnt2 <= 2'd0; resp_pend <= 1'b0; cool <= 6'd0;
+        ar_addr_l <= 32'd0; dbg_ar_n <= 0;
     end else begin
         plat_rv <= 1'b0;
+
+        // 入队
         if (itf_arvalid && itf_arready) begin
+            pq[pq_wp] <= itf_araddr;
+            pq_wp     <= pq_wp + 4'd1;
+            pq_cnt    <= pq_cnt + 4'd1;
             if (dbg_ar_n < 6) $display("  AR#%0d addr=%0d", dbg_ar_n, itf_araddr);
-            ar_addr_l <= itf_araddr;
+            dbg_ar_n  <= dbg_ar_n + 1;
+        end
+
+        // 出队响应
+        if (cool != 6'd0) cool <= cool - 6'd1;
+        if (!resp_pend && (pq_cnt != 4'd0) && (cool == 6'd0)) begin
+            ar_addr_l <= pq[pq_rp];
             for (kk = 0; kk < 64; kk = kk + 1)
-                wrap[kk*8 +: 8] <= bmem[itf_araddr + kk];
-            plat_busy <= 1'b1;
-            dbg_ar_n <= dbg_ar_n + 1;
-            rv_cnt    <= 2'd2;
-        end else if (rv_cnt != 2'd0) begin
-            rv_cnt <= rv_cnt - 2'd1;
-            if (rv_cnt == 2'd1) begin
+                wrap[kk*8 +: 8] <= bmem[pq[pq_rp] + kk];
+            pq_rp     <= pq_rp + 4'd1;
+            pq_cnt    <= pq_cnt - 4'd1;
+            resp_pend <= 1'b1;
+            rv_cnt2   <= 2'd2;
+        end else if (resp_pend) begin
+            if (rv_cnt2 != 2'd0) rv_cnt2 <= rv_cnt2 - 2'd1;
+            else begin
                 plat_rv   <= 1'b1;
-                plat_busy <= 1'b0;
                 rdata_r   <= wrap;
+                resp_pend <= 1'b0;
+                cool      <= 6'd63;
             end
         end
     end
@@ -132,4 +155,14 @@ initial begin
     $finish;
 end
 
+
+    // ---- 进度探针（调试用）----
+    integer pdiv = 0;
+    always @(posedge clk) begin
+        pdiv <= pdiv + 1;
+        if (pdiv % 400 == 0)
+            $display("  t=%0t px=%0d infl=%0d lfc=%0d line=%0d adq=%0d arv=%b",
+                     $time, dut.px_pushed, dut.inflight, dut.lf_cnt, dut.line_idx,
+                     dut.adq_cnt, dut.plat_arvalid_q, dut.u_ip2.fst);
+    end
 endmodule
