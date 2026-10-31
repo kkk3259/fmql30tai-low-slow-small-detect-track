@@ -429,11 +429,13 @@ if (m_rvalid && m_rready && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= line_word
             end
 
             if (m_rvalid && m_rready) begin
+                // 每一拍都要前进 8 字节（包括突发最后一拍），否则每个突发会少走 8 字节，
+                // 跨几百个突发后地址整体偏移，表现为坐标逐渐漂移
+                bus_addr <= bus_addr + 32'd8;
                 if (bus_left == 8'd0) begin
                     bus_active <= 1'b0;
                 end else begin
                     bus_left <= bus_left - 8'd1;
-                    bus_addr <= bus_addr + 32'd8;
                 end
             end
         end
