@@ -304,6 +304,7 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
     reg [25:0]  line_tag;
     reg         line_valid;
     reg [31:0]  bus_addr;
+    reg         bus_started;   // 是否已经装过首地址（防止复位后 bus_addr=0 时永不重装）
     reg [7:0]   bus_left;
     reg         bus_active;
     reg         lin_pend;
@@ -343,6 +344,7 @@ if (m_rvalid && m_rready && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= line_word
             wr_ack_t <= 1'b0; rd_ack_t <= 1'b0; rd_data_c <= 32'd0;
             line_data <= 512'd0; line_tag <= 26'd0; line_valid <= 1'b0;
             bus_addr <= 32'd0; bus_left <= 8'd0; bus_active <= 1'b0;
+            bus_started <= 1'b0;
             lin_req_t <= 1'b0; lin_addr_q <= 32'd0; lin_pend <= 1'b0;
             pend_wd <= 10'd0;
         end else begin
@@ -397,7 +399,8 @@ if (m_rvalid && m_rready && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= line_word
             // 地址必须靠我们自己 +8 递增。所以只有地址“回绕”（新一帧又从帧首读）时才
             // 重装 bus_addr；否则同一 512 位行里的 8 个字会被当成同一个字读 8 遍。
             if (m_arvalid && m_arready) begin
-                if (m_araddr <= bus_addr) begin
+                if (!bus_started || (m_araddr < bus_addr)) begin
+                    bus_started <= 1'b1;
                     bus_addr <= m_araddr;
                 end
                 bus_left   <= m_arlen;
