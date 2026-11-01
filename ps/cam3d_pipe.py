@@ -281,7 +281,7 @@ def infer_loop(pl, net):
         if USE_YOLO and YOLO is not None:
             ty = time.time()
             try:
-                _bs = YOLO.detect(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
+                _bs = YOLO.detect(gray)
                 keep = []
                 for b in _bs:
                     bw = max(4.0, b[2] - b[0])
@@ -489,7 +489,7 @@ class SrvHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    global GAMMA, INVERT, COLOR_DISP, USE_YOLO
+    global GAMMA, INVERT, COLOR_DISP, USE_YOLO, YOLO
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--npu", type=int, default=1)
