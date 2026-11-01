@@ -12,7 +12,7 @@ DIR=/root/ip2
 PY=/usr/bin/python3
 LOG=/root/ip2/ip2d3.log
 PID=/var/run/ip2d3.pid
-ARGS="--port 8080 --npu 1"
+ARGS="--port 8080 --npu 1 --quality 65 --push-every 1"
 
 run() {
     cd "$DIR" || exit 1
