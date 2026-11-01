@@ -32,6 +32,9 @@ except Exception:                          # noqa: BLE001
     Yolo = None
 USE_YOLO = False          # 模块级：--yolo 1 时由 main() 置 True
 YOLO = None
+USE_ROI = False           # --mode roi：PL 粗筛 + NPU ROI 精判（真正的三域分工）
+ROI_CONF = 0.45           # ROI 模式下 NPU 判为无人机的阈值
+ROI_KEEP_PL = 0           # 1 = NPU 没认出的 PL 候选也保留（显示为 p=0）
 
 
 W, H = 640, 360
@@ -256,10 +259,10 @@ def infer_loop(pl, net):
 
         t0 = time.time()
         try:
-            if USE_YOLO:                      # yolo 模式不跑 PL（避免抢 DMA）
+            if USE_YOLO and not USE_ROI:      # 纯 yolo 模式不跑 PL（避免抢 DMA）
                 cands, st, dt = [], 0, 0.0
             else:
-                cands, st, dt = pl.run(to_pl(gray))   # gamma/取反只影响送 PL 的那份；unpack 已应用 X_SHIFT 与 BORDER
+                cands, st, dt = pl.run(to_pl(gray))   # ROI 模式要用 PL 的候选
         except Exception as e:                                     # noqa: BLE001
             STATE["err"] = "pl:%s" % e
             time.sleep(0.2)
@@ -277,8 +280,8 @@ def infer_loop(pl, net):
                 continue
             keep.append({"x": x, "y": y, "area": c["area"], "peak": c["peak"], "p": None})
 
-        # --yolo 1: yolo11n whole-image detect replaces PL candidates
-        if USE_YOLO and YOLO is not None:
+        # --yolo 1 且非 ROI 模式：整帧 yolo 直接替换 PL 候选
+        if USE_YOLO and not USE_ROI and YOLO is not None:
             ty = time.time()
             try:
                 _bs = YOLO.detect(gray)
@@ -292,6 +295,51 @@ def infer_loop(pl, net):
                 STATE["npu_ms"] = (time.time() - ty) * 1000.0
             except Exception as e:                            # noqa: BLE001
                 STATE["err"] = "yolo:%s" % e
+
+        # ===== ROI 模式：PL 粗筛 → PS 裁 96×96 拼图 → NPU 一次前向精判 =====
+        if USE_YOLO and USE_ROI and YOLO is not None:
+            ty = time.time()
+            try:
+                ROI_SIDE = 96
+                ROI_CELL = 4          # 4×4 网格，每格 160×160（96→160 放大 1.67×）
+                ROI_N = ROI_CELL * ROI_CELL
+                cands_in = keep[:ROI_N]
+                if cands_in:
+                    crops, meta = [], []
+                    for c in cands_in:
+                        hx = ROI_SIDE // 2
+                        x0 = int(min(max(c["x"] - hx, 0), max(0, W - ROI_SIDE)))
+                        y0 = int(min(max(c["y"] - hx, 0), max(0, H - ROI_SIDE)))
+                        crops.append(gray[y0:y0 + ROI_SIDE, x0:x0 + ROI_SIDE].copy())
+                        meta.append((x0, y0))
+                    res = YOLO.detect_mosaic(crops, grid=ROI_CELL)
+                    # 每个 slot 取最高分，映射回整帧坐标
+                    best = {}
+                    for slot, x1, y1, x2, y2, sc in res:
+                        if slot >= len(meta):
+                            continue
+                        if slot not in best or sc > best[slot][4]:
+                            best[slot] = (x1, y1, x2, y2, sc)
+                    fused = []
+                    for i, c in enumerate(cands_in):
+                        x0, y0 = meta[i]
+                        if i in best:
+                            x1, y1, x2, y2, sc = best[i]
+                            fused.append({"x": int((x0 + x1 + x0 + x2) / 2),
+                                          "y": int((y0 + y1 + y0 + y2) / 2),
+                                          "area": int(max(4.0, (x2 - x1) * (y2 - y1) / 4)),
+                                          "peak": int(sc * 255), "p": float(sc),
+                                          "roi": 1})
+                        else:                       # NPU 没认出的 PL 候选：保留但标记
+                            fused.append({"x": c["x"], "y": c["y"], "area": c["area"],
+                                          "peak": c["peak"], "p": 0.0, "roi": 0})
+                    keep = [c for c in fused if (c["roi"] and c["p"] >= ROI_CONF)
+                            or (not c["roi"] and ROI_KEEP_PL)]
+                else:
+                    keep = []
+                STATE["npu_ms"] = (time.time() - ty) * 1000.0
+            except Exception as e:                            # noqa: BLE001
+                STATE["err"] = "roi:%s" % e
 
         # NPU re-check
         if (not USE_YOLO) and INFER["npu"] and net is not None and keep:
@@ -489,7 +537,7 @@ class SrvHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    global GAMMA, INVERT, COLOR_DISP, USE_YOLO, YOLO
+    global GAMMA, INVERT, COLOR_DISP, USE_YOLO, YOLO, USE_ROI
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--npu", type=int, default=1)
@@ -501,8 +549,11 @@ def main():
     ap.add_argument("--quality", type=int, default=65, help="推流 JPEG 质量（默认 65；80 更清晰但更耗 CPU）")
     ap.add_argument("--push-every", type=int, default=1, help="每 N 帧推一次流（默认 1=每帧；2 可省一半编码开销）")
     ap.add_argument("--yolo", type=int, default=0, help="1=use yolo11n whole-image detect")
+    ap.add_argument("--mode", default="", choices=["", "yolo", "roi"],
+                    help="roi = PL 粗筛 + NPU ROI 精判（三域分工）")
     a = ap.parse_args()
-    USE_YOLO = bool(a.yolo)
+    USE_YOLO = bool(a.yolo) or (a.mode in ("yolo", "roi"))
+    USE_ROI = (a.mode == "roi")
     INFER["npu"], INFER["pmin"] = a.npu, a.pmin
     INFER["quality"], INFER["push_every"] = a.quality, max(1, a.push_every)
     GAMMA, INVERT, COLOR_DISP = a.gamma, a.invert, a.color
