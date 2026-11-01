@@ -26,6 +26,13 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cam3d_test import PL3D, NPU, unpack, crop  # noqa: E402
+try:
+    from yolo_det import Yolo
+except Exception:                          # noqa: BLE001
+    Yolo = None
+USE_YOLO = False          # 模块级：--yolo 1 时由 main() 置 True
+YOLO = None
+
 
 W, H = 640, 360
 BORDER = 24          # 上/下/左 边带不参与（压掉天花板/墙的亮带）
@@ -249,7 +256,10 @@ def infer_loop(pl, net):
 
         t0 = time.time()
         try:
-            cands, st, dt = pl.run(to_pl(gray))   # gamma/取反只影响送 PL 的那份；unpack 已应用 X_SHIFT 与 BORDER
+            if USE_YOLO:                      # yolo 模式不跑 PL（避免抢 DMA）
+                cands, st, dt = [], 0, 0.0
+            else:
+                cands, st, dt = pl.run(to_pl(gray))   # gamma/取反只影响送 PL 的那份；unpack 已应用 X_SHIFT 与 BORDER
         except Exception as e:                                     # noqa: BLE001
             STATE["err"] = "pl:%s" % e
             time.sleep(0.2)
@@ -267,8 +277,24 @@ def infer_loop(pl, net):
                 continue
             keep.append({"x": x, "y": y, "area": c["area"], "peak": c["peak"], "p": None})
 
-        # NPU 复核（只判是不是无人机）
-        if INFER["npu"] and net is not None and keep:
+        # --yolo 1: yolo11n whole-image detect replaces PL candidates
+        if USE_YOLO and YOLO is not None:
+            ty = time.time()
+            try:
+                _bs = YOLO.detect(gray)
+                keep = []
+                for b in _bs:
+                    bw = max(4.0, b[2] - b[0])
+                    bh = max(4.0, b[3] - b[1])
+                    keep.append({"x": int((b[0] + b[2]) / 2), "y": int((b[1] + b[3]) / 2),
+                                 "area": int(bw * bh / 4), "peak": int(b[4] * 255),
+                                 "p": float(b[4])})
+                STATE["npu_ms"] = (time.time() - ty) * 1000.0
+            except Exception as e:                            # noqa: BLE001
+                STATE["err"] = "yolo:%s" % e
+
+        # NPU re-check
+        if (not USE_YOLO) and INFER["npu"] and net is not None and keep:
             t1 = time.time()
             for c in keep:
                 side = max(16, int(round(2.5 * (c["area"] ** 0.5))))
@@ -354,9 +380,8 @@ def infer_loop(pl, net):
         if isinstance(STATE.get("raw"), list):
             STATE["raw_list"] = STATE["raw"]
             STATE["raw"] = len(STATE["raw_list"])
-        cv2.putText(vis, "PL %.1fms  npu %.2fms  cand %d  trk %d  %3d fps" %
-                    (STATE["pl_ms_x"], STATE["npu_ms"], len(keep), len(trks), int(STATE["fps"])),
-                    (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1, cv2.LINE_AA)
+        # HUD 不再烧进 JPEG（放大后必然糊），改由网页 canvas 矢量绘制；
+        # 数据通过 /info 的 PL_ms / npu_ms / n / fps 字段下发。
 
         # 编码交给独立线程（见 enc_loop），主循环只更新共享画面，帧率不再被 26ms 的编码拖死
         VIS["img"] = vis
@@ -464,7 +489,7 @@ class SrvHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    global GAMMA, INVERT, COLOR_DISP
+    global GAMMA, INVERT, COLOR_DISP, USE_YOLO, YOLO
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--npu", type=int, default=1)
@@ -475,7 +500,9 @@ def main():
     ap.add_argument("--color", type=int, default=1, help="1=彩色画面 0=灰度")
     ap.add_argument("--quality", type=int, default=65, help="推流 JPEG 质量（默认 65；80 更清晰但更耗 CPU）")
     ap.add_argument("--push-every", type=int, default=1, help="每 N 帧推一次流（默认 1=每帧；2 可省一半编码开销）")
+    ap.add_argument("--yolo", type=int, default=0, help="1=use yolo11n whole-image detect")
     a = ap.parse_args()
+    USE_YOLO = bool(a.yolo)
     INFER["npu"], INFER["pmin"] = a.npu, a.pmin
     INFER["quality"], INFER["push_every"] = a.quality, max(1, a.push_every)
     GAMMA, INVERT, COLOR_DISP = a.gamma, a.invert, a.color
@@ -495,6 +522,12 @@ def main():
         except Exception as e:                                     # noqa: BLE001
             print("NPU 不可用，降级为纯 PL：%s" % e, flush=True)
 
+        if USE_YOLO:
+            try:
+                YOLO = Yolo()
+                print("YOLO ok", flush=True)
+            except Exception as e:                             # noqa: BLE001
+                print("YOLO unavailable: %s" % e, flush=True)
     th = threading.Thread(target=infer_loop, args=(pl, net), daemon=True)
     threading.Thread(target=enc_loop, daemon=True).start()
     th.start()

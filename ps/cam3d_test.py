@@ -65,17 +65,25 @@ class PL3D(object):
     def run(self, gray):
         self.ch.write(0, gray.tobytes(), NPIX)
         a0 = self.reg.read(REG + R_AR) & 0xFFFFFFFF
-        self.reg.write(REG + R_CTRL, 0)
-        time.sleep(0.005)
-        self.reg.write(REG + R_CTRL, 1)
-        t0 = time.time()
         st = 0
-        while time.time() - t0 < 0.5:
-            st = self.reg.read(REG + R_STATUS) & 0xFFFFFFFF
+        t0 = time.time()
+        # 触发可能被吞（实测连续触发时约一半不启动），AR 不长就重发，最多 5 次
+        for _try in range(5):
+            self.reg.write(REG + R_CTRL, 0)
+            time.sleep(0.005)
+            self.reg.write(REG + R_CTRL, 1)
+            t1 = time.time()
+            while time.time() - t1 < 0.15:
+                st = self.reg.read(REG + R_STATUS) & 0xFFFFFFFF
+                a1 = self.reg.read(REG + R_AR) & 0xFFFFFFFF
+                # 必须等 FSM 跑完（busy=0）再读候选表，否则读到写了一半的旧表
+                if (a1 - a0) > 3000 and not (st & 1):
+                    break
+                time.sleep(0.002)
             a1 = self.reg.read(REG + R_AR) & 0xFFFFFFFF
-            if (st & 1) and a1 - a0 > 3000:
+            st = self.reg.read(REG + R_STATUS) & 0xFFFFFFFF
+            if (a1 - a0) > 3000 and not (st & 1):
                 break
-            time.sleep(0.002)
         dt = (time.time() - t0) * 1000
         words = []
         for i in range(16):
