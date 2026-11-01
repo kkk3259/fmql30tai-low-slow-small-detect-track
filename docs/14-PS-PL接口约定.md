@@ -94,7 +94,7 @@ n_cand = buf[0]
 cands = [decode(buf[1+7*k : 8+7*k]) for k in range(min(n_cand, 64))]
 ```
 
-### 2.1.2 两个必须记住的坑
+### 2.1.2 两个需要记住的坑
 
 坑 1：`0x40` 会绕回 `0x00`（6 位地址）
 
