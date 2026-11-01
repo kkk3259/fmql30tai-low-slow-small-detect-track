@@ -82,8 +82,8 @@ canvas.chart{width:100%;height:74px;display:block}
     </div>
     <div class="card">
       <h2>目标列表</h2>
-      <table><thead><tr><th>ID</th><th>X</th><th>Y</th><th>面积</th><th>峰值</th><th>速度</th></tr></thead>
-      <tbody id="tb"><tr><td colspan="6" style="color:#5a6f85">等待数据…</td></tr></tbody></table>
+      <table><thead><tr><th>ID</th><th>X</th><th>Y</th><th>面积</th><th>峰值</th><th>速度</th><th>判为无人机</th></tr></thead>
+      <tbody id="tb"><tr><td colspan="7" style="color:#5a6f85">等待数据…</td></tr></tbody></table>
     </div>
   </div>
 </div>
@@ -159,11 +159,13 @@ setInterval(function(){
     hist.push(j.PL_ms||0); if(hist.length>60) hist.shift();
     chart();
     var tb=$('tb');
-    if(!sel.length){ tb.innerHTML='<tr><td colspan="6" style="color:#5a6f85">无候选通过当前筛选</td></tr>'; return; }
+    if(!sel.length){ tb.innerHTML='<tr><td colspan="7" style="color:#5a6f85">无候选通过当前筛选</td></tr>'; return; }
     tb.innerHTML=sel.map(function(c){
       var d=Math.max(3,Math.round(2*Math.sqrt(Math.max(c.area||4,1)/Math.PI))*2);
+      var p=c.p, vt='—', vs='color:#5a6f85';
+      if(p!==null&&p!==undefined&&p>=0){ vt=(p*100).toFixed(0)+'%'; vs=(p>=0.5?'color:#3ddc84;font-weight:600':'color:#ffa726'); }
       return '<tr><td class="hi">'+c.id+'</td><td>'+c.x+'</td><td>'+c.y+'</td><td>'
-        +d+'px</td><td>'+(c.peak||0)+'</td><td>'+(c.spd||0).toFixed(0)+'</td></tr>';
+        +d+'px</td><td>'+(c.peak||0)+'</td><td>'+(c.spd||0).toFixed(0)+'</td><td style="'+vs+'">'+vt+'</td></tr>';
     }).join('');
   }).catch(function(){ $('st').textContent='连接中断'; });
 }, 400);

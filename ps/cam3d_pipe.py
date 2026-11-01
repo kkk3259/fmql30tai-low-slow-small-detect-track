@@ -32,15 +32,17 @@ BORDER = 24          # 上/下/左 边带不参与（压掉天花板/墙的亮�
 XOFF = 125           # 实测列偏移：x_true = (x_det + 125) % W
 
 STATE = {
-    "frames": 0, "fps": 0.0, "pl_ms": 0.0, "npu_ms": 0.0,
+    "frames": 0, "fps": 0.0, "PL_ms": 0.0, "npu_ms": 0.0,
     "cap_ms": 0.0, "enc_ms": 0.0,
     "ncand": 0, "ntrk": 0, "stable": 0, "err": "",
     "cands": [], "raw": [],
     # 独立版页面模板要读的键
-    "PL_ms": 0.0, "lat_ms": 0.0, "n": 0, "gamma": 1.0,
+    "lat_ms": 0.0, "n": 0, "gamma": 1.0,
     "msk": 1, "stretch": 0, "invert": 0,
 }
 JPEG = {"buf": None, "seq": 0}
+VIS = {"img": None, "seq": 0}        # 采集线程写、编码线程读（最新帧覆盖，天然丢帧）
+ENC_EVENT = None                     # 占位，保持接口兼容
 INFER = {"npu": 1, "pmin": 0, "running": True, "quality": 65, "push_every": 1}
 # 显示与前处理（2026-11-01 新增：三域版之前直接推灰度原图，观感"一片灰"）
 COLOR_DISP = 1          # 1=画面用彩色（检测仍在灰度上做）；0=灰度
@@ -252,7 +254,7 @@ def infer_loop(pl, net):
             STATE["err"] = "pl:%s" % e
             time.sleep(0.2)
             continue
-        STATE["pl_ms"] = dt
+        STATE["pl_ms_x"] = dt
 
         # 坐标修正 + 边带过滤
         keep = []
@@ -341,21 +343,45 @@ def infer_loop(pl, net):
             "spd": int(t.get("spd", 0)), "hits": int(t.get("hits", 0)),
             "vx": round(float(t.get("vx", 0.0)), 2), "vy": round(float(t.get("vy", 0.0)), 2),
         } for t in trks]
+        # ---- 独立版页面模板需要的派生字段（每帧刷新）----
+        STATE["PL_ms"] = round(STATE["pl_ms_x"], 2)
+        STATE["lat_ms"] = round(STATE["pl_ms_x"] + STATE["cap_ms"] + STATE["enc_ms"], 1)
+        STATE["n"] = len(keep)
+        STATE["gamma"] = GAMMA
+        STATE["invert"] = INVERT
+        STATE["stretch"] = 0
+        STATE["msk"] = 1
+        if isinstance(STATE.get("raw"), list):
+            STATE["raw_list"] = STATE["raw"]
+            STATE["raw"] = len(STATE["raw_list"])
         cv2.putText(vis, "PL %.1fms  npu %.2fms  cand %d  trk %d  %3d fps" %
-                    (STATE["pl_ms"], STATE["npu_ms"], len(keep), len(trks), int(STATE["fps"])),
+                    (STATE["pl_ms_x"], STATE["npu_ms"], len(keep), len(trks), int(STATE["fps"])),
                     (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1, cv2.LINE_AA)
 
-        # 隔帧推流：每 push_every 帧才编码一次。
-        # 采集与检测仍逐帧进行（STATE["fps"] 始终是采集帧率），只跳过 JPEG 编码这一步。
-        if INFER["push_every"] <= 1 or (STATE["frames"] % INFER["push_every"]) == 0:
-            _t_enc = time.time()
-            ok2, jb = cv2.imencode(".jpg", vis,
-                                   [int(cv2.IMWRITE_JPEG_QUALITY), INFER["quality"]])
-            STATE["enc_ms"] = 0.85 * STATE["enc_ms"] + 0.15 * (time.time() - _t_enc) * 1000.0
-            if ok2:
-                JPEG["buf"] = jb.tobytes()
-                JPEG["seq"] += 1
+        # 编码交给独立线程（见 enc_loop），主循环只更新共享画面，帧率不再被 26ms 的编码拖死
+        VIS["img"] = vis
+        VIS["seq"] += 1
+        if ENC_EVENT is not None:
+            ENC_EVENT.set()
     cap.release()
+
+
+def enc_loop():
+    """编码线程：只编码最新一帧，编码慢就自动丢帧，不阻塞采集与检测。"""
+    last = 0
+    while INFER["running"]:
+        if VIS["seq"] == last or VIS["img"] is None:
+            time.sleep(0.004)
+            continue
+        last = VIS["seq"]
+        img = VIS["img"]
+        _t = time.time()
+        ok, jb = cv2.imencode(".jpg", img,
+                              [int(cv2.IMWRITE_JPEG_QUALITY), INFER["quality"]])
+        STATE["enc_ms"] = 0.85 * STATE["enc_ms"] + 0.15 * (time.time() - _t) * 1000.0
+        if ok:
+            JPEG["buf"] = jb.tobytes()
+            JPEG["seq"] += 1
 
 
 # ---------------------------------------------------------------- HTTP# 网页模板放在 page_cam3d.py（独立版同款），避免多人改本文件时冲突
@@ -391,7 +417,7 @@ class SrvHandler(BaseHTTPRequestHandler):
         elif p == "/snap":
             b = JPEG["buf"] or b""
             self._send(200 if b else 503, "image/jpeg", b)
-        elif p == "/live":
+        elif p in ("/live", "/stream"):    # 页面里的 <img> 用的是 /stream，两个都认
             self.send_response(200)
             self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=f")
             self.end_headers()
@@ -404,6 +430,7 @@ class SrvHandler(BaseHTTPRequestHandler):
                                          + str(len(JPEG["buf"])).encode() + b"\r\n\r\n")
                         self.wfile.write(JPEG["buf"])
                         self.wfile.write(b"\r\n")
+                        self.wfile.flush()          # 不 flush 的话帧全卡在缓冲区，浏览器一直黑屏
                     time.sleep(0.01)
             except (BrokenPipeError, ConnectionResetError):
                 return
@@ -469,6 +496,7 @@ def main():
             print("NPU 不可用，降级为纯 PL：%s" % e, flush=True)
 
     th = threading.Thread(target=infer_loop, args=(pl, net), daemon=True)
+    threading.Thread(target=enc_loop, daemon=True).start()
     th.start()
 
     if a.frames > 0:                   # 自测模式：不启服务器
