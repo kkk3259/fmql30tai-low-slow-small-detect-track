@@ -37,6 +37,35 @@ STATE = {
 }
 JPEG = {"buf": None, "seq": 0}
 INFER = {"npu": 1, "pmin": 0, "running": True}
+# 显示与前处理（2026-11-01 新增：三域版之前直接推灰度原图，观感"一片灰"）
+COLOR_DISP = 1          # 1=画面用彩色（检测仍在灰度上做）；0=灰度
+GAMMA = 1.0             # 送 PL 前的 gamma（0.08 背景压暗、弱目标更突出；1.0=不改）
+INVERT = 0              # 1=把 255-gray 送 PL（等价 Black-Hat，找暗目标）
+_LUT = None
+
+
+def _make_lut():
+    """gamma LUT；参数变了才重建。"""
+    global _LUT
+    key = ("g", GAMMA)
+    if _LUT is None or _LUT[0] != key:
+        if GAMMA == 1.0:
+            _LUT = (key, None)
+        else:
+            _LUT = (key, np.array([min(255, int(255.0 * ((i / 255.0) ** GAMMA)))
+                                   for i in range(256)], np.uint8))
+    return _LUT[1]
+
+
+def to_pl(gray):
+    """显示用的灰度 -> 送 PL 的灰度（gamma + 取反）。坐标不变（单调变换）。"""
+    g = gray
+    lut = _make_lut()
+    if lut is not None:
+        g = cv2.LUT(g, lut)
+    if INVERT:
+        g = (255 - g).astype(np.uint8)
+    return g
 TMP = {
     "clip": "/root/npu/cls128_drone_ZG.json",
     "raw": "/root/npu/cls128_drone_ZG.raw",
@@ -177,7 +206,7 @@ def infer_loop(pl, net):
 
         t0 = time.time()
         try:
-            cands, st, dt = pl.run(gray)   # unpack 已应用 X_SHIFT 与 BORDER
+            cands, st, dt = pl.run(to_pl(gray))   # gamma/取反只影响送 PL 的那份；unpack 已应用 X_SHIFT 与 BORDER
         except Exception as e:                                     # noqa: BLE001
             STATE["err"] = "pl:%s" % e
             time.sleep(0.2)
@@ -213,7 +242,12 @@ def infer_loop(pl, net):
         trks = TRACKER.update(keep, fps_now)
 
         # 画框（走航迹，而不是原始候选）
-        vis = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        if COLOR_DISP:
+            vis = frame[60:420, :].copy()                          # 彩色：观感跟独立版一致
+            if vis.shape[:2] != (H, W):
+                vis = cv2.resize(vis, (W, H), interpolation=cv2.INTER_AREA)
+        else:
+            vis = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
         for t in trks:
             tx, ty = int(t["x"]), int(t["y"])
             s = max(6, int((t["area"] ** 0.5) * 1.6))
@@ -317,13 +351,18 @@ class SrvHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    global GAMMA, INVERT, COLOR_DISP
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--npu", type=int, default=1)
     ap.add_argument("--pmin", type=int, default=0)
     ap.add_argument("--frames", type=int, default=0, help=">0 则跑这么多帧后退出（自测用）")
+    ap.add_argument("--gamma", type=float, default=1.0, help="送 PL 前 gamma（0.08 强烈压背景；1.0 不改）")
+    ap.add_argument("--invert", type=int, default=0, help="1=找暗目标（逆光天空鸟/无人机）")
+    ap.add_argument("--color", type=int, default=1, help="1=彩色画面 0=灰度")
     a = ap.parse_args()
     INFER["npu"], INFER["pmin"] = a.npu, a.pmin
+    GAMMA, INVERT, COLOR_DISP = a.gamma, a.invert, a.color
 
     print("打开 PL3D ...", flush=True)
     pl = PL3D()
