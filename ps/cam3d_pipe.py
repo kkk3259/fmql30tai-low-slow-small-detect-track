@@ -575,8 +575,8 @@ def main():
 
         if USE_YOLO:
             try:
-                YOLO = Yolo()
-                print("YOLO ok", flush=True)
+                YOLO = Yolo(dev=pl.dev)     # 复用 PL3D 的 Device，避免抢 DMA
+                print("YOLO ok (shared dev)", flush=True)
             except Exception as e:                             # noqa: BLE001
                 print("YOLO unavailable: %s" % e, flush=True)
     th = threading.Thread(target=infer_loop, args=(pl, net), daemon=True)

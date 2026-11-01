@@ -64,7 +64,7 @@ def _merge(boxes, dist=18.0):
 
 
 class Yolo:
-    def __init__(self):
+    def __init__(self, dev=None):
         import icraft.xrt as xrt
         from icraft.xir import Network
         from icraft.zg330backend import ZG330Backend
@@ -72,7 +72,10 @@ class Yolo:
         self.xrt = xrt
         self.net = Network.CreateFromJsonFile(NPU + ".json")
         self.net.lazyLoadParamsFromFile(NPU + ".raw")
-        self.dev = xrt.Device.Open("axi://zg330aiu?npu=0x40000000&dma=0x80000000")
+        # 复用调用方已打开的 Device（与 PL3D 共用同一个），避免两个 Device
+        # 各自注册 DMA 区域、互相把对方的 write 抢走（实测报 Write failed）。
+        self.dev = dev if dev is not None else \
+            xrt.Device.Open("axi://zg330aiu?npu=0x40000000&dma=0x80000000")
         self.sess = xrt.Session.Create([ZG330Backend, HostBackend], self.net.view(0),
                                        [self.dev, xrt.HostDevice.Default()])
         self.sess.apply()
