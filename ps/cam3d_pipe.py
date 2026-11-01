@@ -33,7 +33,9 @@ XOFF = 125           # 实测列偏移：x_true = (x_det + 125) % W
 
 STATE = {
     "frames": 0, "fps": 0.0, "pl_ms": 0.0, "npu_ms": 0.0,
+    "cap_ms": 0.0, "enc_ms": 0.0,
     "ncand": 0, "ntrk": 0, "stable": 0, "err": "",
+    "cands": [],
 }
 JPEG = {"buf": None, "seq": 0}
 INFER = {"npu": 1, "pmin": 0, "running": True, "quality": 65, "push_every": 1}
@@ -230,7 +232,9 @@ def infer_loop(pl, net):
     t_last, cnt = time.time(), 0
 
     while INFER["running"]:
+        _t_cap = time.time()
         ok, frame = cap.read()
+        STATE["cap_ms"] = 0.85 * STATE["cap_ms"] + 0.15 * (time.time() - _t_cap) * 1000.0
         if not ok:
             time.sleep(0.01)
             continue
@@ -308,6 +312,14 @@ def infer_loop(pl, net):
         STATE["ncand"] = len(keep)
         STATE["ntrk"] = len(trks)
         STATE["stable"] = sum(1 for t in trks if t.get("p") is None or t["p"] >= 0.5)
+        # 航迹明细（网页右侧列表 / 资源面板用）
+        STATE["cands"] = [{
+            "id": int(t["id"]), "x": int(t["x"]), "y": int(t["y"]),
+            "area": int(t["area"]), "peak": int(t["peak"]),
+            "p": (None if t.get("p") is None else round(float(t["p"]), 3)),
+            "spd": int(t.get("spd", 0)), "hits": int(t.get("hits", 0)),
+            "vx": round(float(t.get("vx", 0.0)), 2), "vy": round(float(t.get("vy", 0.0)), 2),
+        } for t in trks]
         cv2.putText(vis, "PL %.1fms  npu %.2fms  cand %d  trk %d  %3d fps" %
                     (STATE["pl_ms"], STATE["npu_ms"], len(keep), len(trks), int(STATE["fps"])),
                     (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1, cv2.LINE_AA)
@@ -315,8 +327,10 @@ def infer_loop(pl, net):
         # 隔帧推流：每 push_every 帧才编码一次。
         # 采集与检测仍逐帧进行（STATE["fps"] 始终是采集帧率），只跳过 JPEG 编码这一步。
         if INFER["push_every"] <= 1 or (STATE["frames"] % INFER["push_every"]) == 0:
+            _t_enc = time.time()
             ok2, jb = cv2.imencode(".jpg", vis,
                                    [int(cv2.IMWRITE_JPEG_QUALITY), INFER["quality"]])
+            STATE["enc_ms"] = 0.85 * STATE["enc_ms"] + 0.15 * (time.time() - _t_enc) * 1000.0
             if ok2:
                 JPEG["buf"] = jb.tobytes()
                 JPEG["seq"] += 1
@@ -324,16 +338,149 @@ def infer_loop(pl, net):
 
 
 # ---------------------------------------------------------------- HTTP
-PAGE = b"""<!doctype html><meta charset=utf-8><title>3D realtime</title>
-<style>body{margin:0;background:#111;color:#ddd;font:13px/1.5 monospace}
-img{width:100%;max-width:1280px;display:block}#h{padding:6px 10px}</style>
-<div id=h>3D realtime &mdash; <span id=s>---</span></div>
-<img id=v src="/live"><script>
-setInterval(function(){fetch('/info').then(r=>r.json()).then(function(o){
-document.getElementById('s').textContent=
-'fps '+o.fps.toFixed(1)+' | PL '+o.pl_ms.toFixed(1)+'ms | npu '+o.npu_ms.toFixed(2)+
-'ms | cand '+o.ncand+' | trk '+o.ntrk+' | frames '+o.frames+(o.err?(' | ERR '+o.err):'');})},1000);
-</script>"""
+PAGE = """<!doctype html><html><head><meta charset=utf-8>
+<title>3D realtime console</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#111;color:#ddd;font:13px/1.5 "Microsoft YaHei",monospace}
+#top{background:#1a1a1a;padding:6px 12px;border-bottom:1px solid #333;white-space:nowrap;overflow-x:auto}
+#top b{color:#4caf50}#top .k{color:#888;margin-left:12px}#top .v{color:#4fc3f7;font-weight:bold}
+#main{display:flex;height:calc(100vh - 34px)}
+#left{flex:1;display:flex;align-items:flex-start;justify-content:center;background:#000;overflow:hidden}
+#left img{max-width:100%;max-height:100%;display:block}
+#right{width:330px;background:#161616;border-left:1px solid #333;overflow-y:auto;padding:10px}
+.sec{margin-bottom:14px}
+.sec h3{margin:0 0 6px;font-size:13px;color:#4fc3f7;font-weight:normal;border-bottom:1px solid #2a2a2a;padding-bottom:3px}
+.row{display:flex;justify-content:space-between;padding:2px 0;font-size:12px}
+.row .l{color:#999}.row .r{color:#e0e0e0;font-family:Consolas,monospace}
+.bar{height:8px;background:#222;border-radius:2px;overflow:hidden;margin-top:2px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#2e7d32,#66bb6a);width:0}
+.bar.pl i{background:linear-gradient(90deg,#1565c0,#42a5f5)}
+.bar.npu i{background:linear-gradient(90deg,#6a1b9a,#ab47bc)}
+.bar.tk i{background:linear-gradient(90deg,#ef6c00,#ffa726)}
+.bar.en i{background:linear-gradient(90deg,#c62828,#ef5350)}
+.sl{margin:6px 0 10px}
+.sl label{display:flex;justify-content:space-between;font-size:12px;color:#999;margin-bottom:2px}
+.sl label span{color:#4fc3f7;font-family:Consolas,monospace}
+.sl input{width:100%;height:18px}
+table{width:100%;border-collapse:collapse;font-size:11px;font-family:Consolas,monospace}
+th{color:#666;text-align:left;font-weight:normal;border-bottom:1px solid #2a2a2a;padding:2px 3px}
+td{padding:2px 3px;border-bottom:1px solid #1e1e1e;color:#ccc}
+tr.g td:first-child{color:#4caf50}tr.o td:first-child{color:#ff9800}
+#err{color:#ef5350;font-size:12px;padding:4px 0}
+</style></head><body>
+<div id="top">
+  <b>3D realtime</b>
+  <span class="k">fps</span><span class="v" id="v_fps">-</span>
+  <span class="k">PL</span><span class="v" id="v_pl">-</span>
+  <span class="k">NPU</span><span class="v" id="v_npu">-</span>
+  <span class="k">候选</span><span class="v" id="v_nc">-</span>
+  <span class="k">航迹</span><span class="v" id="v_nt">-</span>
+  <span class="k">通过</span><span class="v" id="v_st">-</span>
+  <span class="k">帧数</span><span class="v" id="v_fr">-</span>
+</div>
+<div id="main">
+  <div id="left"><img id="v" src="/live"></div>
+  <div id="right">
+
+    <div class="sec">
+      <h3>资源占用（单帧耗时）</h3>
+      <div class="row"><span class="l">采集</span><span class="r" id="r_cap">- ms</span></div>
+      <div class="bar"><i id="b_cap"></i></div>
+      <div class="row"><span class="l">PL 检测</span><span class="r" id="r_pl">- ms</span></div>
+      <div class="bar pl"><i id="b_pl"></i></div>
+      <div class="row"><span class="l">NPU 判别</span><span class="r" id="r_npu">- ms</span></div>
+      <div class="bar npu"><i id="b_npu"></i></div>
+      <div class="row"><span class="l">跟踪</span><span class="r" id="r_tk">- ms</span></div>
+      <div class="bar tk"><i id="b_tk"></i></div>
+      <div class="row"><span class="l">编码</span><span class="r" id="r_en">- ms</span></div>
+      <div class="bar en"><i id="b_en"></i></div>
+    </div>
+
+    <div class="sec">
+      <h3>可调参数（拖动即时生效）</h3>
+      <div class="sl">
+        <label>峰值下限 <span id="l_pmin">0</span></label>
+        <input type="range" id="s_pmin" min="0" max="255" value="0"
+               oninput="document.getElementById('l_pmin').textContent=this.value"
+               onchange="setp({pmin:this.value})">
+      </div>
+      <div class="sl">
+        <label>航迹确认帧数 <span id="l_hits">2</span></label>
+        <input type="range" id="s_hits" min="1" max="6" value="2"
+               oninput="document.getElementById('l_hits').textContent=this.value"
+               onchange="setp({min_hits:this.value})">
+      </div>
+      <div class="sl">
+        <label>推流画质 <span id="l_q">65</span></label>
+        <input type="range" id="s_q" min="30" max="95" value="65"
+               oninput="document.getElementById('l_q').textContent=this.value"
+               onchange="setp({quality:this.value})">
+      </div>
+      <div class="sl">
+        <label>Gamma <span id="l_g">1.00</span></label>
+        <input type="range" id="s_g" min="2" max="150" value="100"
+               oninput="document.getElementById('l_g').textContent=(this.value/100).toFixed(2)"
+               onchange="setp({gamma:this.value/100})">
+      </div>
+      <div class="sl">
+        <label>NPU 判别 <input type="checkbox" id="c_npu" checked onchange="setp({npu:this.checked?1:0})"></label>
+      </div>
+      <div class="sl">
+        <label>找暗目标（invert）<input type="checkbox" id="c_inv" onchange="setp({invert:this.checked?1:0})"></label>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h3>航迹列表</h3>
+      <table><thead><tr>
+        <th>#id</th><th>x</th><th>y</th><th>area</th><th>pk</th><th>p</th><th>v</th>
+      </tr></thead><tbody id="tb"></tbody></table>
+    </div>
+    <div id="err"></div>
+  </div>
+</div>
+<script>
+function setp(o){
+  var q=Object.keys(o).map(function(k){return k+'='+encodeURIComponent(o[k])}).join('&');
+  fetch('/set?'+q).then(function(r){return r.json()}).then(function(j){
+    if(j.error){document.getElementById('err').textContent='参数错误: '+j.error;}
+    else{document.getElementById('err').textContent='';}
+  }).catch(function(){});
+}
+var lastSeq=0;
+function tick(){
+  fetch('/info').then(function(r){return r.json()}).then(function(o){
+    function s(id,v){var e=document.getElementById(id); if(e) e.textContent=v;}
+    s('v_fps',(o.fps||0).toFixed(1));
+    s('v_pl',(o.pl_ms||0).toFixed(2)+'ms');
+    s('v_npu',(o.npu_ms||0).toFixed(2)+'ms');
+    s('v_nc',o.ncand||0); s('v_nt',o.ntrk||0); s('v_st',o.stable||0); s('v_fr',o.frames||0);
+    // 资源占用条：以 40ms 为满刻度
+    var SCALE=40;
+    function bar(bid,rid,val){var v=val||0;
+      document.getElementById(bid).style.width=Math.min(100,v/SCALE*100)+'%';
+      document.getElementById(rid).textContent=v.toFixed(1)+' ms';}
+    bar('b_cap','r_cap',o.cap_ms); bar('b_pl','r_pl',o.pl_ms);
+    bar('b_npu','r_npu',o.npu_ms); bar('b_tk','r_tk',o.trk_ms||0);
+    bar('b_en','r_en',o.enc_ms);
+    // 航迹列表
+    var tb=document.getElementById('tb'), h='';
+    var cs=o.cands||[];
+    for(var i=0;i<cs.length;i++){var c=cs[i];
+      var cls=(c.p===null||c.p>=0.5)?'g':'o';
+      h+='<tr class="'+cls+'"><td>#'+c.id+'</td><td>'+c.x+'</td><td>'+c.y+'</td><td>'+c.area+'</td><td>'+c.peak+'</td><td>'+
+         (c.p===null?'-':c.p.toFixed(2))+'</td><td>'+c.spd+'</td></tr>';
+    }
+    if(!h) h='<tr><td colspan=7 style="color:#666">（无航迹）</td></tr>';
+    tb.innerHTML=h;
+    if(o.err){document.getElementById('err').textContent=String(o.err).slice(0,120);}
+  }).catch(function(){});
+  setTimeout(tick,500);
+}
+tick();
+</script></body></html>"""
+
 
 
 class SrvHandler(BaseHTTPRequestHandler):
@@ -355,7 +502,7 @@ class SrvHandler(BaseHTTPRequestHandler):
     def do_GET(self):                 # noqa: N802
         p = self.path.split("?")[0]
         if p == "/":
-            self._send(200, "text/html; charset=utf-8", PAGE)
+            self._send(200, "text/html; charset=utf-8", PAGE.encode("utf-8"))
         elif p == "/info":
             self._send(200, "application/json", json.dumps(STATE).encode())
         elif p == "/snap":
@@ -378,12 +525,30 @@ class SrvHandler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 return
         elif p == "/set":
+            global GAMMA, INVERT, COLOR_DISP
             q = dict(kv.split("=", 1) for kv in self.path.split("?", 1)[1].split("&")) if "?" in self.path else {}
-            if "npu" in q:
-                INFER["npu"] = 1 if q["npu"] not in ("0", "false") else 0
-            if "pmin" in q:
-                INFER["pmin"] = int(q["pmin"])
-            self._send(200, "application/json", json.dumps({"npu": INFER["npu"], "pmin": INFER["pmin"]}).encode())
+            try:
+                if "npu" in q:
+                    INFER["npu"] = 1 if q["npu"] not in ("0", "false") else 0
+                if "pmin" in q:
+                    INFER["pmin"] = max(0, int(q["pmin"]))
+                if "min_hits" in q:
+                    TRACKER.MIN_HITS = max(1, min(10, int(q["min_hits"])))
+                if "quality" in q:
+                    INFER["quality"] = max(20, min(95, int(q["quality"])))
+                if "gamma" in q:
+                    GAMMA = max(0.02, min(2.0, float(q["gamma"])))
+                if "invert" in q:
+                    INVERT = 1 if q["invert"] not in ("0", "false") else 0
+                if "color" in q:
+                    COLOR_DISP = 1 if q["color"] not in ("0", "false") else 0
+            except (ValueError, TypeError) as e:
+                self._send(400, "application/json", json.dumps({"error": str(e)}).encode())
+                return
+            cur = {"npu": INFER["npu"], "pmin": INFER["pmin"],
+                   "min_hits": TRACKER.MIN_HITS, "quality": INFER["quality"],
+                   "gamma": GAMMA, "invert": INVERT, "color": COLOR_DISP}
+            self._send(200, "application/json", json.dumps(cur).encode())
         else:
             self._send(404, "text/plain", b"no")
 
