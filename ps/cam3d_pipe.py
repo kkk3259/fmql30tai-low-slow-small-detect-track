@@ -40,6 +40,19 @@ YOLO_EVERY = 2            # 方案 A：每 N 帧才跑一次 yolo，中间帧复
 YCNT = [0]                # yolo 帧计数
 DUAL_EVERY = 2            # 双极性第二遍（取反）每 N 帧跑一次，保证帧率
 PCNT = [0]                # PL 帧计数
+POL_PREV = [None]         # 上一帧的另一极性结果 (帧号, 候选列表)，真隔帧用
+# ---- 自适应列相位校准 ----
+SHIFT = [0]               # 当前生效的列相位偏移（加在检测出的 x 上）
+SHIFT_CONF = [0.0]        # 最近一次校准的置信度
+CAL_HIST = []             # 最近几次校准结果（多数票）
+CAL_EVERY = 120           # 每 N 帧校准一次
+CAL_ON = True
+if os.environ.get("CAL") == "0":
+    CAL_ON = False
+try:
+    import phase_cal3 as _cal
+except Exception:                                          # noqa: BLE001
+    _cal = None
 LAST_BOXES = [None]       # 上次 yolo 的框（跳过帧复用）
 ROI_CONF = 0.45           # ROI 模式下 NPU 判为无人机的阈值
 ROI_KEEP_PL = 0           # 1 = NPU 没认出的 PL 候选也保留（显示为 p=0）
@@ -57,6 +70,7 @@ STATE = {
     # 独立版页面模板要读的键
     "lat_ms": 0.0, "n": 0, "gamma": 1.0,
     "msk": 1, "stretch": 0, "invert": 0,
+    "shift": 0, "shift_conf": 0.0,
 }
 JPEG = {"buf": None, "seq": 0}
 VIS = {"img": None, "seq": 0}        # 采集线程写、编码线程读（最新帧覆盖，天然丢帧）
@@ -271,26 +285,50 @@ def infer_loop(pl, net):
                 cands, st, dt = [], 0, 0.0
             else:
                 _g = to_pl(gray)
-                cands, st, dt = pl.run(_g)        # 第 1 遍：正常极性（亮目标）
-                # 第 2 遍（取反）每 DUAL_EVERY 帧才跑一次，省时间保帧率
                 PCNT[0] += 1
-                if DUAL and (PCNT[0] % DUAL_EVERY == 0):
-                    c2, _st2, dt2 = pl.run(255 - _g)
-                    dt += dt2
-                    for c in c2:
-                        if all(abs(c["x"] - k["x"]) + abs(c["y"] - k["y"]) > 12
-                               for k in cands):
-                            cands.append(c)
+                # 真隔帧双极性：本帧只跑一种极性，另一种用上一帧的结果
+                _pol = 1 if (DUAL and PCNT[0] % DUAL_EVERY == 1) else 0
+                cur, st, dt = pl.run(255 - _g if _pol else _g)
+                for c in cur:
+                    c["pol"] = _pol
+                cands = [dict(c) for c in cur]
+                if DUAL and POL_PREV[0] is not None and PCNT[0] - POL_PREV[0][0] <= 1:
+                    for c in POL_PREV[0][1]:
+                        if c["pol"] != _pol and all(
+                                abs(c["x"] - k["x"]) + abs(c["y"] - k["y"]) > 12
+                                for k in cands):
+                            cands.append(dict(c))
+                POL_PREV[0] = (PCNT[0], [dict(c) for c in cur])
+                # 自适应列相位校准（每 CAL_EVERY 帧一次，零额外 PL/NPU 开销）
+                if CAL_ON and _cal is not None and PCNT[0] % CAL_EVERY == 0 and cands:
+                    try:
+                        _s, _cf, _v = _cal.estimate(gray, cands, W, H)
+                        SHIFT_CONF[0] = _cf
+                        if _cf >= 0.50:
+                            CAL_HIST.append(_s)
+                            if len(CAL_HIST) > 5:
+                                CAL_HIST.pop(0)
+                            if len(CAL_HIST) >= 3:
+                                _c = {}
+                                for _x in CAL_HIST:
+                                    _c[_x] = _c.get(_x, 0) + 1
+                                _best, _n = max(_c.items(), key=lambda t: t[1])
+                                if _n >= 3:
+                                    SHIFT[0] = _best
+                    except Exception:                          # noqa: BLE001
+                        pass
         except Exception as e:                                     # noqa: BLE001
             STATE["err"] = "pl:%s" % e
             time.sleep(0.2)
             continue
         STATE["pl_ms_x"] = dt
+        STATE["shift"] = SHIFT[0]
+        STATE["shift_conf"] = round(SHIFT_CONF[0], 2)
 
         # 坐标修正 + 边带过滤
         keep = []
         for c in cands:
-            x = c["x"] % W
+            x = (c["x"] + SHIFT[0]) % W
             y = c["y"]
             if y < BORDER or y > H - 8 or x < 8 or x > W - 8:
                 continue
