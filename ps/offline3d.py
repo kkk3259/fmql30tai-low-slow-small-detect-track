@@ -114,6 +114,9 @@ def cluster(cands, radius=30):
 CS_SCALE = 1.7
 
 
+_JUDGE = None
+
+
 def classify(npu, gray, cands, side=40):
     global _JUDGE
     if npu is None:

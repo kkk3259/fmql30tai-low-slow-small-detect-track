@@ -81,12 +81,16 @@ class Judge(object):
                         patch = _crop(gray, int(x), int(y), st["side"])
                     r = npu.predict(patch)
                     arr = np.ravel(np.asarray(r, dtype=np.float64))
-                    p_raw = float(arr[-1])
+                    p_raw = float(arr[0])
                 except Exception:
                     p_raw = None
 
             if p_raw is not None:
-                st["p"] = (1.0 - self.ema) * st["p"] + self.ema * p_raw
+                if not st.get("init"):
+                    st["p"] = p_raw          # 首次直接采用，不与 0.5 混合（单帧图才不会失真）
+                    st["init"] = True
+                else:
+                    st["p"] = (1.0 - self.ema) * st["p"] + self.ema * p_raw
             # 迟滞
             if st["p"] >= self.hi:
                 st["state"] = True
