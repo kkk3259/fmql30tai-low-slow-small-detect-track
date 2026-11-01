@@ -41,6 +41,8 @@ STATE = {
     "msk": 1, "stretch": 0, "invert": 0,
 }
 JPEG = {"buf": None, "seq": 0}
+VIS = {"img": None, "seq": 0}        # 采集线程写、编码线程读（最新帧覆盖，天然丢帧）
+ENC_EVENT = None                     # 占位，保持接口兼容
 INFER = {"npu": 1, "pmin": 0, "running": True, "quality": 65, "push_every": 1}
 # 显示与前处理（2026-11-01 新增：三域版之前直接推灰度原图，观感"一片灰"）
 COLOR_DISP = 1          # 1=画面用彩色（检测仍在灰度上做）；0=灰度
@@ -356,17 +358,30 @@ def infer_loop(pl, net):
                     (STATE["pl_ms_x"], STATE["npu_ms"], len(keep), len(trks), int(STATE["fps"])),
                     (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1, cv2.LINE_AA)
 
-        # 隔帧推流：每 push_every 帧才编码一次。
-        # 采集与检测仍逐帧进行（STATE["fps"] 始终是采集帧率），只跳过 JPEG 编码这一步。
-        if INFER["push_every"] <= 1 or (STATE["frames"] % INFER["push_every"]) == 0:
-            _t_enc = time.time()
-            ok2, jb = cv2.imencode(".jpg", vis,
-                                   [int(cv2.IMWRITE_JPEG_QUALITY), INFER["quality"]])
-            STATE["enc_ms"] = 0.85 * STATE["enc_ms"] + 0.15 * (time.time() - _t_enc) * 1000.0
-            if ok2:
-                JPEG["buf"] = jb.tobytes()
-                JPEG["seq"] += 1
+        # 编码交给独立线程（见 enc_loop），主循环只更新共享画面，帧率不再被 26ms 的编码拖死
+        VIS["img"] = vis
+        VIS["seq"] += 1
+        if ENC_EVENT is not None:
+            ENC_EVENT.set()
     cap.release()
+
+
+def enc_loop():
+    """编码线程：只编码最新一帧，编码慢就自动丢帧，不阻塞采集与检测。"""
+    last = 0
+    while INFER["running"]:
+        if VIS["seq"] == last or VIS["img"] is None:
+            time.sleep(0.004)
+            continue
+        last = VIS["seq"]
+        img = VIS["img"]
+        _t = time.time()
+        ok, jb = cv2.imencode(".jpg", img,
+                              [int(cv2.IMWRITE_JPEG_QUALITY), INFER["quality"]])
+        STATE["enc_ms"] = 0.85 * STATE["enc_ms"] + 0.15 * (time.time() - _t) * 1000.0
+        if ok:
+            JPEG["buf"] = jb.tobytes()
+            JPEG["seq"] += 1
 
 
 # ---------------------------------------------------------------- HTTP# 网页模板放在 page_cam3d.py（独立版同款），避免多人改本文件时冲突
@@ -481,6 +496,7 @@ def main():
             print("NPU 不可用，降级为纯 PL：%s" % e, flush=True)
 
     th = threading.Thread(target=infer_loop, args=(pl, net), daemon=True)
+    threading.Thread(target=enc_loop, daemon=True).start()
     th.start()
 
     if a.frames > 0:                   # 自测模式：不启服务器
