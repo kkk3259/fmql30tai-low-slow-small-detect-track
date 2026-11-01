@@ -33,6 +33,9 @@ except Exception:                          # noqa: BLE001
 USE_YOLO = False          # 模块级：--yolo 1 时由 main() 置 True
 YOLO = None
 USE_ROI = False           # --mode roi：PL 粗筛 + NPU ROI 精判（真正的三域分工）
+DUAL = True               # 双极性：同一检测器跑两遍（原图 + 取反），零额外资源
+if os.environ.get("DUAL") == "0":
+    DUAL = False
 YOLO_EVERY = 2            # 方案 A：每 N 帧才跑一次 yolo，中间帧复用上次结果
 YCNT = [0]                # yolo 帧计数
 LAST_BOXES = [None]       # 上次 yolo 的框（跳过帧复用）
@@ -265,7 +268,15 @@ def infer_loop(pl, net):
             if USE_YOLO and not USE_ROI:      # 纯 yolo 模式不跑 PL（避免抢 DMA）
                 cands, st, dt = [], 0, 0.0
             else:
-                cands, st, dt = pl.run(to_pl(gray))   # ROI 模式要用 PL 的候选
+                _g = to_pl(gray)
+                cands, st, dt = pl.run(_g)        # 第 1 遍：正常极性（亮目标）
+                if DUAL:                           # 第 2 遍：取反（暗目标）
+                    c2, _st2, dt2 = pl.run(255 - _g)
+                    dt += dt2
+                    for c in c2:
+                        if all(abs(c["x"] - k["x"]) + abs(c["y"] - k["y"]) > 12
+                               for k in cands):
+                            cands.append(c)
         except Exception as e:                                     # noqa: BLE001
             STATE["err"] = "pl:%s" % e
             time.sleep(0.2)
