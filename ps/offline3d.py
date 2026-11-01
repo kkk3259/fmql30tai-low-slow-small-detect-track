@@ -76,25 +76,52 @@ def detect(pl, gray, a):
 _NPU_ERR = False
 
 
+
+def _half(area):
+    return max(6.0, (max(area, 1) ** 0.5) * 1.6)
+
+
+def cluster(cands, radius=30):
+    """把相距 radius 内的候选并成一个目标：取外接包围盒，面积换成等效边长。"""
+    groups = []
+    for c in sorted(cands, key=lambda t: -t[3]):     # 峰值高的先建组，避免大块吞小块
+        for g in groups:
+            span = max(_half(c[2]), _half(g["m"][0][2]))
+            if (c[0] - g["cx"]) ** 2 + (c[1] - g["cy"]) ** 2 <= radius ** 2 and span < 70:
+                g["m"].append(c)
+                g["cx"] = sum(x[0] for x in g["m"]) / len(g["m"])
+                g["cy"] = sum(x[1] for x in g["m"]) / len(g["m"])
+                break
+        else:
+            groups.append({"m": [c], "cx": c[0], "cy": c[1]})
+    out = []
+    for g in groups:
+        ms = g["m"]
+        x0 = min(c[0] - _half(c[2]) for c in ms)
+        x1 = max(c[0] + _half(c[2]) for c in ms)
+        y0 = min(c[1] - _half(c[2]) for c in ms)
+        y1 = max(c[1] + _half(c[2]) for c in ms)
+        w, h = max(1, x1 - x0), max(1, y1 - y0)
+        area = int(round((w * h) / 4.0))          # 等效：sqrt(area)*2 = sqrt(w*h)
+        peak = max(int(c[3]) for c in ms)
+        ps = [c[4] for c in ms if len(c) > 4 and c[4] is not None]
+        p = max(ps) if ps else None
+        out.append(((x0 + x1) / 2.0, (y0 + y1) / 2.0, area, peak, p))
+    out.sort(key=lambda t: -t[3])
+    return out
+
+
+CS_SCALE = 1.7
+
+
 def classify(npu, gray, cands, side=40):
-    """给每个候选算"是不是无人机"的概率（cls128 二分类），返回带 p 的新列表。"""
+    global _JUDGE
     if npu is None:
         return cands
-    out = []
-    for c in cands:
-        x, y, area, peak = c[0], c[1], c[2], c[3]
-        try:
-            patch = C.crop(gray, int(x), int(y), side=side)
-            r = npu.predict(patch)
-            arr = np.ravel(np.asarray(r, dtype=np.float64))
-            pr = float(arr[-1])            # 取最后一维（P(无人机)）
-        except Exception as ex:
-            global _NPU_ERR
-            if not _NPU_ERR:
-                print("NPU classify error:", repr(ex)); _NPU_ERR = True
-            pr = None
-        out.append((x, y, area, peak, pr))
-    return out
+    if _JUDGE is None:
+        from npu_judge import Judge
+        _JUDGE = Judge()
+    return _JUDGE.update(npu, gray, cands)
 
 
 def draw(img, cands, extra=""):
@@ -116,6 +143,7 @@ def draw(img, cands, extra=""):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--cs", type=float, default=1.7)          # 裁剪边长 = cs * 2*sqrt(area)，1.7 时目标约占 60%
     ap.add_argument("--npu", type=int, default=1)          # 1=每个候选送 cls128 判是不是无人机
     ap.add_argument("--model", default="/root/npu/cls128_drone_ZG")
     ap.add_argument("--img", default="")
@@ -151,7 +179,7 @@ def main():
         g = cv2.cvtColor(cv2.resize(im, (W, H), interpolation=cv2.INTER_AREA),
                          cv2.COLOR_BGR2GRAY)
         pl.run(g)                      # 预热
-        cands = classify(npu, g, detect(pl, g, a))
+        cands = classify(npu, g, cluster(detect(pl, g, a)))
         print("IMG %dx%d -> cand %d" % (w0, h0, len(cands)))
         for c in cands[:12]:
             print("   x=%d y=%d area=%d peak=%d p=%s" % (c[0], c[1], c[2], c[3], c[4] if len(c) > 4 else None))
@@ -179,7 +207,7 @@ def main():
                 break
             g = cv2.cvtColor(cv2.resize(fr, (W, H), interpolation=cv2.INTER_AREA),
                              cv2.COLOR_BGR2GRAY)
-            cands = classify(npu, g, detect(pl, g, a))
+            cands = classify(npu, g, cluster(detect(pl, g, a)))
             vis = draw(fr, [(int(x * w0 / W), int(y * h0 / H), ar, pk, p)
                             for (x, y, ar, pk, p) in [(c[0], c[1], c[2], c[3], c[4] if len(c) > 4 else None) for c in cands]],
                        "f%d" % n)
