@@ -6,7 +6,7 @@
 """
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
-<title>低小慢目标检测 · 实时控制台</title>
+<title>低小慢目标检测 · 三域 PL+NPU</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#0b1119;color:#cfe0f0;font:13px/1.55 -apple-system,"Segoe UI",Consolas,monospace}
@@ -43,7 +43,7 @@ td.hi{color:#4ade80}
 canvas.chart{width:100%;height:74px;display:block}
 </style></head><body>
 <div class="top">
-  <h1>低小慢目标智能检测与跟踪系统</h1>
+  <h1>低小慢目标智能检测 · 三域（PL + NPU）</h1>
   <span class="badge" id="st">运行中</span>
   <span class="badge b2" id="bk">pl · 0x43C00000</span>
 </div>
