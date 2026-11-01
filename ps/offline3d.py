@@ -63,7 +63,7 @@ def detect(pl, gray, a):
                 continue
             if y < a.border or y > H - a.border:
                 continue
-            out.append((x, y, area, peak))
+            out.append((x, y, area, peak, None))
     # 简单去重（10px 内取 peak 大的）
     out.sort(key=lambda t: -t[3])
     keep = []
@@ -73,13 +73,42 @@ def detect(pl, gray, a):
     return keep
 
 
+_NPU_ERR = False
+
+
+def classify(npu, gray, cands, side=40):
+    """给每个候选算"是不是无人机"的概率（cls128 二分类），返回带 p 的新列表。"""
+    if npu is None:
+        return cands
+    out = []
+    for c in cands:
+        x, y, area, peak = c[0], c[1], c[2], c[3]
+        try:
+            patch = C.crop(gray, int(x), int(y), side=side)
+            r = npu.predict(patch)
+            arr = np.ravel(np.asarray(r, dtype=np.float64))
+            pr = float(arr[-1])            # 取最后一维（P(无人机)）
+        except Exception as ex:
+            global _NPU_ERR
+            if not _NPU_ERR:
+                print("NPU classify error:", repr(ex)); _NPU_ERR = True
+            pr = None
+        out.append((x, y, area, peak, pr))
+    return out
+
+
 def draw(img, cands, extra=""):
     vis = img.copy()
-    for (x, y, area, peak) in cands:
+    for c in cands:
+        x, y, area, peak = c[0], c[1], c[2], c[3]
+        pr = c[4] if len(c) > 4 else None
         r = max(6, int(round((area ** 0.5) * 1.6)))
-        cv2.rectangle(vis, (x - r, y - r), (x + r, y + r), (0, 255, 0), 2)
-        cv2.putText(vis, "%dpx p%d" % (area, peak), (x + r + 2, y - r),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
+        # 绿=NPU 判为无人机(p>=0.5)；橙=判不是；灰=没判
+        col = (0, 255, 0) if (pr is not None and pr >= 0.5) else ((0, 165, 255) if pr is not None else (160, 160, 160))
+        cv2.rectangle(vis, (x - r, y - r), (x + r, y + r), col, 2)
+        tag = "%dpx p%d" % (area, peak) + ("" if pr is None else " %.0f%%" % (pr * 100))
+        cv2.putText(vis, tag, (x + r + 2, y - r),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 1, cv2.LINE_AA)
     cv2.putText(vis, "cand %d %s" % (len(cands), extra), (10, 24),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
     return vis
@@ -87,6 +116,8 @@ def draw(img, cands, extra=""):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--npu", type=int, default=1)          # 1=每个候选送 cls128 判是不是无人机
+    ap.add_argument("--model", default="/root/npu/cls128_drone_ZG")
     ap.add_argument("--img", default="")
     ap.add_argument("--vid", default="")
     ap.add_argument("--out", default="/root/o3d.png")
@@ -102,6 +133,13 @@ def main():
 
     print("PL init ...")
     pl = C.PL3D()
+    npu = None
+    if a.npu:
+        try:
+            npu = C.NPU(a.model + ".json", a.model + ".raw", dev=pl.dev)
+            print("NPU ok -> %s" % a.model)
+        except Exception as ex:
+            print("NPU load failed:", ex)
     print("PL3D ready")
 
     if a.img:
@@ -113,12 +151,12 @@ def main():
         g = cv2.cvtColor(cv2.resize(im, (W, H), interpolation=cv2.INTER_AREA),
                          cv2.COLOR_BGR2GRAY)
         pl.run(g)                      # 预热
-        cands = detect(pl, g, a)
+        cands = classify(npu, g, detect(pl, g, a))
         print("IMG %dx%d -> cand %d" % (w0, h0, len(cands)))
         for c in cands[:12]:
-            print("   x=%d y=%d area=%d peak=%d" % c)
-        cv2.imwrite(a.out, draw(im, [(int(x * w0 / W), int(y * h0 / H), ar, pk)
-                                     for (x, y, ar, pk) in cands]))
+            print("   x=%d y=%d area=%d peak=%d p=%s" % (c[0], c[1], c[2], c[3], c[4] if len(c) > 4 else None))
+        cv2.imwrite(a.out, draw(im, [(int(x * w0 / W), int(y * h0 / H), ar, pk, p)
+                                     for (x, y, ar, pk, p) in [(c[0], c[1], c[2], c[3], c[4] if len(c) > 4 else None) for c in cands]]))
         print("OUT", a.out)
         return
 
@@ -141,9 +179,9 @@ def main():
                 break
             g = cv2.cvtColor(cv2.resize(fr, (W, H), interpolation=cv2.INTER_AREA),
                              cv2.COLOR_BGR2GRAY)
-            cands = detect(pl, g, a)
-            vis = draw(fr, [(int(x * w0 / W), int(y * h0 / H), ar, pk)
-                            for (x, y, ar, pk) in cands],
+            cands = classify(npu, g, detect(pl, g, a))
+            vis = draw(fr, [(int(x * w0 / W), int(y * h0 / H), ar, pk, p)
+                            for (x, y, ar, pk, p) in [(c[0], c[1], c[2], c[3], c[4] if len(c) > 4 else None) for c in cands]],
                        "f%d" % n)
             pout.write(cv2.resize(vis, (ow, oh)).tobytes())
             tot += len(cands)
