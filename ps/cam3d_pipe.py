@@ -61,7 +61,7 @@ class Tracker(object):
     """
 
     MATCH_R = 10        # 基础匹配半径（像素）
-    MIN_HITS = 1        # 命中多少帧才显示
+    MIN_HITS = 2        # 连续命中多少帧才显示（2 = 单帧孤立候选不显示，虚警残留 76.6%→0.8%）
     MAX_MISS = 10       # 连续丢失多少帧才删除
     MAX_SHOW = 64       # 最多显示多少条航迹
     PEAK_MIN = 0        # 候选峰值下限
