@@ -114,16 +114,21 @@ def set_outline(para, level):
 
 def ensure_style(doc, name, style_id, ascii_font, ea_font, size, bold,
                  center=False, line_spacing=None, before=0, after=0, outline=None):
-    """按 styleId 复用已有样式（中文 Word 的 Heading 3 叫「标题 31」）。"""
+    """复用已有标题样式。优先按样式名查找。
+
+    中文版 Word 的 styleId 与数字并不对应（实测 heading 1 的 styleId 是 "2"、
+    heading 2 是 "3"），若按 style_id 猜会张冠李戴：本想找 Heading 2 却匹配到
+    heading 1，导致所有小节被挂到一级标题上、目录层级全乱。
+    """
     st = None
-    for s in doc.styles:
-        if s.type == WD_STYLE_TYPE.PARAGRAPH and s.style_id == style_id:
-            st = s
-            break
-    if st is None:
-        try:
-            st = doc.styles[name]
-        except KeyError:
+    try:
+        st = doc.styles[name]
+    except KeyError:
+        for s in doc.styles:
+            if s.type == WD_STYLE_TYPE.PARAGRAPH and style_id and s.style_id == style_id:
+                st = s
+                break
+        if st is None:
             st = doc.styles.add_style(name, WD_STYLE_TYPE.PARAGRAPH)
             st.base_style = doc.styles["Normal"]
     st.font.size = Pt(size)
@@ -164,10 +169,10 @@ def ensure_style(doc, name, style_id, ascii_font, ea_font, size, bold,
 def main(src=SRC, dst=DST):
     doc = Document(src)
 
-    # ── ① 三个标题样式（按 styleId 复用，中文名也认）──
-    h1 = ensure_style(doc, "Heading 1", "1", "Times New Roman", "宋体", 16, True,
+    # ── ① 三个标题样式（按样式名复用；H3 兜底 styleId=31）──
+    h1 = ensure_style(doc, "Heading 1", None, "Times New Roman", "宋体", 16, True,
                       center=True, before=12, after=12, outline=0)
-    h2 = ensure_style(doc, "Heading 2", "2", "Times New Roman", "楷体", 14, True,
+    h2 = ensure_style(doc, "Heading 2", None, "Times New Roman", "楷体", 14, True,
                       center=False, line_spacing=1.0, before=10, after=10, outline=1)
     h3 = ensure_style(doc, "Heading 3", "31", "Times New Roman", "楷体", 12, True,
                       center=False, line_spacing=1.73, before=13, after=13, outline=2)
@@ -271,6 +276,39 @@ def main(src=SRC, dst=DST):
             set_outline(p, lvl)
         n_direct += 1
     print("  OK  标题段落直接格式：%d 个" % n_direct)
+
+    # ── ⑤b 清理：Normal / List Paragraph 不该有 outlineLvl 与粗体 ──
+    # 否则 TOC \o "1-3" 会把全部正文当作 1 级标题收进目录（曾导致 61 页膨胀到 183 页）。
+    for _nm in ("Normal", "List Paragraph"):
+        try:
+            _st = doc.styles[_nm]
+        except KeyError:
+            continue
+        _ppr = _st.element.find(qn("w:pPr"))
+        if _ppr is not None:
+            _ol = _ppr.find(qn("w:outlineLvl"))
+            if _ol is not None:
+                _ppr.remove(_ol)
+        _rpr = _st.element.find(qn("w:rPr"))
+        if _rpr is not None:
+            _b = _rpr.find(qn("w:b"))
+            if _b is not None:
+                _rpr.remove(_b)
+    # 反过来确保 Heading 1 真的有 outlineLvl=0（TOC \o 靠它收录章标题）
+    try:
+        _h1st = doc.styles["Heading 1"]
+        _p = _h1st.element.find(qn("w:pPr"))
+        if _p is None:
+            _p = OxmlElement("w:pPr")
+            _h1st.element.append(_p)
+        _o = _p.find(qn("w:outlineLvl"))
+        if _o is None:
+            _o = OxmlElement("w:outlineLvl")
+            _p.append(_o)
+        _o.set(qn("w:val"), "0")
+    except KeyError:
+        pass
+    print("  OK  清理 Normal/List Paragraph 的 outlineLvl 与粗体，并给 H1 补 outlineLvl=0")
 
     # ── ⑥ 作品名称/目录/图目录/表目录：挂到不进 TOC 的样式 ──
     try:
