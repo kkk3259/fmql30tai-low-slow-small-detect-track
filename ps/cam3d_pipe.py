@@ -32,12 +32,12 @@ BORDER = 24          # 上/下/左 边带不参与（压掉天花板/墙的亮�
 XOFF = 125           # 实测列偏移：x_true = (x_det + 125) % W
 
 STATE = {
-    "frames": 0, "fps": 0.0, "pl_ms": 0.0, "npu_ms": 0.0,
+    "frames": 0, "fps": 0.0, "PL_ms": 0.0, "npu_ms": 0.0,
     "cap_ms": 0.0, "enc_ms": 0.0,
     "ncand": 0, "ntrk": 0, "stable": 0, "err": "",
     "cands": [], "raw": [],
     # 独立版页面模板要读的键
-    "PL_ms": 0.0, "lat_ms": 0.0, "n": 0, "gamma": 1.0,
+    "lat_ms": 0.0, "n": 0, "gamma": 1.0,
     "msk": 1, "stretch": 0, "invert": 0,
 }
 JPEG = {"buf": None, "seq": 0}
@@ -252,7 +252,7 @@ def infer_loop(pl, net):
             STATE["err"] = "pl:%s" % e
             time.sleep(0.2)
             continue
-        STATE["pl_ms"] = dt
+        STATE["pl_ms_x"] = dt
 
         # 坐标修正 + 边带过滤
         keep = []
@@ -341,8 +341,19 @@ def infer_loop(pl, net):
             "spd": int(t.get("spd", 0)), "hits": int(t.get("hits", 0)),
             "vx": round(float(t.get("vx", 0.0)), 2), "vy": round(float(t.get("vy", 0.0)), 2),
         } for t in trks]
+        # ---- 独立版页面模板需要的派生字段（每帧刷新）----
+        STATE["PL_ms"] = round(STATE["pl_ms_x"], 2)
+        STATE["lat_ms"] = round(STATE["pl_ms_x"] + STATE["cap_ms"] + STATE["enc_ms"], 1)
+        STATE["n"] = len(keep)
+        STATE["gamma"] = GAMMA
+        STATE["invert"] = INVERT
+        STATE["stretch"] = 0
+        STATE["msk"] = 1
+        if isinstance(STATE.get("raw"), list):
+            STATE["raw_list"] = STATE["raw"]
+            STATE["raw"] = len(STATE["raw_list"])
         cv2.putText(vis, "PL %.1fms  npu %.2fms  cand %d  trk %d  %3d fps" %
-                    (STATE["pl_ms"], STATE["npu_ms"], len(keep), len(trks), int(STATE["fps"])),
+                    (STATE["pl_ms_x"], STATE["npu_ms"], len(keep), len(trks), int(STATE["fps"])),
                     (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1, cv2.LINE_AA)
 
         # 隔帧推流：每 push_every 帧才编码一次。
