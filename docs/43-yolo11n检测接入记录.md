@@ -1,0 +1,81 @@
+# 43 · yolo11n 无人机检测接入记录
+
+> 2026-11-01 夜。目标：把 A 提供的 `/root/npu/yolo11n_drone_trunc_ZG` 接进三域链路，替掉判别力不足的 `cls128`。
+
+## 一、最终结论
+
+**yolo11n 已接入网页链路并跑通**：`http://169.254.67.100:8080/` → **29.8 fps**，整图送 NPU（4.3 ms），框来自 yolo 而非 PL 候选表。
+
+## 二、模型输出与解码规则（实测确定）
+
+```
+forward 4.24 ms
+OUT0  shape (1, 64, 8400)  float32 logits  min -83.06  max 14.52
+OUT1  shape (1, 1, 8400)   float32 logits  min -60.50  max  1.61
+```
+
+- `8400 = 80² + 40² + 20²`，对应 stride **8 / 16 / 32**
+- `OUT1` 是 **objectness**，`OUT0` 的 64 通道 = **4 框 + 60 类**
+- 数值是 **int8 量化后的 logits**（全部是 0.8066 的整数倍），必须先 `sigmoid` 再比阈值
+
+解码（对照 `deps/modelzoo_utils/include/ai_example/postprocesses.hpp` + 受控渲染验证）：
+
+```
+score = sigmoid(out1) × max(sigmoid(out0[4:]))
+
+cx = (2·sigmoid(x) + gx − 0.5) × stride
+cy = (2·sigmoid(y) + gy − 0.5) × stride
+w  = 4 · sigmoid(w)² × stride        ← 关键：乘 stride，不是 anchor
+h  = 4 · sigmoid(h)² × stride
+```
+
+## 三、踩过的三个坑
+
+| # | 坑 | 现象 | 修法 |
+|---|---|---|---|
+| 1 | **坐标没映回原图** | 框整体偏下/偏右（t2 偏下 44 px） | 解码在 640×640 空间，必须 `×(w0/640, h0/640)` |
+| 2 | **`global` 声明漏了 `USE_YOLO`** | `--yolo 1` 传了、`YOLO ok` 也打印，但检测分支仍走 PL → 两个会话抢 DMA → `pl: Write failed` | main 的 `global` 补上 `USE_YOLO` |
+| 3 | **同一目标多框** | t4 四架出 22 个框 | NMS 后加「中心点 18 px 内合并取并集」 |
+
+## 四、六张测试图结果（CONF=0.45 / IOU=0.30 / 合并 18 px）
+
+| 图 | 内容 | 框数 | 评价 |
+|---|---|---|---|
+| t4_fourdrones | 四架剪影 | **4** | ✅ 框数 = 目标数 |
+| t2_twodrones | 飞机 + 无人机 | 2 | 无人机 ✓、飞机 0.46（可被 0.5 阈值滤掉） |
+| t3_field_drone | 草地一架 | 2 | 1 真 1 误 |
+| t5_plane_drone | 飞机 + 无人机 | 4 | 有重复 |
+| t1_birds | 天鹅群 + 飞鸟 | 3 | 主框在飞鸟上 |
+| t6_plane_bird | 飞机 + 鸟 | 2 | — |
+
+## 五、和 cls128 的对比
+
+| 场景 | cls128 | yolo11n |
+|---|---|---|
+| t4 四架 | 全中 91~100% | 全中 |
+| **t2 飞机 vs 无人机** | **判反**（飞机 90%、无人机 0%） | **无人机检出、飞机 0.46** |
+| **t1 水里 6 只天鹅** | **全判成无人机 90~98%** | **一个都不框** |
+| 实时帧率 | 22.1 fps | **29.8 fps** |
+
+## 六、接线方式
+
+```bash
+# 启用 yolo（页面框来自 NPU）
+sed -i 's|--push-every 1"|--push-every 1 --yolo 1"|' /etc/init.d/ip2d3
+/etc/init.d/ip2d3 restart
+
+# 回退到 PL + cls128
+/etc/init.d/ip2d3 stop
+cp /root/ip2d3.bak /etc/init.d/ip2d3        # 或用 /root/enable_yolo.sh 前先备份
+/etc/init.d/ip2d3 start
+```
+
+代码：
+- `ps/yolo_det.py` — 解码 + NMS + 中心合并（`Yolo.detect`）
+- `ps/cam3d_pipe.py` — `--yolo 1` 时跳过 PL、不建 cls128、框来自 yolo
+
+## 七、已知未完成
+
+1. **HUD 未补**：yolo 模式下页面顶部没有 `fps/n` 数字行
+2. **无时域平滑**：每帧独立检测，静止场景框会闪
+3. **阈值仍在调**：t4 完美，t5/t6 还有重复框
