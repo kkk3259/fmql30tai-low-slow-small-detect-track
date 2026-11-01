@@ -35,7 +35,7 @@ STATE = {
     "frames": 0, "fps": 0.0, "pl_ms": 0.0, "npu_ms": 0.0,
     "cap_ms": 0.0, "enc_ms": 0.0,
     "ncand": 0, "ntrk": 0, "stable": 0, "err": "",
-    "cands": [],
+    "cands": [], "raw": [],
 }
 JPEG = {"buf": None, "seq": 0}
 INFER = {"npu": 1, "pmin": 0, "running": True, "quality": 65, "push_every": 1}
@@ -286,6 +286,19 @@ def infer_loop(pl, net):
                 vis = cv2.resize(vis, (W, H), interpolation=cv2.INTER_AREA)
         else:
             vis = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        # ── 先画 PL 的全部候选（灰细框 + 面积标注）──
+        # 用户要求"把 PL 所有候选都显示出来"：这些是 keep 里的原始候选，
+        # 未经航迹确认，可能一闪而过。画在下面，被同位置的绿/橙航迹框覆盖。
+        for c in keep:
+            cx, cy = int(c["x"]), int(c["y"])
+            a = int(c["area"])
+            s = max(4, int((a ** 0.5) * 1.3))
+            cv2.rectangle(vis, (cx - s, cy - s), (cx + s, cy + s), (150, 150, 150), 1)
+            if a >= 4:                      # 太小的点不标字，避免糊成一团
+                cv2.putText(vis, "%d" % a, (cx + s + 1, cy + s + 2),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.28, (170, 170, 170), 1, cv2.LINE_AA)
+
+        # ── 再画确认航迹（绿=通过 / 橙=未通过）──
         for t in trks:
             tx, ty = int(t["x"]), int(t["y"])
             s = max(6, int((t["area"] ** 0.5) * 1.6))
@@ -313,6 +326,11 @@ def infer_loop(pl, net):
         STATE["ntrk"] = len(trks)
         STATE["stable"] = sum(1 for t in trks if t.get("p") is None or t["p"] >= 0.5)
         # 航迹明细（网页右侧列表 / 资源面板用）
+        # 原始候选取前 32 个（全部画框已在图上，列表只列前 32 避免刷屏）
+        STATE["raw"] = [{
+            "x": int(c["x"]), "y": int(c["y"]),
+            "area": int(c["area"]), "peak": int(c["peak"]),
+        } for c in keep[:32]]
         STATE["cands"] = [{
             "id": int(t["id"]), "x": int(t["x"]), "y": int(t["y"]),
             "area": int(t["area"]), "peak": int(t["peak"]),
@@ -346,9 +364,12 @@ body{margin:0;background:#111;color:#ddd;font:13px/1.5 "Microsoft YaHei",monospa
 #top{background:#1a1a1a;padding:6px 12px;border-bottom:1px solid #333;white-space:nowrap;overflow-x:auto}
 #top b{color:#4caf50}#top .k{color:#888;margin-left:12px}#top .v{color:#4fc3f7;font-weight:bold}
 #main{display:flex;height:calc(100vh - 34px)}
-#left{flex:1;display:flex;align-items:flex-start;justify-content:center;background:#000;overflow:hidden}
-#left img{max-width:100%;max-height:100%;display:block}
-#right{width:330px;background:#161616;border-left:1px solid #333;overflow-y:auto;padding:10px}
+#left{flex:1;display:flex;align-items:center;justify-content:center;background:#000;overflow:hidden;position:relative}
+#left img{width:100%;height:100%;object-fit:contain;display:block}
+#right{width:340px;background:#161616;border-left:1px solid #333;overflow-y:auto;padding:10px}
+#fold{position:absolute;top:8px;right:8px;z-index:99;background:rgba(40,40,40,.85);
+      border:1px solid #555;color:#ccc;padding:3px 10px;cursor:pointer;border-radius:3px;font-size:12px}
+#fold:hover{background:#444;color:#fff}
 .sec{margin-bottom:14px}
 .sec h3{margin:0 0 6px;font-size:13px;color:#4fc3f7;font-weight:normal;border-bottom:1px solid #2a2a2a;padding-bottom:3px}
 .row{display:flex;justify-content:space-between;padding:2px 0;font-size:12px}
@@ -359,11 +380,11 @@ body{margin:0;background:#111;color:#ddd;font:13px/1.5 "Microsoft YaHei",monospa
 .bar.npu i{background:linear-gradient(90deg,#6a1b9a,#ab47bc)}
 .bar.tk i{background:linear-gradient(90deg,#ef6c00,#ffa726)}
 .bar.en i{background:linear-gradient(90deg,#c62828,#ef5350)}
-.sl{margin:6px 0 10px}
+.sl{margin:7px 0 12px}
 .sl label{display:flex;justify-content:space-between;font-size:12px;color:#999;margin-bottom:2px}
 .sl label span{color:#4fc3f7;font-family:Consolas,monospace}
 .sl input{width:100%;height:18px}
-table{width:100%;border-collapse:collapse;font-size:11px;font-family:Consolas,monospace}
+table{width:100%;border-collapse:collapse;font-size:11.5px;font-family:Consolas,monospace}
 th{color:#666;text-align:left;font-weight:normal;border-bottom:1px solid #2a2a2a;padding:2px 3px}
 td{padding:2px 3px;border-bottom:1px solid #1e1e1e;color:#ccc}
 tr.g td:first-child{color:#4caf50}tr.o td:first-child{color:#ff9800}
@@ -379,6 +400,7 @@ tr.g td:first-child{color:#4caf50}tr.o td:first-child{color:#ff9800}
   <span class="k">通过</span><span class="v" id="v_st">-</span>
   <span class="k">帧数</span><span class="v" id="v_fr">-</span>
 </div>
+<button id="fold" onclick="toggleFold()">隐藏侧栏</button>
 <div id="main">
   <div id="left"><img id="v" src="/live"></div>
   <div id="right">
@@ -432,7 +454,14 @@ tr.g td:first-child{color:#4caf50}tr.o td:first-child{color:#ff9800}
     </div>
 
     <div class="sec">
-      <h3>航迹列表</h3>
+      <h3>PL 原始候选 <span id="v_nraw" style="color:#4fc3f7">0</span> 个</h3>
+      <table><thead><tr>
+        <th>x</th><th>y</th><th>area</th><th>peak</th>
+      </tr></thead><tbody id="tbraw"></tbody></table>
+    </div>
+
+    <div class="sec">
+      <h3>确认航迹</h3>
       <table><thead><tr>
         <th>#id</th><th>x</th><th>y</th><th>area</th><th>pk</th><th>p</th><th>v</th>
       </tr></thead><tbody id="tb"></tbody></table>
@@ -441,6 +470,11 @@ tr.g td:first-child{color:#4caf50}tr.o td:first-child{color:#ff9800}
   </div>
 </div>
 <script>
+function toggleFold(){
+  var r=document.getElementById('right'), b=document.getElementById('fold');
+  if(r.style.display==='none'){r.style.display='block';b.textContent='隐藏侧栏';}
+  else{r.style.display='none';b.textContent='显示侧栏';}
+}
 function setp(o){
   var q=Object.keys(o).map(function(k){return k+'='+encodeURIComponent(o[k])}).join('&');
   fetch('/set?'+q).then(function(r){return r.json()}).then(function(j){
@@ -474,6 +508,15 @@ function tick(){
     }
     if(!h) h='<tr><td colspan=7 style="color:#666">（无航迹）</td></tr>';
     tb.innerHTML=h;
+    // 原始候选列表
+    var tr2=document.getElementById('tbraw'), h2='';
+    var rc=o.raw||[];
+    document.getElementById('v_nraw').textContent=rc.length;
+    for(var k=0;k<rc.length;k++){var c=rc[k];
+      h2+='<tr><td>'+c.x+'</td><td>'+c.y+'</td><td>'+c.area+'</td><td>'+c.peak+'</td></tr>';
+    }
+    if(!h2) h2='<tr><td colspan=4 style="color:#666">（无候选）</td></tr>';
+    tr2.innerHTML=h2;
     if(o.err){document.getElementById('err').textContent=String(o.err).slice(0,120);}
   }).catch(function(){});
   setTimeout(tick,500);
