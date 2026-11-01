@@ -402,7 +402,7 @@ class SrvHandler(BaseHTTPRequestHandler):
         elif p == "/snap":
             b = JPEG["buf"] or b""
             self._send(200 if b else 503, "image/jpeg", b)
-        elif p == "/live":
+        elif p in ("/live", "/stream"):    # 页面里的 <img> 用的是 /stream，两个都认
             self.send_response(200)
             self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=f")
             self.end_headers()
@@ -415,6 +415,7 @@ class SrvHandler(BaseHTTPRequestHandler):
                                          + str(len(JPEG["buf"])).encode() + b"\r\n\r\n")
                         self.wfile.write(JPEG["buf"])
                         self.wfile.write(b"\r\n")
+                        self.wfile.flush()          # 不 flush 的话帧全卡在缓冲区，浏览器一直黑屏
                     time.sleep(0.01)
             except (BrokenPipeError, ConnectionResetError):
                 return
