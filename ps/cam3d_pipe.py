@@ -33,7 +33,7 @@ XOFF = 125           # 实测列偏移：x_true = (x_det + 125) % W
 
 STATE = {
     "frames": 0, "fps": 0.0, "pl_ms": 0.0, "npu_ms": 0.0,
-    "ncand": 0, "stable": 0, "err": "",
+    "ncand": 0, "ntrk": 0, "stable": 0, "err": "",
 }
 JPEG = {"buf": None, "seq": 0}
 INFER = {"npu": 1, "pmin": 0, "running": True}
@@ -41,6 +41,120 @@ TMP = {
     "clip": "/root/npu/cls128_drone_ZG.json",
     "raw": "/root/npu/cls128_drone_ZG.raw",
 }
+
+
+# ---------------------------------------------------------------- 航迹跟踪
+
+
+class Tracker(object):
+    """跨帧候选跟踪 + 去抖（三域链路用）。
+
+    与 cam_pipe.py 的同名类同源，另加两项：
+      · p（NPU 概率）做 EMA 平滑 —— 判别结果不再逐帧跳变
+      · trail（最近 40 帧坐标）—— 画面上能画出运动轨迹
+
+    规则：
+      * 相邻帧位置差 <= 匹配半径视为同一条 track（坐标/面积/峰值/概率都做 EMA 平滑）
+      * 连续命中 >= MIN_HITS 帧才对外显示；连续丢失 > MAX_MISS 帧才移除
+      * 匹配半径随速度放大：静止 10 px，20 px/帧 -> 60 px，上限 90 px
+    性能：候选按峰值预剪 MAX_IN，track 池上限 MAX_TRACKS，避免 O(候选×track) 爆炸。
+    """
+
+    MATCH_R = 10        # 基础匹配半径（像素）
+    MIN_HITS = 1        # 命中多少帧才显示
+    MAX_MISS = 10       # 连续丢失多少帧才删除
+    MAX_SHOW = 64       # 最多显示多少条航迹
+    PEAK_MIN = 0        # 候选峰值下限
+    MAX_IN = 16         # 每帧最多送进跟踪的候选数（按峰值排序取前 N）
+    MAX_TRACKS = 64     # track 池上限
+    TRAIL_LEN = 40      # 轨迹保留点数
+
+    def __init__(self):
+        self.tracks = []
+        self.next_id = 1
+
+    def update(self, cands, fps=25.0):
+        # 1) 候选预剪：按峰值排序，只保留前 MAX_IN 个
+        cs = sorted(cands, key=lambda c: -int(c.get("peak", 0)))[:self.MAX_IN]
+        nt = len(self.tracks)
+        used = [False] * nt
+
+        for c in cs:
+            if int(c.get("peak", 0)) < self.PEAK_MIN:
+                continue
+            cx, cy = int(c["x"]), int(c["y"])
+            best, bestd = -1, 10 ** 9
+            for i in range(nt):
+                if used[i]:
+                    continue
+                t = self.tracks[i]
+                spd = abs(t.get("vx", 0.0)) + abs(t.get("vy", 0.0))
+                pr = min(90, int(self.MATCH_R + 2.5 * spd))
+                px = t["x"] + t.get("vx", 0.0)     # 按速度预测再比距离
+                py = t["y"] + t.get("vy", 0.0)
+                d = max(abs(px - cx), abs(py - cy))
+                if d <= pr and d < bestd:
+                    best, bestd = i, d
+
+            if best >= 0:
+                t = self.tracks[best]
+                used[best] = True
+                dx, dy = cx - t["x"], cy - t["y"]
+                t["x"] = (4 * t["x"] + cx) / 5.0
+                t["y"] = (4 * t["y"] + cy) / 5.0
+                t["area"] = (4 * t["area"] + int(c.get("area", 1))) / 5.0
+                t["peak"] = (4 * t["peak"] + int(c.get("peak", 0))) / 5.0
+                cp = c.get("p")                     # 概率做 EMA（负值表示判别失败，不参与）
+                if cp is not None and cp >= 0:
+                    t["p"] = cp if t.get("p") is None else 0.7 * t["p"] + 0.3 * cp
+                t["vx"] = 0.6 * t.get("vx", 0.0) + 0.4 * dx
+                t["vy"] = 0.6 * t.get("vy", 0.0) + 0.4 * dy
+                t["hits"] += 1
+                t["miss"] = 0
+                tr = t["trail"]
+                tr.append((int(t["x"]), int(t["y"])))
+                if len(tr) > self.TRAIL_LEN:
+                    tr.pop(0)
+            else:
+                cp = c.get("p")
+                self.tracks.append({
+                    "id": self.next_id,
+                    "x": float(cx), "y": float(cy),
+                    "area": float(c.get("area", 1)), "peak": float(c.get("peak", 0)),
+                    "p": cp if (cp is not None and cp >= 0) else None,
+                    "vx": 0.0, "vy": 0.0,
+                    "hits": 1, "miss": 0,
+                    "trail": [(cx, cy)],
+                })
+                self.next_id += 1
+
+        # 2) 未匹配的 track 衰减
+        keep = []
+        for i, t in enumerate(self.tracks):
+            if i < nt and not used[i]:
+                t["miss"] += 1
+                t["vx"] *= 0.5
+                t["vy"] *= 0.5
+                if t["hits"] > 1:
+                    t["hits"] -= 1
+            if t["miss"] <= self.MAX_MISS:
+                keep.append(t)
+
+        # 3) 池上限：优先保留命中多、丢失少的
+        if len(keep) > self.MAX_TRACKS:
+            keep.sort(key=lambda t: (-t["hits"], t["miss"]))
+            keep = keep[:self.MAX_TRACKS]
+        self.tracks = keep
+
+        conf = [t for t in self.tracks if t["hits"] >= self.MIN_HITS]
+        conf.sort(key=lambda t: (-t["hits"], -t["peak"]))
+        out = conf[:self.MAX_SHOW]
+        for t in out:
+            t["spd"] = int((t.get("vx", 0.0) ** 2 + t.get("vy", 0.0) ** 2) ** 0.5 * fps)
+        return out
+
+
+TRACKER = Tracker()
 
 
 # ---------------------------------------------------------------- 推理线程
@@ -94,16 +208,27 @@ def infer_loop(pl, net):
                     c["p"] = -1.0
             STATE["npu_ms"] = (time.time() - t1) * 1000.0 / max(1, len(keep))
 
-        # 画框
+        # 跟踪：把逐个候选关联成航迹（平滑坐标 + 稳定 ID + 速度 + 轨迹线）
+        fps_now = STATE["fps"] if STATE["fps"] > 1.0 else 25.0
+        trks = TRACKER.update(keep, fps_now)
+
+        # 画框（走航迹，而不是原始候选）
         vis = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-        for c in keep:
-            s = max(6, int((c["area"] ** 0.5) * 1.6))
-            col = (0, 255, 0) if (c["p"] is None or c["p"] >= 0.5) else (0, 165, 255)
-            cv2.rectangle(vis, (c["x"] - s, c["y"] - s), (c["x"] + s, c["y"] + s), col, 2)
-            tag = "%dpx pk%d" % (c["area"], c["peak"])
-            if c["p"] is not None and c["p"] >= 0:
-                tag += " d%.2f" % c["p"]
-            cv2.putText(vis, tag, (c["x"] + s + 3, c["y"] - s + 8),
+        for t in trks:
+            tx, ty = int(t["x"]), int(t["y"])
+            s = max(6, int((t["area"] ** 0.5) * 1.6))
+            p = t.get("p")
+            col = (0, 255, 0) if (p is None or p >= 0.5) else (0, 165, 255)
+            # 轨迹线：两帧以上才画
+            tr = t.get("trail") or []
+            if len(tr) >= 2:
+                pts = np.array(tr, dtype=np.int32).reshape(-1, 1, 2)
+                cv2.polylines(vis, [pts], False, col, 1, cv2.LINE_AA)
+            cv2.rectangle(vis, (tx - s, ty - s), (tx + s, ty + s), col, 2)
+            tag = "#%d %dpx pk%d" % (t["id"], int(t["area"]), int(t["peak"]))
+            if p is not None and p >= 0:
+                tag += " d%.2f" % p
+            cv2.putText(vis, tag, (tx + s + 3, ty - s + 8),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.38, col, 1, cv2.LINE_AA)
 
         cnt += 1
@@ -113,9 +238,10 @@ def infer_loop(pl, net):
             cnt, t_last = 0, time.time()
         STATE["frames"] += 1
         STATE["ncand"] = len(keep)
-        STATE["stable"] = sum(1 for c in keep if c["p"] is None or c["p"] >= 0.5)
-        cv2.putText(vis, "PL %.1fms  npu %.2fms  cand %d  %3d fps" %
-                    (STATE["pl_ms"], STATE["npu_ms"], len(keep), int(STATE["fps"])),
+        STATE["ntrk"] = len(trks)
+        STATE["stable"] = sum(1 for t in trks if t.get("p") is None or t["p"] >= 0.5)
+        cv2.putText(vis, "PL %.1fms  npu %.2fms  cand %d  trk %d  %3d fps" %
+                    (STATE["pl_ms"], STATE["npu_ms"], len(keep), len(trks), int(STATE["fps"])),
                     (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1, cv2.LINE_AA)
 
         ok2, jb = cv2.imencode(".jpg", vis, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
@@ -134,7 +260,7 @@ img{width:100%;max-width:1280px;display:block}#h{padding:6px 10px}</style>
 setInterval(function(){fetch('/info').then(r=>r.json()).then(function(o){
 document.getElementById('s').textContent=
 'fps '+o.fps.toFixed(1)+' | PL '+o.pl_ms.toFixed(1)+'ms | npu '+o.npu_ms.toFixed(2)+
-'ms | cand '+o.ncand+' | frames '+o.frames+(o.err?(' | ERR '+o.err):'');})},1000);
+'ms | cand '+o.ncand+' | trk '+o.ntrk+' | frames '+o.frames+(o.err?(' | ERR '+o.err):'');})},1000);
 </script>"""
 
 
