@@ -113,13 +113,21 @@ function filt(cs){
   out.sort(function(a,b){return (b.peak||0)-(a.peak||0)});
   return out.slice(0,MAXN);
 }
+var LASTJ=null;
 function draw(){
   var cv=$('ov'), g=cv.getContext('2d');
   g.clearRect(0,0,cv.width,cv.height);
   var sel=filt(last);
+  // HUD 用 canvas 矢量画，放大也清晰（不再烧进 JPEG）
+  if(LASTJ){
+    g.save(); g.fillStyle='#ffe066'; g.font='12px Consolas'; g.textBaseline='top';
+    g.fillText('PL '+(LASTJ.PL_ms||0)+'ms   npu '+(LASTJ.npu_ms||0)+'ms   cand '+(LASTJ.n||0)+'   '+(LASTJ.fps||0)+' fps', 6, 5);
+    g.restore();
+  }
   g.lineWidth=2; g.font='11px Consolas'; g.textBaseline='bottom';
   sel.forEach(function(c){
     var a=Math.max(c.area||4,1), d=Math.max(3,Math.round(2*Math.sqrt(a/Math.PI))*2);
+    if(d>140) return;                              // 超大框（大目标只出边缘环）会横贯画面成一条黄线，直接跳过
     var x=c.x-d/2, y=c.y-d/2;
     var isTrk=(c.hits||0)>=2;                       // 连续 >=2 帧 = 已确认轨迹
     g.strokeStyle=isTrk?'#22e06a':'#ff5a4d';        // 绿=确认目标，红=疑似
@@ -145,9 +153,10 @@ function chart(){
   g.fillStyle='#5f7891'; g.font='10px Consolas';
   g.fillText(mx.toFixed(1)+' ms', 4, 11);
 }
+try{ $('vs').style.imageRendering='pixelated'; }catch(e){}
 setInterval(function(){
   fetch('/info').then(function(r){return r.json()}).then(function(j){
-    var cs=j.cands||[];
+    LASTJ=j; var cs=j.cands||[];
     last=cs;
     $('m_fps').textContent=(j.fps||0).toFixed(1);
     $('m_pl').textContent=(j.PL_ms||0).toFixed(2)+' ms';

@@ -354,9 +354,8 @@ def infer_loop(pl, net):
         if isinstance(STATE.get("raw"), list):
             STATE["raw_list"] = STATE["raw"]
             STATE["raw"] = len(STATE["raw_list"])
-        cv2.putText(vis, "PL %.1fms  npu %.2fms  cand %d  trk %d  %3d fps" %
-                    (STATE["pl_ms_x"], STATE["npu_ms"], len(keep), len(trks), int(STATE["fps"])),
-                    (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1, cv2.LINE_AA)
+        # HUD 不再烧进 JPEG（放大后必然糊），改由网页 canvas 矢量绘制；
+        # 数据通过 /info 的 PL_ms / npu_ms / n / fps 字段下发。
 
         # 编码交给独立线程（见 enc_loop），主循环只更新共享画面，帧率不再被 26ms 的编码拖死
         VIS["img"] = vis
