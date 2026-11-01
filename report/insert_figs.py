@@ -22,6 +22,16 @@ CONTENT_W_CM = 14.5
 EMU_PER_CM = 360000
 
 # 图号 -> (文件名, 图注)
+def _figkey(k):
+    """图编号排序：数字图按数值升序，非数字图（图 A/B/C…）排在最后。"""
+    m = re.search(r"(\d+)", k)
+    if m:
+        n = int(m.group(1))
+        suf = re.search(r"(\d+)([a-z]?)", k).group(2)
+        return (0, n, suf)
+    return (1, 0, k)
+
+
 FIGMAP = {
     "图 1": ("图1_系统整体框图.png", "图 1  系统整体框图（PS + PL + NPU 三级异构分工与数据流）"),
     "图 2": ("图2_硬件系统连接框图.png", "图 2  硬件系统连接框图（FMQL30TAI 异构平台与外围设备）"),
@@ -50,6 +60,16 @@ FIGMAP = {
               "图 16  软件多尺度的尺寸覆盖矩阵（四路降采样合并后覆盖 2~80 px，代价为单帧 10.6→13.8 ms）"),
     "图 17": ("图17_形态学方向权衡.png",
               "图 17  形态学方向与门限的召回—虚警权衡（100 张真实图 16 组配置；同召回下 Black-Hat 候选数低 3.7 倍）"),
+    "图 A": ("图A_软硬件性能对比.png",
+              "图 A  软件实现与 FPGA 实现的逐环节耗时对比（640×360 灰度、同一算法；检测 57.87→4.19 ms 即 13.8 倍，端到端 148.83→60.60 ms 即 2.5 倍）"),
+    "图 B": ("图B_三种位流对比.png",
+              "图 B  三种位流的实测对比（独立检测器 PL 13.50 ms / 28.9 fps / LUT 61.9%；三域 PL 4.19 ms / 16.6 fps / LUT 84.4%；官方 AI 位流仅作 NPU 能力参照）"),
+    "图 C": ("图C_网页控制台界面.png",
+              "图 C  网页控制台界面与功能（板端 http.server 实现，零外部依赖；实时推流 + HUD + 状态栏 + 三个 HTTP 接口）"),
+    "图 D": ("图D_NPU判别力验证.png",
+              "图 D  NPU 判别力验证（cls128 二分类 7 组独立输入：合成剪影 0.763/0.905/0.708 判正，纯噪声与白方块 0.000，天空中的鸟 0.299 属合理模糊）"),
+    "图 E": ("图E_启动时间优化.png",
+              "图 E  开机到服务就绪的耗时（312 s → 13.1 s，23.8 倍；位流加载与 IP 配置由 init.d 服务自动完成，开机失败单元 0 个）"),
 }
 
 NOPIC = {}
@@ -103,6 +123,16 @@ def text_of(p):
     return t.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
 
 
+def _anchor(key):
+    """把图 key 解析成 (num, suf, 锚点正则)。数字图用十进制，字母图（图 A/B/C）用字母。"""
+    m = re.search(r"(\d+)([a-z]?)", key)
+    if m:
+        num, suf = int(m.group(1)), m.group(2)
+        return num, suf, re.compile(r"^【图\s*%d%s：" % (num, suf))
+    letter = re.sub(r"^图\s*", "", key).strip()
+    return 0, letter, re.compile(r"^【图\s*%s：" % re.escape(letter))
+
+
 def main():
     zin = zipfile.ZipFile(SRC_DOCX)
     doc = zin.read("word/document.xml").decode("utf-8")
@@ -113,7 +143,7 @@ def main():
     sizes, used = {}, set(re.findall(r'Id="([^"]+)"', rels))
     new_rels, new_media, rid_of = [], [], {}
     n = 100
-    for i, key in enumerate(sorted(FIGMAP, key=lambda k: (int(re.search(r"(\d+)", k).group(1)), re.search(r"(\d+)([a-z]?)", k).group(2)))):
+    for i, key in enumerate(sorted(FIGMAP, key=_figkey)):
         fn, _ = FIGMAP[key]
         p = os.path.join(IMG_DIR, fn)
         if not os.path.exists(p):
@@ -137,10 +167,8 @@ def main():
     # ---- ② 收集替换任务（字符串级，不重排文档）----
     jobs = []
     P = re.compile(r"<w:p\b(?:(?!<w:p\b).)*?</w:p>", re.S)
-    for key in sorted(FIGMAP, key=lambda k: (-int(re.search(r"(\d+)", k).group(1)), re.search(r"(\d+)([a-z]?)", k).group(2))):
-        m_ = re.search(r"(\d+)([a-z]?)", key)
-        num, suf = int(m_.group(1)), m_.group(2)
-        pat = re.compile(r"^【图\s*%d%s：" % (num, suf))
+    for key in sorted(FIGMAP, key=lambda k: (-_figkey(k)[0], _figkey(k)[1], _figkey(k)[2])):
+        num, suf, pat = _anchor(key)
         for m in P.finditer(doc):
             p = m.group(0)
             if pat.match(text_of(p).strip()):
@@ -151,9 +179,7 @@ def main():
                 print("  OK 插入 %s -> %s" % (key, FIGMAP[key][1][:34]))
                 break
     for key in NOPIC:
-        m_ = re.search(r"(\d+)([a-z]?)", key)
-        num, suf = int(m_.group(1)), m_.group(2)
-        pat = re.compile(r"^【图\s*%d%s：" % (num, suf))
+        num, suf, pat = _anchor(key)
         for m in P.finditer(doc):
             p = m.group(0)
             if pat.match(text_of(p).strip()):
