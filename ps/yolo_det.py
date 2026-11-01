@@ -168,6 +168,50 @@ class Yolo:
                 keep.append(b)
         return _merge(keep)
 
+    # ---------------------------------------------------------------- ROI 拼图
+    def detect_mosaic(self, crops, grid=2, conf=None, iou=None):
+        """把若干 ROI 裁片拼成一张 640×640 网格，**一次 forward** 判全部。
+
+        参数
+          crops: list[np.ndarray]，每个元素是一块裁片（灰度或 BGR，尺寸随意）
+          grid : 网格边长（2 → 2×2 共 4 块，每块 320×320；4 → 4×4 共 16 块，每块 160×160）
+        返回: list[(slot, x1, y1, x2, y2, score)]
+              坐标是**该裁片自己的像素坐标**（调用方加回裁片左上角即可得原图坐标）
+        """
+        cell = 640 // grid
+        canvas = np.full((640, 640, 3), 114, np.uint8)
+        meta = []
+        for i, c in enumerate(crops[:grid * grid]):
+            r, col = i // grid, i % grid
+            h, w = c.shape[:2]
+            if w < 2 or h < 2:
+                continue
+            s = min(float(cell) / w, float(cell) / h)
+            nw, nh = max(2, int(w * s)), max(2, int(h * s))
+            img = cv2.resize(c, (nw, nh), interpolation=cv2.INTER_LINEAR)
+            if img.ndim == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            ox, oy = col * cell + (cell - nw) // 2, r * cell + (cell - nh) // 2
+            canvas[oy:oy + nh, ox:ox + nw] = img
+            meta.append((ox, oy, s, w, h))
+        if not meta:
+            return []
+        # 画布本身就是 640×640，detect() 里的 letterbox 退化为恒等变换
+        boxes = self.detect(canvas, conf=conf, iou=iou)
+        out = []
+        for b in boxes:
+            cx, cy = (b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0
+            k = int(cy // cell) * grid + int(cx // cell)
+            if k < 0 or k >= len(meta):
+                continue
+            ox, oy, s, w, h = meta[k]
+            x1 = min(max((b[0] - ox) / s, 0.0), w - 1.0)
+            y1 = min(max((b[1] - oy) / s, 0.0), h - 1.0)
+            x2 = min(max((b[2] - ox) / s, 0.0), w - 1.0)
+            y2 = min(max((b[3] - oy) / s, 0.0), h - 1.0)
+            out.append((k, x1, y1, x2, y2, b[4]))
+        return out
+
 
 def main():
     import sys
