@@ -33,17 +33,14 @@ XOFF = 125           # 实测列偏移：x_true = (x_det + 125) % W
 
 STATE = {
     "frames": 0, "fps": 0.0, "pl_ms": 0.0, "npu_ms": 0.0,
+    "cap_ms": 0.0, "enc_ms": 0.0,
     "ncand": 0, "ntrk": 0, "stable": 0, "err": "",
-    # —— 与独立版 cam_pipe 对齐的字段：三域页面直接复用独立版模板，靠这些键工作 ——
-    "PL_ms": 0.0, "lat_ms": 0.0, "cap_ms": 0.0, "enc_ms": 0.0,
-    "raw": 0, "n": 0, "cands": [],
-    "gamma": 1.0, "msk": 1, "stretch": 0, "invert": 0, "npu": 1,
+    "cands": [],
 }
 JPEG = {"buf": None, "seq": 0}
 INFER = {"npu": 1, "pmin": 0, "running": True, "quality": 65, "push_every": 1}
 # 显示与前处理（2026-11-01 新增：三域版之前直接推灰度原图，观感"一片灰"）
 COLOR_DISP = 1          # 1=画面用彩色（检测仍在灰度上做）；0=灰度
-BURN_BOX = 0            # 1=把框烧进 JPEG（只推流不看网页时用）；0=交给网页 canvas 画
 GAMMA = 1.0             # 送 PL 前的 gamma（0.08 压缩动态范围、弱目标更容易过 CFAR 门限；1.0=不改）
 INVERT = 0              # 1=把 255-gray 送 PL（等价 Black-Hat，找暗目标）
 _LUT = None
@@ -235,9 +232,9 @@ def infer_loop(pl, net):
     t_last, cnt = time.time(), 0
 
     while INFER["running"]:
-        _tc = time.time()
+        _t_cap = time.time()
         ok, frame = cap.read()
-        STATE["cap_ms"] = (time.time() - _tc) * 1000.0
+        STATE["cap_ms"] = 0.85 * STATE["cap_ms"] + 0.15 * (time.time() - _t_cap) * 1000.0
         if not ok:
             time.sleep(0.01)
             continue
@@ -290,8 +287,6 @@ def infer_loop(pl, net):
         else:
             vis = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
         for t in trks:
-            if not BURN_BOX:                      # 默认不烧框：网页 canvas 会画，避免双框
-                break
             tx, ty = int(t["x"]), int(t["y"])
             s = max(6, int((t["area"] ** 0.5) * 1.6))
             p = t.get("p")
@@ -317,22 +312,14 @@ def infer_loop(pl, net):
         STATE["ncand"] = len(keep)
         STATE["ntrk"] = len(trks)
         STATE["stable"] = sum(1 for t in trks if t.get("p") is None or t["p"] >= 0.5)
-        # —— 适配独立版页面：把航迹转成 cands 列表，并补齐页面要读的键 ——
-        shown = []
-        for t in trks:
-            shown.append({"id": t["id"], "x": int(t["x"]), "y": int(t["y"]),
-                          "area": int(t["area"]), "peak": int(t["peak"]),
-                          "p": (None if t.get("p") is None else round(float(t["p"]), 3)),
-                          "spd": int((t.get("vx", 0.0) ** 2 + t.get("vy", 0.0) ** 2) ** 0.5 * 25)})
-        shown.sort(key=lambda c: -c["peak"])
-        STATE["cands"] = shown[:24]
-        STATE["n"] = len(STATE["cands"])
-        STATE["raw"] = len(keep)
-        STATE["PL_ms"] = round(STATE["pl_ms"], 2)
-        STATE["lat_ms"] = round(STATE["pl_ms"] + STATE.get("cap_ms", 0.0) + STATE.get("enc_ms", 0.0), 1)
-        STATE["gamma"] = round(GAMMA, 3)
-        STATE["invert"] = 1 if INVERT else 0
-        STATE["npu"] = int(INFER["npu"])
+        # 航迹明细（网页右侧列表 / 资源面板用）
+        STATE["cands"] = [{
+            "id": int(t["id"]), "x": int(t["x"]), "y": int(t["y"]),
+            "area": int(t["area"]), "peak": int(t["peak"]),
+            "p": (None if t.get("p") is None else round(float(t["p"]), 3)),
+            "spd": int(t.get("spd", 0)), "hits": int(t.get("hits", 0)),
+            "vx": round(float(t.get("vx", 0.0)), 2), "vy": round(float(t.get("vy", 0.0)), 2),
+        } for t in trks]
         cv2.putText(vis, "PL %.1fms  npu %.2fms  cand %d  trk %d  %3d fps" %
                     (STATE["pl_ms"], STATE["npu_ms"], len(keep), len(trks), int(STATE["fps"])),
                     (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1, cv2.LINE_AA)
@@ -340,10 +327,10 @@ def infer_loop(pl, net):
         # 隔帧推流：每 push_every 帧才编码一次。
         # 采集与检测仍逐帧进行（STATE["fps"] 始终是采集帧率），只跳过 JPEG 编码这一步。
         if INFER["push_every"] <= 1 or (STATE["frames"] % INFER["push_every"]) == 0:
-            _te = time.time()
+            _t_enc = time.time()
             ok2, jb = cv2.imencode(".jpg", vis,
                                    [int(cv2.IMWRITE_JPEG_QUALITY), INFER["quality"]])
-            STATE["enc_ms"] = (time.time() - _te) * 1000.0
+            STATE["enc_ms"] = 0.85 * STATE["enc_ms"] + 0.15 * (time.time() - _t_enc) * 1000.0
             if ok2:
                 JPEG["buf"] = jb.tobytes()
                 JPEG["seq"] += 1
@@ -351,183 +338,149 @@ def infer_loop(pl, net):
 
 
 # ---------------------------------------------------------------- HTTP
-PAGE = """<!doctype html><html><head><meta charset="utf-8">
-<title>三域 低小慢目标检测 · 实时控制台</title>
+PAGE = """<!doctype html><html><head><meta charset=utf-8>
+<title>3D realtime console</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#0b1119;color:#cfe0f0;font:13px/1.55 -apple-system,"Segoe UI",Consolas,monospace}
-.top{display:flex;align-items:center;gap:12px;padding:9px 16px;background:#101a26;border-bottom:1px solid #1e2c3d}
-.top h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.3px}
-.badge{padding:2px 9px;border-radius:10px;font-size:11px;background:#12352a;color:#4ade80;border:1px solid #1c5c43}
-.badge.b2{background:#1a2433;color:#7fb3d5;border-color:#2a3d52}
-.wrap{display:flex;height:calc(100vh - 46px)}
-.video{flex:1;position:relative;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:14px}
-.vbox{position:relative;width:100%;max-width:100%;aspect-ratio:16/9;margin:auto}
-.vbox img{display:block;width:100%;height:100%;object-fit:fill}
-.vbox canvas{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
-.panel{width:360px;flex:none;background:#0e1723;border-left:1px solid #1e2c3d;overflow-y:auto;padding:12px}
-.card{background:#111c29;border:1px solid #1e2c3d;border-radius:7px;padding:11px;margin-bottom:11px}
-.card h2{font-size:11px;margin:0 0 9px;color:#6d879e;font-weight:600;letter-spacing:.6px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-.m label{display:block;font-size:10px;color:#6d879e;margin-bottom:2px}
-.m b{font-size:17px;font-family:Consolas,monospace;color:#4ade80;font-weight:600}
-.m.b b{color:#60a5fa}
-.ctl{margin-bottom:11px}
-.ctl label{display:flex;justify-content:space-between;font-size:11px;color:#8ea6bd;margin-bottom:5px}
-.ctl b{color:#facc15;font-family:Consolas,monospace}
-input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:#22303f;border-radius:2px;outline:none}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#38bdf8;cursor:pointer}
-.sw{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#8ea6bd;margin-bottom:6px;cursor:pointer}
-.btnrow{display:flex;gap:7px;margin-top:9px}
-button{flex:1;padding:7px;background:#1a2836;color:#cfe0f0;border:1px solid #2a3d52;border-radius:5px;cursor:pointer;font-size:11.5px}
-button:hover{background:#22344a}
-button.rec{background:#3a1520;border-color:#6b2130;color:#f87171}
+body{margin:0;background:#111;color:#ddd;font:13px/1.5 "Microsoft YaHei",monospace}
+#top{background:#1a1a1a;padding:6px 12px;border-bottom:1px solid #333;white-space:nowrap;overflow-x:auto}
+#top b{color:#4caf50}#top .k{color:#888;margin-left:12px}#top .v{color:#4fc3f7;font-weight:bold}
+#main{display:flex;height:calc(100vh - 34px)}
+#left{flex:1;display:flex;align-items:flex-start;justify-content:center;background:#000;overflow:hidden}
+#left img{max-width:100%;max-height:100%;display:block}
+#right{width:330px;background:#161616;border-left:1px solid #333;overflow-y:auto;padding:10px}
+.sec{margin-bottom:14px}
+.sec h3{margin:0 0 6px;font-size:13px;color:#4fc3f7;font-weight:normal;border-bottom:1px solid #2a2a2a;padding-bottom:3px}
+.row{display:flex;justify-content:space-between;padding:2px 0;font-size:12px}
+.row .l{color:#999}.row .r{color:#e0e0e0;font-family:Consolas,monospace}
+.bar{height:8px;background:#222;border-radius:2px;overflow:hidden;margin-top:2px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#2e7d32,#66bb6a);width:0}
+.bar.pl i{background:linear-gradient(90deg,#1565c0,#42a5f5)}
+.bar.npu i{background:linear-gradient(90deg,#6a1b9a,#ab47bc)}
+.bar.tk i{background:linear-gradient(90deg,#ef6c00,#ffa726)}
+.bar.en i{background:linear-gradient(90deg,#c62828,#ef5350)}
+.sl{margin:6px 0 10px}
+.sl label{display:flex;justify-content:space-between;font-size:12px;color:#999;margin-bottom:2px}
+.sl label span{color:#4fc3f7;font-family:Consolas,monospace}
+.sl input{width:100%;height:18px}
 table{width:100%;border-collapse:collapse;font-size:11px;font-family:Consolas,monospace}
-th{color:#5f7891;text-align:left;font-weight:500;padding:3px 4px;border-bottom:1px solid #1e2c3d;font-size:10px}
-td{padding:2.5px 4px;border-bottom:1px solid #16212e;color:#9fb6cb}
-td.hi{color:#4ade80}
-canvas.chart{width:100%;height:74px;display:block}
+th{color:#666;text-align:left;font-weight:normal;border-bottom:1px solid #2a2a2a;padding:2px 3px}
+td{padding:2px 3px;border-bottom:1px solid #1e1e1e;color:#ccc}
+tr.g td:first-child{color:#4caf50}tr.o td:first-child{color:#ff9800}
+#err{color:#ef5350;font-size:12px;padding:4px 0}
 </style></head><body>
-<div class="top">
-  <h1>低小慢目标智能检测与跟踪系统</h1>
-  <span class="badge" id="st">运行中</span>
-  <span class="badge b2" id="bk">pl · 0x43C00000</span>
+<div id="top">
+  <b>3D realtime</b>
+  <span class="k">fps</span><span class="v" id="v_fps">-</span>
+  <span class="k">PL</span><span class="v" id="v_pl">-</span>
+  <span class="k">NPU</span><span class="v" id="v_npu">-</span>
+  <span class="k">候选</span><span class="v" id="v_nc">-</span>
+  <span class="k">航迹</span><span class="v" id="v_nt">-</span>
+  <span class="k">通过</span><span class="v" id="v_st">-</span>
+  <span class="k">帧数</span><span class="v" id="v_fr">-</span>
 </div>
-<div class="wrap">
-  <div class="video"><div class="vbox" id="vbox">
-    <img id="vs" src="/stream">
-    <canvas id="ov" width="640" height="360"></canvas>
-  </div></div>
-  <div class="panel">
-    <div class="card">
-      <h2>实时指标</h2>
-      <div class="grid2">
-        <div class="m"><label>端到端帧率</label><b id="m_fps">--</b></div>
-        <div class="m b"><label>PL 单帧</label><b id="m_pl">--</b></div>
-        <div class="m"><label>采集耗时</label><b id="m_cap">--</b></div>
-        <div class="m b"><label>编码耗时</label><b id="m_enc">--</b></div>
-        <div class="m"><label>候选 / 稳定</label><b id="m_cand">--</b></div>
-        <div class="m b"><label>端到端时延</label><b id="m_lat">--</b></div>
+<div id="main">
+  <div id="left"><img id="v" src="/live"></div>
+  <div id="right">
+
+    <div class="sec">
+      <h3>资源占用（单帧耗时）</h3>
+      <div class="row"><span class="l">采集</span><span class="r" id="r_cap">- ms</span></div>
+      <div class="bar"><i id="b_cap"></i></div>
+      <div class="row"><span class="l">PL 检测</span><span class="r" id="r_pl">- ms</span></div>
+      <div class="bar pl"><i id="b_pl"></i></div>
+      <div class="row"><span class="l">NPU 判别</span><span class="r" id="r_npu">- ms</span></div>
+      <div class="bar npu"><i id="b_npu"></i></div>
+      <div class="row"><span class="l">跟踪</span><span class="r" id="r_tk">- ms</span></div>
+      <div class="bar tk"><i id="b_tk"></i></div>
+      <div class="row"><span class="l">编码</span><span class="r" id="r_en">- ms</span></div>
+      <div class="bar en"><i id="b_en"></i></div>
+    </div>
+
+    <div class="sec">
+      <h3>可调参数（拖动即时生效）</h3>
+      <div class="sl">
+        <label>峰值下限 <span id="l_pmin">0</span></label>
+        <input type="range" id="s_pmin" min="0" max="255" value="0"
+               oninput="document.getElementById('l_pmin').textContent=this.value"
+               onchange="setp({pmin:this.value})">
+      </div>
+      <div class="sl">
+        <label>航迹确认帧数 <span id="l_hits">2</span></label>
+        <input type="range" id="s_hits" min="1" max="6" value="2"
+               oninput="document.getElementById('l_hits').textContent=this.value"
+               onchange="setp({min_hits:this.value})">
+      </div>
+      <div class="sl">
+        <label>推流画质 <span id="l_q">65</span></label>
+        <input type="range" id="s_q" min="30" max="95" value="65"
+               oninput="document.getElementById('l_q').textContent=this.value"
+               onchange="setp({quality:this.value})">
+      </div>
+      <div class="sl">
+        <label>Gamma <span id="l_g">1.00</span></label>
+        <input type="range" id="s_g" min="2" max="150" value="100"
+               oninput="document.getElementById('l_g').textContent=(this.value/100).toFixed(2)"
+               onchange="setp({gamma:this.value/100})">
+      </div>
+      <div class="sl">
+        <label>NPU 判别 <input type="checkbox" id="c_npu" checked onchange="setp({npu:this.checked?1:0})"></label>
+      </div>
+      <div class="sl">
+        <label>找暗目标（invert）<input type="checkbox" id="c_inv" onchange="setp({invert:this.checked?1:0})"></label>
       </div>
     </div>
-    <div class="card">
-      <h2>检测参数（三档）</h2>
-      <div class="ctl"><label>灵敏度 <b id="l_sens">中</b></label>
-        <input type="range" id="s_sens" min="0" max="2" step="1" value="1"></div>
-      <div class="ctl"><label>目标大小 <b id="l_size">自动</b></label>
-        <input type="range" id="s_size" min="0" max="2" step="1" value="1"></div>
-      <div class="ctl"><label>场景 <b id="l_scene">室内亮目标</b></label>
-        <input type="range" id="s_scene" min="0" max="2" step="1" value="0"></div>
-      <div class="btnrow"><button id="b_snap">截图保存</button></div>
-      <div style="font-size:10.5px;color:#5a6f85;margin-top:8px;line-height:1.5">
-        <b>绿框</b> = 已确认目标（连续 ≥2 帧都出现，稳定）　<b>红框</b> = 疑似目标（只出现 1 帧，可能是噪声，会自己消失）<br>滑条只影响网页显示，不改变板子里的 CFAR 门限。</div>
+
+    <div class="sec">
+      <h3>航迹列表</h3>
+      <table><thead><tr>
+        <th>#id</th><th>x</th><th>y</th><th>area</th><th>pk</th><th>p</th><th>v</th>
+      </tr></thead><tbody id="tb"></tbody></table>
     </div>
-    <div class="card">
-      <h2>耗时曲线（近 60 帧）</h2>
-      <canvas class="chart" id="chart" width="660" height="148"></canvas>
-    </div>
-    <div class="card">
-      <h2>目标列表</h2>
-      <table><thead><tr><th>ID</th><th>X</th><th>Y</th><th>面积</th><th>峰值</th><th>速度</th></tr></thead>
-      <tbody id="tb"><tr><td colspan="6" style="color:#5a6f85">等待数据…</td></tr></tbody></table>
-    </div>
+    <div id="err"></div>
   </div>
 </div>
 <script>
-var PK=0, MAXN=64, MINH=0, ALL=false, TRAIL=true;
-var hist=[];
-function $(id){var e=document.getElementById(id);if(e)return e;return {value:'0',checked:false,textContent:'',innerHTML:'',style:{},addEventListener:function(){},appendChild:function(){}};}
-['s_pk','s_n','s_h'].forEach(function(id){
-  $(id).addEventListener('input',function(){
-    PK=+0; MAXN=+64; MINH=+0;
-          draw();
-  });
-});
-$('c_all').addEventListener('change',function(){ALL=this.checked;draw()});
-$('c_tr').addEventListener('change',function(){TRAIL=this.checked;draw()});
-$('c_inv').addEventListener('change',function(){
-  fetch('/set?invert='+(this.checked?1:0)).catch(function(){});
-});
-$('b_snap').addEventListener('click',function(){
-  var a=document.createElement('a'); a.href='/snap?q=95';
-  a.download='snap_'+Date.now()+'.jpg'; a.click();
-});
-var last=[];
-function filt(cs){
-  var out=cs.filter(function(c){ return ALL || (c.peak||0)>=PK; });
-  out=out.filter(function(c){ return (c.hits||0)>=MINH; });
-  out.sort(function(a,b){return (b.peak||0)-(a.peak||0)});
-  return out.slice(0,MAXN);
+function setp(o){
+  var q=Object.keys(o).map(function(k){return k+'='+encodeURIComponent(o[k])}).join('&');
+  fetch('/set?'+q).then(function(r){return r.json()}).then(function(j){
+    if(j.error){document.getElementById('err').textContent='参数错误: '+j.error;}
+    else{document.getElementById('err').textContent='';}
+  }).catch(function(){});
 }
-function draw(){
-  var cv=$('ov'), g=cv.getContext('2d');
-  g.clearRect(0,0,cv.width,cv.height);
-  var sel=filt(last);
-  g.lineWidth=2; g.font='11px Consolas'; g.textBaseline='bottom';
-  sel.forEach(function(c){
-    var a=Math.max(c.area||4,1), d=Math.max(3,Math.round(2*Math.sqrt(a/Math.PI))*2);
-    var x=c.x-d/2, y=c.y-d/2;
-    var isTrk=(c.hits||0)>=2;                       // 连续 >=2 帧 = 已确认轨迹
-    g.strokeStyle=isTrk?'#22e06a':'#ff5a4d';        // 绿=确认目标，红=疑似
-    g.strokeRect(x,y,d,d);
-    if(isTrk){
-      g.fillStyle='#22e06a';
-      g.fillText(Math.round(d)+'px', x, y-2);       // 只标尺寸，不标 ID（避免数字刷屏）
+var lastSeq=0;
+function tick(){
+  fetch('/info').then(function(r){return r.json()}).then(function(o){
+    function s(id,v){var e=document.getElementById(id); if(e) e.textContent=v;}
+    s('v_fps',(o.fps||0).toFixed(1));
+    s('v_pl',(o.pl_ms||0).toFixed(2)+'ms');
+    s('v_npu',(o.npu_ms||0).toFixed(2)+'ms');
+    s('v_nc',o.ncand||0); s('v_nt',o.ntrk||0); s('v_st',o.stable||0); s('v_fr',o.frames||0);
+    // 资源占用条：以 40ms 为满刻度
+    var SCALE=40;
+    function bar(bid,rid,val){var v=val||0;
+      document.getElementById(bid).style.width=Math.min(100,v/SCALE*100)+'%';
+      document.getElementById(rid).textContent=v.toFixed(1)+' ms';}
+    bar('b_cap','r_cap',o.cap_ms); bar('b_pl','r_pl',o.pl_ms);
+    bar('b_npu','r_npu',o.npu_ms); bar('b_tk','r_tk',o.trk_ms||0);
+    bar('b_en','r_en',o.enc_ms);
+    // 航迹列表
+    var tb=document.getElementById('tb'), h='';
+    var cs=o.cands||[];
+    for(var i=0;i<cs.length;i++){var c=cs[i];
+      var cls=(c.p===null||c.p>=0.5)?'g':'o';
+      h+='<tr class="'+cls+'"><td>#'+c.id+'</td><td>'+c.x+'</td><td>'+c.y+'</td><td>'+c.area+'</td><td>'+c.peak+'</td><td>'+
+         (c.p===null?'-':c.p.toFixed(2))+'</td><td>'+c.spd+'</td></tr>';
     }
-  });
-  return sel;
+    if(!h) h='<tr><td colspan=7 style="color:#666">（无航迹）</td></tr>';
+    tb.innerHTML=h;
+    if(o.err){document.getElementById('err').textContent=String(o.err).slice(0,120);}
+  }).catch(function(){});
+  setTimeout(tick,500);
 }
-function chart(){
-  var cv=$('chart'), g=cv.getContext('2d');
-  var w=cv.width,h=cv.height; g.clearRect(0,0,w,h);
-  if(hist.length<2) return;
-  var mx=Math.max.apply(null,hist)*1.15||1;
-  g.strokeStyle='#38bdf8'; g.lineWidth=1.5; g.beginPath();
-  hist.forEach(function(v,i){
-    var x=i/(hist.length-1)*w, y=h-4-(v/mx)*(h-12);
-    i?g.lineTo(x,y):g.moveTo(x,y);
-  });
-  g.stroke();
-  g.fillStyle='#5f7891'; g.font='10px Consolas';
-  g.fillText(mx.toFixed(1)+' ms', 4, 11);
-}
-setInterval(function(){
-  fetch('/info').then(function(r){return r.json()}).then(function(j){
-    var cs=j.cands||[];
-    last=cs;
-    $('m_fps').textContent=(j.fps||0).toFixed(1);
-    $('m_pl').textContent=(j.PL_ms||0).toFixed(2)+' ms';
-    $('m_cap').textContent=(j.cap_ms||0).toFixed(1)+' ms';
-    $('m_enc').textContent=(j.enc_ms||0).toFixed(1)+' ms';
-    $('m_cand').textContent=(j.raw||cs.length)+' / '+(j.stable||cs.length);
-    $('m_lat').textContent=(j.lat_ms||0).toFixed(0)+' ms';
-    var sel=draw();
-    hist.push(j.PL_ms||0); if(hist.length>60) hist.shift();
-    chart();
-    var tb=$('tb');
-    if(!sel.length){ tb.innerHTML='<tr><td colspan="6" style="color:#5a6f85">无候选通过当前筛选</td></tr>'; return; }
-    tb.innerHTML=sel.map(function(c){
-      var d=Math.max(3,Math.round(2*Math.sqrt(Math.max(c.area||4,1)/Math.PI))*2);
-      return '<tr><td class="hi">'+c.id+'</td><td>'+c.x+'</td><td>'+c.y+'</td><td>'
-        +d+'px</td><td>'+(c.peak||0)+'</td><td>'+(c.spd||0).toFixed(0)+'</td></tr>';
-    }).join('');
-  }).catch(function(){ $('st').textContent='连接中断'; });
-}, 400);
-</script>
+tick();
+</script></body></html>"""
 
-<script>
-(function(){
-  var N1=["保守","中","激进"], N2=["只看小目标","自动","兼顾大目标"], N3=["室内亮目标","逆光暗目标","混合(拉伸)"];
-  var a=document.getElementById('s_sens'), b=document.getElementById('s_size'), c=document.getElementById('s_scene');
-  function lab(){ document.getElementById('l_sens').textContent=N1[+a.value];
-                   document.getElementById('l_size').textContent=N2[+b.value];
-                   document.getElementById('l_scene').textContent=N3[+c.value]; }
-  function push(){ lab(); fetch('/set?sens='+a.value+'&size='+b.value+'&scene='+c.value).catch(function(){}); }
-  [a,b,c].forEach(function(e){ e.addEventListener('input',lab); e.addEventListener('change',push); });
-  lab();
-})();
-</script>
-</body></html>"""
 
 
 class SrvHandler(BaseHTTPRequestHandler):
@@ -572,29 +525,30 @@ class SrvHandler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 return
         elif p == "/set":
+            global GAMMA, INVERT, COLOR_DISP
             q = dict(kv.split("=", 1) for kv in self.path.split("?", 1)[1].split("&")) if "?" in self.path else {}
-            globals_ = globals()
-            if "npu" in q:
-                INFER["npu"] = 1 if q["npu"] not in ("0", "false") else 0
-            if "pmin" in q:
-                INFER["pmin"] = int(q["pmin"])
-            # 三档滑条（与独立版同语义）：灵敏度 / 目标大小 / 场景
-            if "sens" in q:
-                globals_["GAMMA"] = (0.12, 0.08, 0.05)[max(0, min(2, int(q["sens"])))]
-            if "gamma" in q:
-                globals_["GAMMA"] = max(0.03, min(1.0, float(q["gamma"])))
-            if "size" in q:
-                INFER["size"] = max(0, min(2, int(q["size"])))       # 三域无双尺度，仅记录
-            if "scene" in q:
-                _sc = max(0, min(2, int(q["scene"])))
-                globals_["INVERT"] = 1 if _sc in (1, 2) else 0          # 1=逆光 2=混合：找暗目标
-            if "invert" in q:
-                globals_["INVERT"] = 1 if q["invert"] not in ("0", "false") else 0
-            body = json.dumps({"npu": INFER["npu"], "pmin": INFER["pmin"],
-                               "gamma": round(globals_["GAMMA"], 3),
-                               "invert": globals_["INVERT"],
-                               "size": INFER.get("size", 1)}).encode()
-            self._send(200, "application/json", body)
+            try:
+                if "npu" in q:
+                    INFER["npu"] = 1 if q["npu"] not in ("0", "false") else 0
+                if "pmin" in q:
+                    INFER["pmin"] = max(0, int(q["pmin"]))
+                if "min_hits" in q:
+                    TRACKER.MIN_HITS = max(1, min(10, int(q["min_hits"])))
+                if "quality" in q:
+                    INFER["quality"] = max(20, min(95, int(q["quality"])))
+                if "gamma" in q:
+                    GAMMA = max(0.02, min(2.0, float(q["gamma"])))
+                if "invert" in q:
+                    INVERT = 1 if q["invert"] not in ("0", "false") else 0
+                if "color" in q:
+                    COLOR_DISP = 1 if q["color"] not in ("0", "false") else 0
+            except (ValueError, TypeError) as e:
+                self._send(400, "application/json", json.dumps({"error": str(e)}).encode())
+                return
+            cur = {"npu": INFER["npu"], "pmin": INFER["pmin"],
+                   "min_hits": TRACKER.MIN_HITS, "quality": INFER["quality"],
+                   "gamma": GAMMA, "invert": INVERT, "color": COLOR_DISP}
+            self._send(200, "application/json", json.dumps(cur).encode())
         else:
             self._send(404, "text/plain", b"no")
 
