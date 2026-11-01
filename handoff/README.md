@@ -1,6 +1,6 @@
 # handoff/ —— 交给 PS 侧（S）的硬件交付物
 
-本目录存放 **PL 侧产出的、PS 侧打 BOOT.bin 需要的二进制**。这些是构建产物，不进源码流程，但为了不让 S 反复找文件，直接放进仓库。
+本目录存放 PL 侧产出的、PS 侧打 BOOT.bin 需要的二进制。这些是构建产物，不进源码流程，但为了不让 S 反复找文件，直接放进仓库。
 
 ## 当前文件
 
@@ -32,7 +32,7 @@
 
 > ⚠️ 基址为什么是 `0x83C00000` 而不是文档早期写的 `0xA0000000`：
 > `build_bd.tcl` 第 10 步原来用 `get_bd_addr_segs -of_objects [get_bd_cells ip2_0]` 找寄存器段，但 slave cell 本身不拥有地址段（段挂在 PS 的地址空间里），遍历是空集，`set_property offset` 静默不生效，最后被 `assign_bd_address` 自动分到 `0x83C00000`。
-> 现在脚本已改为从 `/processing_system7_0/Data` 地址空间里按名字匹配，并**显式钉死 `0x83C00000`**，与这份 HDF 一致。`ps/pl_link.py`、`ps/pl_selftest.py`、`docs/14`、`docs/20` 都已同步成 `0x83C00000`。
+> 现在脚本已改为从 `/processing_system7_0/Data` 地址空间里按名字匹配，并显式钉死 `0x83C00000`，与这份 HDF 一致。`ps/pl_link.py`、`ps/pl_selftest.py`、`docs/14`、`docs/20` 都已同步成 `0x83C00000`。
 
 ## 重打 BOOT.bin 需要的顺序（S 参考）
 
@@ -43,7 +43,7 @@ FSBL（用本 HDF 重新生成！旧的 FSBL 不认识我们的 PS 配置）
   → u-boot.elf
 ```
 
-**旧的 BOOT.bin 里的 FSBL 一定不能复用**：它跑的是出厂 `ps7_init`，里面只有 GP0 + HP0~3，没有我们的 GP1，所以 PS 访问 `0x83C00000` 必然 Bus error。
+旧的 BOOT.bin 里的 FSBL 一定不能复用：它跑的是出厂 `ps7_init`，里面只有 GP0 + HP0~3，没有我们的 GP1，所以 PS 访问 `0x83C00000` 必然 Bus error。
 
 ## 怎么重新生成这份 HDF（P 自己看）
 
@@ -55,7 +55,7 @@ source build_bd.tcl
 # 再：File → Export → Export Hardware（勾 Include bitstream）
 ```
 
-⚠️ **不要再点 "Run Implementation"**：它会清空 `impl_1` 输出、把已生成的 `.bit` 删掉，然后 Export Hardware 就报 "位流不存在"。
+⚠️ 不要再点 "Run Implementation"：它会清空 `impl_1` 输出、把已生成的 `.bit` 删掉，然后 Export Hardware 就报 "位流不存在"。
 只需要 `launch_runs impl_1 -to_step write_bitstream`（3~5 min，不重跑布局布线）。
 
 如果 Export Hardware 报 `The hardware handoff file (.sysdef) does not exist`，手动补：

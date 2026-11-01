@@ -45,24 +45,24 @@ source D:/firstharness/synth/board_ip2.tcl elapsed_time 2219.10 seconds
 | **CU48E1（DSP，即乘法器）** | **5 / 400** | 1 % |
 | 块 RAM（RAMH18/36） | 0 / 530+265 | 0 % |
 
-值得单独说明的一点：CFAR 改成"真实标准差 + 不开方"之后用了 5 个乘法器（8×8 两处平方、8×11、11×26、18×18），**Procise 把它们全部推断进 CU48E1（DSP）**，LUT 几乎没涨。所以改 std 之前 74.0% → 改之后 **71.0%**（std 版反而更省：少一条 `mbuf` 和一套裁剪面积）。
+值得单独说明的一点：CFAR 改成"真实标准差 + 不开方"之后用了 5 个乘法器（8×8 两处平方、8×11、11×26、18×18），Procise 把它们全部推断进 CU48E1（DSP），LUT 几乎没涨。所以改 std 之前 74.0% → 改之后 **71.0%**（std 版反而更省：少一条 `mbuf` 和一套裁剪面积）。
 
 ---
 
 ## 3. 根因：不是"总面积不够"，是 LUTRAM 只能落在 SLICEM 列
 
-- 本设计把几乎所有存储都推成了 **分布式 RAM（LUTRAM：`DMEM128D1`/`DMEM256S1`）**，块 RAM 一个没用（历史原因：早期数组是 1 写 3 读，块 RAM 只有 2 口映射不了；后来虽改成 1 写 1 读，但没回头迁块 RAM）。
-- 在 7 系列架构里，**分布式 RAM 只能落在 SLICEM 片**，而 SLICEM 只占全部 LUT 位点的约 **1/4**：
+- 本设计把几乎所有存储都推成了 分布式 RAM（LUTRAM：`DMEM128D1`/`DMEM256S1`），块 RAM 一个没用（历史原因：早期数组是 1 写 3 读，块 RAM 只有 2 口映射不了；后来虽改成 1 写 1 读，但没回头迁块 RAM）。
+- 在 7 系列架构里，分布式 RAM 只能落在 SLICEM 片，而 SLICEM 只占全部 LUT 位点的约 **1/4**：
   - 器件 LUT 位点 78,600 → SLICEM 约 **19,650** 个
-  - 本设计 LUTRAM 需要 12,480 个 LUT 当量 → **占 SLICEM 的 63.5 %**
-- 同时逻辑 LUT 用了 43,292 个（55 %），placer 还要把这些逻辑挤进**不能放 RAM 的 3/4 位点**里，global placement 之后 legalize 找不到合法位置 → `network simplex infeasible`。
-- 一句话：**总资源 71% 看着宽松，但"能放 RAM 的 25% 位点"用掉了 63.5%，局部已经爆了。**
+  - 本设计 LUTRAM 需要 12,480 个 LUT 当量 → 占 SLICEM 的 63.5 %
+- 同时逻辑 LUT 用了 43,292 个（55 %），placer 还要把这些逻辑挤进不能放 RAM 的 3/4 位点里，global placement 之后 legalize 找不到合法位置 → `network simplex infeasible`。
+- 一句话：总资源 71% 看着宽松，但"能放 RAM 的 25% 位点"用掉了 63.5%，局部已经爆了。
 
 ---
 
 ## 4. 已做的减负（本次提交）
 
-**删掉 `rb3`（20,306×16 的平方流延迟线）**：
+删掉 `rb3`（20,306×16 的平方流延迟线）：
 
 ```verilog
 // 原：盒2 的移出值单独存一条平方流延迟线
@@ -79,7 +79,7 @@ wire [15:0] d2_old = d1_old * d1_old;
 | LUT 当量合计 | 55,772（71.0 %） | 约 **50,700（64.6 %）** |
 | 代价 | — | 多一个 8×8 乘法器（进 DSP，不占 LUT） |
 
-**仿真验证（逐位一致，未改任何计算结果）**
+仿真验证（逐位一致，未改任何计算结果）
 
 | 用例 | 结果 |
 |---|---|
@@ -91,10 +91,10 @@ wire [15:0] d2_old = d1_old * d1_old;
 
 ## 5. 如果这次还不够（备选方案，按性价比排序）
 
-1. **把两条大延迟线迁到块 RAM**：`rb1`（20,306×8）+ `rb2`（9,841×8）用 `RAMH18K` 显式例化（模板：`D:\FudanMicro\Procise\language_templates\Verilog\Device Primitive Instantiation\FMA\RAM(ROM)\BlockRAM\RAMH18K.v`）。块 RAM 有 530 块全空，迁完 LUTRAM 再降 ~2,900 当量。代价：块 RAM 是**同步读**，需要重排 1 拍的流水对齐（风险中等，需重新验证逐位一致）。
+1. 把两条大延迟线迁到块 RAM：`rb1`（20,306×8）+ `rb2`（9,841×8）用 `RAMH18K` 显式例化（模板：`D:\FudanMicro\Procise\language_templates\Verilog\Device Primitive Instantiation\FMA\RAM(ROM)\BlockRAM\RAMH18K.v`）。块 RAM 有 530 块全空，迁完 LUTRAM 再降 ~2,900 当量。代价：块 RAM 是**同步读**，需要重排 1 拍的流水对齐（风险中等，需重新验证逐位一致）。
 2. **win5 行缓存**（4 条 ×641×8 ×2 实例 ≈ 41 Kbit）迁块 RAM 或改用更深的行缓存结构。
 3. **降逻辑 LUT**：`candidate_extract_stream.v` 的 `S_SORT` 原地交换 4 个 64 项数组、`lbl_even/lbl_odd` 的 640:1 组合读 mux（约 3.2 K LUT）可以用"排除标记 + 固定 5 项输出寄存器"和"标签行改 RAM"压下去。
-4. **降 `MAX_COMP`**（64→32）：能省不少 mux，但连通域数 >32 时结果会变，**会破坏与 Python 参考的逐位一致**，非不得已不用。
+4. 降 `MAX_COMP`（64→32）：能省不少 mux，但连通域数 >32 时结果会变，会破坏与 Python 参考的逐位一致，非不得已不用。
 
 ---
 
@@ -122,11 +122,11 @@ wire [15:0] d2_old = d1_old * d1_old;
 
 ## 8. 后续进展（2026-10-25，S 依据 P 提交 `a69adc0` 补记）
 
-> 本节由 S 依据 P 的提交说明与仓库实际文件补记，**未改动上文 P 的原始分析**。
+> 本节由 S 依据 P 的提交说明与仓库实际文件补记，未改动上文 P 的原始分析。
 
 ### 8.1 LED 候选数饱和到 7 —— 根因已定位（两处）
 
-P 在 `a69adc0` 中定位到 **`cand_buf` 在 `F_WRITE` 状态被 `chain_rst_n` 误清零**，已修复。
+P 在 `a69adc0` 中定位到 `cand_buf` 在 `F_WRITE` 状态被 `chain_rst_n` 误清零，已修复。
 叠加 `docs/14` §6.1 的时序分析，LED 现象有两层原因：
 
 | 层 | 原因 | 状态 |
@@ -145,11 +145,11 @@ P 在 `a69adc0` 中定位到 **`cand_buf` 在 `F_WRITE` 状态被 `chain_rst_n` 
 | **`pl/tb/tb_board_pattern640.v`**（新增，88 行）| 板上图案用例的 testbench |
 | **`pl/constr/board_leds.md`**（新增，75 行）| **LED 丝印 ↔ 引脚实测对照**（D18=J1 心跳、D20=M6 bit0、D19=H7 bit1、D21=J8 bit2；高电平点亮）|
 
-**⇒ 仿真结论：`VERDICT AXI-TOP-OK`，候选表 36 B 与 Python 参考完全一致。**
+⇒ 仿真结论：`VERDICT AXI-TOP-OK`，候选表 36 B 与 Python 参考完全一致。
 
 ### 8.3 ⚠️ 仓库与本地不一致（需 P 确认）
 
-`docs/14` §6.1 写"`create_generated_clock` 已写进 `pl/constr/board_lite.fdc`"，但 **S 在 2026-10-25 查证**：
+`docs/14` §6.1 写"`create_generated_clock` 已写进 `pl/constr/board_lite.fdc`"，但 S 在 2026-10-25 查证：
 
 ```
 pl/constr/board_lite.fdc   4364 B   2026-10-23 10:28:06

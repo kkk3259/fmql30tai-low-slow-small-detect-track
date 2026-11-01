@@ -1,7 +1,7 @@
 # 28 · 双工具链策略与 Procise 三域验证
 
 > 记录时间：2026-10-30 晚
-> 结论一句话：**Vivado 是干活的手，Procise 是认识芯片的钥匙。手不换，钥匙只用它开门。**
+> 结论一句话：Vivado 是干活的手，Procise 是认识芯片的钥匙。手不换，钥匙只用它开门。
 
 ## 1. 为什么要写这一页
 
@@ -33,11 +33,11 @@
 
 ## 4. 代码约束（这是双工具链能成立的前提）
 
-**IP2 全部 RTL 限定在 Verilog-2001 可综合子集**：
+IP2 全部 RTL 限定在 Verilog-2001 可综合子集：
 
 - 不用 `logic` / `always_ff` / `always_comb` / `interface` / `modport`
 - 不用二维数组作端口、不用结构体
-- 存储器推断写在**独立 `always @(posedge clk)` 块**里，读写不同块（Verific 与 Procise 都要求）
+- 存储器推断写在独立 `always @(posedge clk)` 块里，读写不同块（Verific 与 Procise 都要求）
 - 复位统一同步复位（`always @(posedge clk)` 内 `if (!rst_n)`），避免 RAM 被拆成触发器
 
 这条约束不是事后追认的，是 10-26 流式重构时就定下的（当时是为了让 Procise 推断 BRAM），现在成了双工具链兼容的基础。

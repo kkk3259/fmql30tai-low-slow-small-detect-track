@@ -1,4 +1,4 @@
-# 32 · NPU 级联实测记录（2026-10-31 夜）
+# 33 · NPU 级联实测记录（2026-10-31 夜）
 
 > 本文只记录**板上实测**的数字，没测过的不写。
 > 板卡 FMQL30TAI676HM（悟净 Lite），三域位流 `ours3d_s2.bin`（PS7 + AI_Mate + 我们的检测器）。
@@ -60,7 +60,7 @@ outs[0].read(buf, 0, 8)                           # 两个 float32
 > 真因是当时板上烧的是**独立检测器位流**（没有 AI_Mate），`ZG330BackendNode::init` 失败，
 > 错误被吞成 `MMU isn't enabled, Please enable MMU first!`，于是所有 Tensor 操作都炸。
 > 换三域位流后**一次通过**。
-> 所以：**看到 `MMU isn't enabled` 先查位流里有没有 AI_Mate，不要怀疑 Python 版本。**
+> 所以：看到 `MMU isn't enabled` 先查位流里有没有 AI_Mate，不要怀疑 Python 版本。
 
 ## 3. 级联脚本 `ps/cascade.py`
 
@@ -105,7 +105,7 @@ NPU: 8 个候选逐个判，总 7.2 ms（0.90 ms/个）
 
 ## 5. 还没打通的
 
-1. **三域里检测器坐标错乱**：`status=0x00000804 err=1`、x 被压缩、两个簇间距恒 320。
+1. 三域里检测器坐标错乱：`status=0x00000804 err=1`、x 被压缩、两个簇间距恒 320。
    已在适配层 `ip2_user_op.v` 定位并修了 4 个 bug（AR 重置地址 / 字节交织 / 首地址未装载 / 突发末拍地址不推进），
    fix5 编译中，待上板验证。
 2. **`err=1`**：检测器写完候选表后等 DDR 写完成，而写通道我们没接（`cand_bytes=0` 走寄存器窗口）。

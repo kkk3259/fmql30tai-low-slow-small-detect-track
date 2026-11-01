@@ -24,7 +24,7 @@
 
 ## 二、⭐ 官方管脚约束（`constrs_1/impl_constraints.xdc`）
 
-### 2.1 PL 系统时钟 —— **P 之前一直找不到的**
+### 2.1 PL 系统时钟 —— P 之前一直找不到的
 
 ```tcl
 create_clock -period 5.000 [get_ports sys_clk_p]        # 5 ns = 200 MHz
@@ -39,9 +39,9 @@ set_property PACKAGE_PIN C7 [get_ports sys_clk_n]
 | **`sys_clk_p`** | **C8** | **`DIFF_SSTL15`** | **200 MHz** |
 | **`sys_clk_n`** | **C7** | **`DIFF_SSTL15`** | 200 MHz |
 
-**⇒ 与硬件手册第 5 页"PL 侧 200MHz"一致。**
+⇒ 与硬件手册第 5 页"PL 侧 200MHz"一致。
 
-### 2.2 复位与 LED —— **IOSTANDARD 是 1.5V，不是 1.8V/3.3V**
+### 2.2 复位与 LED —— IOSTANDARD 是 1.5V，不是 1.8V/3.3V
 
 ```tcl
 set_property PACKAGE_PIN F8 [get_ports sys_rst]
@@ -56,7 +56,7 @@ set_property IOSTANDARD LVCMOS15 [get_ports {led[1]}]
 set_property PACKAGE_PIN M6 [get_ports {led[1]}]      # LED2
 ```
 
-**⚠️ BANK13 的 VCCO 是 1.5V（`LVCMOS15`）** —— 这一点此前 `pin_map.md` 未记录。
+⚠️ BANK13 的 VCCO 是 1.5V（`LVCMOS15`） —— 这一点此前 `pin_map.md` 未记录。
 
 ### 2.3 HDMI 输出（完整）
 
@@ -85,7 +85,7 @@ set_property PACKAGE_PIN R6 [get_ports FMC_HPC_GBTCLK0_M2C_C_P]
 set_property PACKAGE_PIN R5 [get_ports FMC_HPC_GBTCLK0_M2C_C_N]
 ```
 
-**⇒ Lite 版与完整版的唯一约束差异就是这一处（R6/R5 vs U6/U5）。**
+⇒ Lite 版与完整版的唯一约束差异就是这一处（R6/R5 vs U6/U5）。
 
 ### 2.5 PJTAG（EMIO JTAG）—— 与硬件手册 4.7 节一致
 
@@ -132,13 +132,13 @@ fpai_demo_fpga/
 ├── fpai_demo_vivado.ip_user_files/     14 文件 / 7.1 MB   IP 静态文件
 └── rtl/                               166 文件 / 135.7 MB
     ├── ai7030_edif_top.v               11.7 KB  顶层模块
-    ├── AI_Mate_stub.v                  22.8 KB  AI_Mate 的 wrapper（★ 看接口用）
+    ├── AI_Mate_stub.v                  22.8 KB  AI_Mate 的 wrapper（看接口用）
     ├── ps_ai_peripheral.sv             89.6 KB
     ├── ps_ai_wrapper.sv                55.9 KB
     ├── edif/
-    │   ├── AI_Mate.edif                69.6 MB  ★★★ NPU 网表（含 DetPost 硬算子）
+    │   ├── AI_Mate.edif                69.6 MB  NPU 网表（含 DetPost 硬算子）
     │   └── AI_Mate_no_detpost.edif     46.2 MB  NPU 网表（不含 DetPost，省 PL 资源）
-    ├── adder_op/                                ★★★ custom op 完整示例（P 照这个改）
+    ├── adder_op/                                custom op 完整示例（P 照这个改）
     │   ├── adder.v                      2.0 KB  运算逻辑
     │   ├── adder_top.v                  7.5 KB  顶层（寄存器口 + DMA 口）
     │   ├── dma.v                        3.1 KB  PL DDR 读写
@@ -147,7 +147,7 @@ fpai_demo_fpga/
     │   └── AVR/avr_brs.v / avr_frs.v / avr_rs.v
     ├── display/                                 HDMI 输出全套
     │   ├── TMDSEncoder.vhd              6.8 KB  TMDS 编码
-    │   ├── vtc.v                        2.4 KB  ★ 视频时序控制器（无 SDI 时用它出测试图）
+    │   ├── vtc.v                        2.4 KB  视频时序控制器（无 SDI 时用它出测试图）
     │   ├── color_bar.v                 10.5 KB  彩条发生器
     │   ├── frame_ctrl.v                42.3 KB
     │   ├── uihdmitx.v                   3.8 KB
@@ -194,7 +194,7 @@ fpai_demo_fpga/
     注：切到非 30TAI 器件时，需 reset_database_to_default 恢复
 ```
 
-**关键文件：`JFM_Kits\ip_patch\030ai\zynq.rtd`（21.3 MB，30TAI 时序库）**
+关键文件：`JFM_Kits\ip_patch\030ai\zynq.rtd`（21.3 MB，30TAI 时序库）
 
 ### 4.2 新建 Vivado 工程
 
@@ -224,8 +224,7 @@ fpai_demo_fpga/
 ```text
 3.1 解压 BOOT_Gen.zip，用文本编辑器打开 BOOT_Gen/7030ai_psin.bif
     修改其中路径为解压目录（路径不要出现反斜杠，确保能找到各文件）
-3.2 把 Vivado 生成的 .bit 拷到解压目录，文件名必须与 bif 中一致
-    打开 Procise → Create Image → 生成 bin（输出在解压目录）
+3.2 把 Vivado 生成的 .bit 拷到解压目录，文件名必须与 bif 中一致打开 Procise → Create Image → 生成 bin（输出在解压目录）
 3.3 替换 BOOT.bin 两种方式：
     （1）读卡器：直接把 BOOT.bin 替换到 FAT 分区（⚠️ 不要格式化磁盘）
     （2）SSH：
@@ -240,8 +239,7 @@ fpai_demo_fpga/
 ```text
 4.1 交叉编译环境安装 Icraft_3.XX 及 CustomOp_3.XX
 4.2 把整个 fpai_demo_app 文件夹（含 deps）拷到交叉编译环境
-    ⚠️ 注意不要在 30TAI 板载系统上编译
-    编译参考：fpai_demo_app/examples/1_single_input+ai/PLin+SingleNet+HDMI/README.md
+    ⚠️ 注意不要在 30TAI 板载系统上编译编译参考：fpai_demo_app/examples/1_single_input+ai/PLin+SingleNet+HDMI/README.md
 4.3 adder_demo：拷到板上，确保可执行权限后执行（验证 custom op 通路）
 4.4 sdicamera+yolov5+hdmi：需要以下文件/文件夹
     configs/ZG/sdicamera+yolov5+hdmi.yaml
@@ -251,7 +249,7 @@ fpai_demo_fpga/
     sdicamera+yolov5+hdmi               （可执行程序）
 ```
 
-### 4.6 ⭐⭐⭐ **无 SDI 相机的做法（我们正需要）**
+### 4.6 ⭐⭐⭐ 无 SDI 相机的做法（我们正需要）
 
 ```text
 【无 SDI】
@@ -273,9 +271,7 @@ fpai_demo_fpga/
 
 ## 五、⭐ custom op 接口定义（`FPAI_DEMO说明.pdf`）
 
-### 5.1 两路接口
-
-参考设计向 PL 端 custom op 提供两路接口：
+### 5.1 两路接口参考设计向 PL 端 custom op 提供两路接口：
 
 | 接口 | Master | 用途 |
 |---|---|---|
@@ -319,11 +315,11 @@ fpai_demo_fpga/
 
 ### 5.4 ⭐ custom op 寄存器地址空间
 
-> **custom op 的寄存器地址空间为 `0x400C'0000 ~ 0x400F'FFFF`**
+> custom op 的寄存器地址空间为 `0x400C'0000 ~ 0x400F'FFFF`
 
-**⚠️⚠️ 2026-10-23 重要更正（原判断有误）**
+⚠️⚠️ 2026-10-23 重要更正（原判断有误）
 
-**这句话说的是「**custom op**」的地址空间，**不是 AI_Mate（NPU）的寄存器地址**。两者是两个不同的从设备：**
+**这句话说的是「**custom op**」的地址空间，**不是 AI_Mate（NPU）的寄存器地址。两者是两个不同的从设备：
 
 | 从设备 | 地址段 | 实测结果 |
 |---|---|---|
@@ -444,7 +440,7 @@ examples/1_single_input+ai/PLin+SingleNet+HDMI/src/
 
 ## 九、⭐ Icraft 版本配套与板端编译（2026-10-23 补）
 
-> 本章是 NPU 打通当天新增。核心结论：**官方 demo 程序的 Icraft 版本与它自带的模型版本不一致，必须配套才能跑。**
+> 本章是 NPU 打通当天新增。核心结论：官方 demo 程序的 Icraft 版本与它自带的模型版本不一致，必须配套才能跑。
 
 ### 9.1 ⭐ Icraft 版本符号矩阵（踩坑根源）
 
@@ -457,9 +453,9 @@ examples/1_single_input+ai/PLin+SingleNet+HDMI/src/
 | 3.36.1 | ✗ | ✅ | **✗** |
 | 3.39.0 | ✗ | ✅ | **✗** |
 
-**⇒ 3.36 之后 `std::string` 重载被删除，只保留 `std::filesystem::path`。**
+⇒ 3.36 之后 `std::string` 重载被删除，只保留 `std::filesystem::path`。
 
-**⇒ 用 3.36+ 运行时跑 3.33.1 编译的程序，会报：**
+⇒ 用 3.36+ 运行时跑 3.33.1 编译的程序，会报：
 
 ```
 symbol lookup error: undefined symbol: _ZN6icraft3xir7Network22lazyLoadParamsFromFileERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEb
@@ -473,7 +469,7 @@ symbol lookup error: undefined symbol: _ZN6icraft3xir7Network22lazyLoadParamsFro
 | **`fpai_demo_package_26040701`**（2026-04-07）| 无 | **3.36.0** | **3.36.0** | ✅ 配套，需自己编译 |
 | `30TAI_3.39.0`（2026-08-28）| 无 | 3.39.0 | — | 最新，但无配套 demo |
 
-**⇒ `fpai_demo_package_26040701` 的 README 写得很清楚：**
+⇒ `fpai_demo_package_26040701` 的 README 写得很清楚：
 
 ```
 - 版本: 26040701
@@ -484,7 +480,7 @@ symbol lookup error: undefined symbol: _ZN6icraft3xir7Network22lazyLoadParamsFro
 
 ### 9.3 ⭐ 板端编译方案（官方假设交叉编译，需改）
 
-**官方 `CMakeLists.txt` 的 UNIX 分支：**
+官方 `CMakeLists.txt` 的 UNIX 分支：
 
 ```cmake
 elseif(UNIX)
@@ -527,7 +523,7 @@ cmake --build build/ZG -j4
 ./build/ZG/sdicamera+yolov5+hdmi configs/ZG/sdicamera+yolov5+hdmi.yaml
 ```
 
-**`-DTARGET_CHIP=ZG` 的作用（CMakeLists 原文）：**
+`-DTARGET_CHIP=ZG` 的作用（CMakeLists 原文）：
 
 ```cmake
 elseif(TARGET_CHIP_UPPER STREQUAL "ZG")
@@ -545,10 +541,10 @@ sys:
   speedMode: false
   compressFtmp: false
   ocm_option: -1
-  run_backend: zg330          # ★ 缺省是 "buyi"（demo 源码第 118 行），必须显式写！
+  run_backend: zg330          # 缺省是 "buyi"（demo 源码第 118 行），必须显式写！
 pipeline:
   camera:
-    vtc: true                 # ★ 改 true 可无 SDI 摄像头（内部测试图）
+    vtc: true                 # 改 true 可无 SDI 摄像头（内部测试图）
     width: 1920
     height: 1080
   icore:
@@ -559,7 +555,7 @@ pipeline:
     fpga_nms: false
 ```
 
-**⚠️ demo 程序的参数解析（源码第 92 行）：**
+⚠️ demo 程序的参数解析（源码第 92 行）：
 
 ```cpp
 if (argc < 2) { std::cerr << "Usage: " << argv[0] << " <config yaml>"; return 1; }
@@ -579,7 +575,7 @@ config = YAML::LoadFile(argv[1]);      ← 不接受 --config
 202 | auto net_viewed = network_groups_[cam_index].viewExcept(yolov5_cfg_.view_except_op_ids);
 207 | auto net_sess = initSession("zg330", net_viewed, this->device_,
 208 |                             fpai_cfg_.ocm_option, ..., fpai_cfg_.speed_mode, fpai_cfg_.compress_ftmp);
-211 | net_sess.apply();                                 // ★ 部署到硬件，版本错位时崩在这里
+211 | net_sess.apply();                                 // 部署到硬件，版本错位时崩在这里
 ```
 
 **⇒ 官方**不用 `icraft-run` 命令行**，而是 C++ `Device::Open()`。之前用 `icraft-run --backends "ZG330;Host"` 段错误，是因为 `Host` 后端在 aarch64 上走的是另一条初始化路径。**
@@ -588,11 +584,11 @@ config = YAML::LoadFile(argv[1]);      ← 不接受 --config
 
 ## 十、官方联系渠道
 
-**赛题指南第 7 页原文：**
+赛题指南第 7 页原文：
 
-> **技术交流：关注大赛官方公众号及复旦微赛事官方交流 QQ 群：`790072144`（复旦微嵌入式 FPGA QQ 群）**
+> 技术交流：关注大赛官方公众号及复旦微赛事官方交流 QQ 群：`790072144`（复旦微嵌入式 FPGA QQ 群）
 
-**⇒ 这是唯一官方对接渠道。此前一直在找邮箱，是走偏了。**
+⇒ 这是唯一官方对接渠道。此前一直在找邮箱，是走偏了。
 
 ---
 

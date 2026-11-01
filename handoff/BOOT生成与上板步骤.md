@@ -37,7 +37,7 @@
 这一步不改动任何新东西，只用官方原件打包，确认「打包工具怎么用」。
 
 1. 打开 Procise（GUI，不是 Shell）：开始菜单 → `Start Procise`
-2. 在菜单栏找 **Create Image**（教程原文：「打开 Procise，按下图依次点击 → 单击 Create Image」）
+2. 在菜单栏找 Create Image（教程原文：「打开 Procise，按下图依次点击 → 单击 Create Image」）
    - 优先看 **Tools** 菜单
    - 也看 File / Project 菜单
 3. 选中 `D:\firstharness\repo\handoff\bif\stage1_official.bif`
@@ -46,7 +46,7 @@
 
 **判断成功**：能 ping 通 / 能 SSH 进去 / 串口有内核日志 → 打包工具用法正确 ✅
 
-**如果 Procise 里找不到 Create Image**（备选，我们已确认 bootstrap 支持 zynq 架构）：
+如果 Procise 里找不到 Create Image（备选，我们已确认 bootstrap 支持 zynq 架构）：
 
 ```powershell
 cd D:\firstharness\repo\handoff\bif
@@ -55,7 +55,7 @@ cd D:\firstharness\repo\handoff\bif
 ```
 
 `-arch zynq` 会覆盖 bif 里的 `arch = fmql`（FMQL30 是 Zynq 同源器件，BOOT.bin 格式一致）。
-**这一步必须先用阶段①验证**：官方原件能启动，才说明这个打包方式被 boot ROM 接受。
+这一步必须先用阶段①验证：官方原件能启动，才说明这个打包方式被 boot ROM 接受。
 
 ## 第 2 步：SDK 生成我们的 FSBL（30 分钟）
 
@@ -66,9 +66,9 @@ cd D:\firstharness\repo\handoff\bif
    - Project name: `ip2_fsbl`
    - OS Platform: `standalone`
    - Language: `C`
-   - Target Hardware: 勾 **Create new** → Browse 选 `D:\firstharness\repo\handoff\ip2_bd_wrapper.hdf`
+   - Target Hardware: 勾 Create new → Browse 选 `D:\firstharness\repo\handoff\ip2_bd_wrapper.hdf`
    - Processor: `ps7_cortexa9_0`
-5. Next → 模板列表里选 **`Zynq FSBL`** → Finish（自动编译 1~2 分钟）
+5. Next → 模板列表里选 `Zynq FSBL` → Finish（自动编译 1~2 分钟）
 6. 确认产物存在：`D:\firstharness\synth\sdk_ws\ip2_fsbl\Debug\ip2_fsbl.elf`
 
 **判断成功**：Console 出现 `Build Finished (took ...)` 且 `.elf` 文件存在 ✅
@@ -101,7 +101,7 @@ cd /root  # 或你放脚本的目录
 sudo python3 pl_selftest.py
 ```
 
-**三个都过 = AXI 通路打通**，接下来就能接相机做闭环。
+三个都过 = AXI 通路打通，接下来就能接相机做闭环。
 
 ## 常见问题对照
 
@@ -115,4 +115,4 @@ sudo python3 pl_selftest.py
 
 ## 一句话总结
 
-**阶段① 验证工具→ 阶段② 验证 FSBL → 阶段③ 交付**。每步都能单独判断，出问题只回退一步。
+阶段① 验证工具→ 阶段② 验证 FSBL → 阶段③ 交付。每步都能单独判断，出问题只回退一步。
