@@ -32,10 +32,22 @@ def run_one(pl, y, name):
         return
     gray = cv2.resize(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (W, H),
                       interpolation=cv2.INTER_AREA)
-    cands, st, dt = pl.run(gray)
-    keep = [c for c in cands if c["area"] >= 4 and c["peak"] >= 8
-            and 4 <= c["y"] < H - 4 and 4 <= c["x"] < W - 4]
-    keep.sort(key=lambda c: -c["peak"])
+    c1, st, dt = pl.run(gray)
+    c2, _s2, dt2 = pl.run(255 - gray)          # 双极性第二遍
+    dt += dt2
+    for c in c1:
+        c["pol"] = 0
+    for c in c2:
+        c["pol"] = 1
+    for c in c1 + c2:                          # 先补列相位偏移
+        c["x"] = (c["x"] + 62) % W
+    ok = [c for c in c1 + c2 if c["area"] >= 4 and c["peak"] >= 8
+          and 4 <= c["y"] < H - 4 and 4 <= c["x"] < W - 4]
+    # 两种极性各取前 8（按 peak），避免一路的虚警把另一路的真目标挤掉
+    a = sorted([c for c in ok if c["pol"] == 0], key=lambda c: -c["peak"])[:8]
+    b = sorted([c for c in ok if c["pol"] == 1], key=lambda c: -c["peak"])[:8]
+    cands = c1 + c2
+    keep = a + b
     cands_in = keep[:ROI_CELL * ROI_CELL]
 
     fused = []
@@ -66,11 +78,19 @@ def run_one(pl, y, name):
                               "p": 0.0, "roi": 0})
 
     hit = [c for c in fused if c["roi"] and c["p"] >= ROI_CONF]
+    # 去重：半径按目标尺寸自适应（封顶 60px），保留高分框，不取并集
+    kept = []
+    for c in sorted(hit, key=lambda z: -z["p"]):
+        w = max(8.0, 2.0 * (c["area"] ** 0.5))
+        r = max(18.0, min(0.55 * w, 60.0))
+        if all(((c["x"] - k["x"]) ** 2 + (c["y"] - k["y"]) ** 2) ** 0.5 > r for k in kept):
+            kept.append(c)
+    fused = [c for c in fused if (not c["roi"]) or c["p"] < ROI_CONF] + kept
     top = max([c["p"] for c in fused], default=0.0)
     print("%-22s PL=%2d  ROI判=%2d  过阈=%-2d  top=%.2f  PL耗时=%.1fms"
           % (name, len(cands), len([c for c in fused if c["roi"]]), len(hit), top, dt))
 
-    vis = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    vis = cv2.resize(img, (W, H))          # 用原彩色图做底，别画在灰度上
     for c in fused:
         if c["roi"] and c["p"] >= ROI_CONF:
             col, lab = (80, 230, 60), "%.0f%%" % (c["p"] * 100)
