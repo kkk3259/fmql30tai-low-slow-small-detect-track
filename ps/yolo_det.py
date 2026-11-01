@@ -125,13 +125,29 @@ class Yolo:
                 j = i - 8000
                 gx, gy, st = j % 20, j // 20, 32
             a = sig(o0[:4, i])
-            cx = (2 * a[0] + gx - 0.5) * st
-            cy = (2 * a[1] + gy - 0.5) * st
-            w = 4 * a[2] * a[2] * st
-            h = 4 * a[3] * a[3] * st
+            dec = os.environ.get('DEC', 'ltrb')
+            if dec == 'ltrb':
+                # 标准 YOLOv8 无锚框：4 个通道是到网格四边的距离（单位 stride，×4）
+                l, t_, r_, b_ = a[0] * 4, a[1] * 4, a[2] * 4, a[3] * 4
+                x1 = (gx + 0.5 - l) * st
+                y1 = (gy + 0.5 - t_) * st
+                x2 = (gx + 0.5 + r_) * st
+                y2 = (gy + 0.5 + b_) * st
+            else:
+                cx = (2 * a[0] + gx - 0.5) * st
+                cy = (2 * a[1] + gy - 0.5) * st
+                w = 4 * a[2] * a[2] * st
+                h = 4 * a[3] * a[3] * st
+                x1, y1, x2, y2 = cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
+            # 该模型对小目标的外接框系统性偏小，按中心外扩 BOX_PAD 倍便于观看
+            pad = float(os.environ.get('BOX_PAD', '1.25'))
+            if pad != 1.0:
+                mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+                hw, hh = (x2 - x1) * pad / 2, (y2 - y1) * pad / 2
+                x1, y1, x2, y2 = mx - hw, my - hh, mx + hw, my + hh
             # 640x640 空间 -> 原图：先减 letterbox 偏移，再除缩放比
-            boxes.append([((cx - w / 2) - lb_x) / lb_s, ((cy - h / 2) - lb_y) / lb_s,
-                          ((cx + w / 2) - lb_x) / lb_s, ((cy + h / 2) - lb_y) / lb_s,
+            boxes.append([(x1 - lb_x) / lb_s, (y1 - lb_y) / lb_s,
+                          (x2 - lb_x) / lb_s, (y2 - lb_y) / lb_s,
                           float(sc[i])])
         if not boxes:
             return []
