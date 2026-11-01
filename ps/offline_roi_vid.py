@@ -24,6 +24,7 @@ ROI_CELL, ROI_CONF = 4, 0.45
 INVERT = int(__import__("os").environ.get("INVERT", "1"))   # 默认取反：亮天空里的暗鸟
 # PL 的列坐标有固定相位偏移（实测 x_true = x_det + 62），不补正 ROI 会裁到目标旁边
 X_SHIFT = int(__import__("os").environ.get("X_SHIFT", "62"))
+DUAL = int(__import__("os").environ.get("DUAL", "1"))
 
 
 def main():
@@ -55,6 +56,13 @@ def main():
         if INVERT:
             gray = 255 - gray
         cands, st, dt = pl.run(gray)
+        # 双极性：每 2 帧跑一次取反，合并候选（间距>12px 才加入）
+        if DUAL and (n % 2 == 0):
+            c2, _s2, dt2 = pl.run(255 - gray)
+            dt += dt2
+            for c in c2:
+                if all(abs(c["x"] - k["x"]) + abs(c["y"] - k["y"]) > 12 for k in cands):
+                    cands.append(c)
         keep = [c for c in cands if c["area"] >= 4 and c["peak"] >= 8
                 and 8 <= c["y"] < H - 8 and 8 <= c["x"] < W - 8]
         for c in keep:

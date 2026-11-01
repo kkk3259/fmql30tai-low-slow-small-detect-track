@@ -38,6 +38,8 @@ if os.environ.get("DUAL") == "0":
     DUAL = False
 YOLO_EVERY = 2            # 方案 A：每 N 帧才跑一次 yolo，中间帧复用上次结果
 YCNT = [0]                # yolo 帧计数
+DUAL_EVERY = 2            # 双极性第二遍（取反）每 N 帧跑一次，保证帧率
+PCNT = [0]                # PL 帧计数
 LAST_BOXES = [None]       # 上次 yolo 的框（跳过帧复用）
 ROI_CONF = 0.45           # ROI 模式下 NPU 判为无人机的阈值
 ROI_KEEP_PL = 0           # 1 = NPU 没认出的 PL 候选也保留（显示为 p=0）
@@ -270,7 +272,9 @@ def infer_loop(pl, net):
             else:
                 _g = to_pl(gray)
                 cands, st, dt = pl.run(_g)        # 第 1 遍：正常极性（亮目标）
-                if DUAL:                           # 第 2 遍：取反（暗目标）
+                # 第 2 遍（取反）每 DUAL_EVERY 帧才跑一次，省时间保帧率
+                PCNT[0] += 1
+                if DUAL and (PCNT[0] % DUAL_EVERY == 0):
                     c2, _st2, dt2 = pl.run(255 - _g)
                     dt += dt2
                     for c in c2:
