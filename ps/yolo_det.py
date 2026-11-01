@@ -33,21 +33,32 @@ def read_tensor(o):
 
 
 def _merge(boxes, dist=18.0):
-    """把中心点相距很近的框并成一个（取并集 + 最高分）——治同一目标多框。"""
+    """同一目标多框抑制：包含度(IoM) 或 按尺寸缩放的圆心距，命中则丢弃低分框。
+
+    与旧版的区别：
+      1) 不再取并集（取并集会把中心拉偏，t5 就是这样偏的），只保留最高分那个框；
+      2) 判据不只看中心距，还看"小框被大框覆盖了多少"（IoM），
+         以及按框尺寸缩放的圆心距 —— 大目标的重复框中心能差 40~50px，固定 18px 抓不住。
+    """
     out = []
     for b in boxes:                      # 已按分数降序
-        hit = None
-        cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+        bw, bh = max(1.0, b[2] - b[0]), max(1.0, b[3] - b[1])
+        cx, cy = (b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0
+        dup = False
         for o in out:
-            ox, oy = (o[0] + o[2]) / 2, (o[1] + o[3]) / 2
-            if (cx - ox) ** 2 + (cy - oy) ** 2 <= dist * dist:
-                hit = o
+            ow, oh = max(1.0, o[2] - o[0]), max(1.0, o[3] - o[1])
+            ix = min(b[2], o[2]) - max(b[0], o[0])
+            iy = min(b[3], o[3]) - max(b[1], o[1])
+            inter = ix * iy if (ix > 0 and iy > 0) else 0.0
+            iom = inter / max(1.0, min(bw * bh, ow * oh))
+            ox, oy = (o[0] + o[2]) / 2.0, (o[1] + o[3]) / 2.0
+            d = ((cx - ox) ** 2 + (cy - oy) ** 2) ** 0.5
+            r = max(dist, 0.85 * max(ow, oh, bw, bh))
+            if iom >= 0.40 or d <= r:
+                dup = True
                 break
-        if hit is None:
+        if not dup:
             out.append(list(b))
-        else:
-            hit[0] = min(hit[0], b[0]); hit[1] = min(hit[1], b[1])
-            hit[2] = max(hit[2], b[2]); hit[3] = max(hit[3], b[3])
     return out
 
 
