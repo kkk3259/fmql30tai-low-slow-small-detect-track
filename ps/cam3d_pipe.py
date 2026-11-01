@@ -33,6 +33,9 @@ except Exception:                          # noqa: BLE001
 USE_YOLO = False          # 模块级：--yolo 1 时由 main() 置 True
 YOLO = None
 USE_ROI = False           # --mode roi：PL 粗筛 + NPU ROI 精判（真正的三域分工）
+YOLO_EVERY = 2            # 方案 A：每 N 帧才跑一次 yolo，中间帧复用上次结果
+YCNT = [0]                # yolo 帧计数
+LAST_BOXES = [None]       # 上次 yolo 的框（跳过帧复用）
 ROI_CONF = 0.45           # ROI 模式下 NPU 判为无人机的阈值
 ROI_KEEP_PL = 0           # 1 = NPU 没认出的 PL 候选也保留（显示为 p=0）
 
@@ -281,20 +284,27 @@ def infer_loop(pl, net):
             keep.append({"x": x, "y": y, "area": c["area"], "peak": c["peak"], "p": None})
 
         # --yolo 1 且非 ROI 模式：整帧 yolo 直接替换 PL 候选
+        # 方案 A：隔 YOLO_EVERY 帧才推理一次，中间帧复用上次结果（省时又不掉框）
         if USE_YOLO and not USE_ROI and YOLO is not None:
-            ty = time.time()
-            try:
-                _bs = YOLO.detect(gray)
-                keep = []
-                for b in _bs:
-                    bw = max(4.0, b[2] - b[0])
-                    bh = max(4.0, b[3] - b[1])
-                    keep.append({"x": int((b[0] + b[2]) / 2), "y": int((b[1] + b[3]) / 2),
-                                 "area": int(bw * bh / 4), "peak": int(b[4] * 255),
-                                 "p": float(b[4])})
-                STATE["npu_ms"] = (time.time() - ty) * 1000.0
-            except Exception as e:                            # noqa: BLE001
-                STATE["err"] = "yolo:%s" % e
+            YCNT[0] += 1
+            if YCNT[0] % YOLO_EVERY == 1:
+                ty = time.time()
+                try:
+                    _bs = YOLO.detect(gray)
+                    keep = []
+                    for b in _bs:
+                        bw = max(4.0, b[2] - b[0])
+                        bh = max(4.0, b[3] - b[1])
+                        keep.append({"x": int((b[0] + b[2]) / 2), "y": int((b[1] + b[3]) / 2),
+                                     "area": int(bw * bh / 4), "peak": int(b[4] * 255),
+                                     "p": float(b[4])})
+                    LAST_BOXES[0] = [dict(c) for c in keep]
+                    STATE["npu_ms"] = (time.time() - ty) * 1000.0
+                except Exception as e:                            # noqa: BLE001
+                    STATE["err"] = "yolo:%s" % e
+            else:
+                # 跳过帧：复用上次的框，保持画面连续（框不会闪）
+                keep = [dict(c) for c in (LAST_BOXES[0] or [])]
 
         # ===== ROI 模式：PL 粗筛 → PS 裁 96×96 拼图 → NPU 一次前向精判 =====
         if USE_YOLO and USE_ROI and YOLO is not None:
