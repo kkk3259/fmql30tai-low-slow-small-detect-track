@@ -36,10 +36,10 @@ STATE = {
     "ncand": 0, "ntrk": 0, "stable": 0, "err": "",
 }
 JPEG = {"buf": None, "seq": 0}
-INFER = {"npu": 1, "pmin": 0, "running": True}
+INFER = {"npu": 1, "pmin": 0, "running": True, "quality": 65, "push_every": 1}
 # 显示与前处理（2026-11-01 新增：三域版之前直接推灰度原图，观感"一片灰"）
 COLOR_DISP = 1          # 1=画面用彩色（检测仍在灰度上做）；0=灰度
-GAMMA = 1.0             # 送 PL 前的 gamma（0.08 背景压暗、弱目标更突出；1.0=不改）
+GAMMA = 1.0             # 送 PL 前的 gamma（0.08 压缩动态范围、弱目标更容易过 CFAR 门限；1.0=不改）
 INVERT = 0              # 1=把 255-gray 送 PL（等价 Black-Hat，找暗目标）
 _LUT = None
 
@@ -70,6 +70,30 @@ TMP = {
     "clip": "/root/npu/cls128_drone_ZG.json",
     "raw": "/root/npu/cls128_drone_ZG.raw",
 }
+
+
+def find_cam(fallback=0):
+    """按 v4l2 名字找 USB Camera，返回设备号；找不到则返回 fallback。
+
+    设备号会漂移：同一台相机插在不同 USB 口上会枚举成 /dev/video0 / video1 / video3，
+    而板载 Linlon VPU 固定占一个号。硬编码 VideoCapture(0) 会在换口后打不开，
+    表现为 read() 一直失败、/info 的 frames 不涨（服务空转但看不出错）。
+    """
+    import subprocess
+    import re
+    try:
+        out = subprocess.run(["v4l2-ctl", "--list-devices"],
+                             capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return fallback
+    lines = out.split("\n")
+    for i, ln in enumerate(lines):
+        if "USB Camera" in ln:
+            for nxt in lines[i + 1:i + 6]:
+                m = re.search(r"/dev/video(\d+)", nxt)
+                if m:
+                    return int(m.group(1))
+    return fallback
 
 
 # ---------------------------------------------------------------- 航迹跟踪
@@ -189,10 +213,20 @@ TRACKER = Tracker()
 # ---------------------------------------------------------------- 推理线程
 def infer_loop(pl, net):
     """相机 -> PL -> 候选 -> (NPU) -> 画框 -> JPEG 缓冲。"""
-    cap = cv2.VideoCapture(0)
+    cam_idx = find_cam(0)
+    print("[cam] using /dev/video%d" % cam_idx, flush=True)
+    cap = cv2.VideoCapture(cam_idx, cv2.CAP_V4L2)
+    # 先设 FOURCC 再设分辨率：不少 UVC 相机只有在 MJPG 下才支持 640x480@30
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"YUYV"))
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+    _fcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+    _fcc_s = "".join(chr((_fcc >> (8 * k)) & 0xFF) for k in range(4))
+    print("[cam] /dev/video%d  fourcc=%s  %.0fx%.0f  q=%d  push_every=%d"
+          % (cam_idx, _fcc_s, cap.get(cv2.CAP_PROP_FRAME_WIDTH),
+             cap.get(cv2.CAP_PROP_FRAME_HEIGHT), INFER["quality"], INFER["push_every"]),
+          flush=True)
     t_last, cnt = time.time(), 0
 
     while INFER["running"]:
@@ -278,10 +312,14 @@ def infer_loop(pl, net):
                     (STATE["pl_ms"], STATE["npu_ms"], len(keep), len(trks), int(STATE["fps"])),
                     (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1, cv2.LINE_AA)
 
-        ok2, jb = cv2.imencode(".jpg", vis, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-        if ok2:
-            JPEG["buf"] = jb.tobytes()
-            JPEG["seq"] += 1
+        # 隔帧推流：每 push_every 帧才编码一次。
+        # 采集与检测仍逐帧进行（STATE["fps"] 始终是采集帧率），只跳过 JPEG 编码这一步。
+        if INFER["push_every"] <= 1 or (STATE["frames"] % INFER["push_every"]) == 0:
+            ok2, jb = cv2.imencode(".jpg", vis,
+                                   [int(cv2.IMWRITE_JPEG_QUALITY), INFER["quality"]])
+            if ok2:
+                JPEG["buf"] = jb.tobytes()
+                JPEG["seq"] += 1
     cap.release()
 
 
@@ -357,11 +395,14 @@ def main():
     ap.add_argument("--npu", type=int, default=1)
     ap.add_argument("--pmin", type=int, default=0)
     ap.add_argument("--frames", type=int, default=0, help=">0 则跑这么多帧后退出（自测用）")
-    ap.add_argument("--gamma", type=float, default=1.0, help="送 PL 前 gamma（0.08 强烈压背景；1.0 不改）")
+    ap.add_argument("--gamma", type=float, default=1.0, help="送 PL 前 gamma（0.08 压缩动态范围，弱目标更易过门限；1.0 不改）")
     ap.add_argument("--invert", type=int, default=0, help="1=找暗目标（逆光天空鸟/无人机）")
     ap.add_argument("--color", type=int, default=1, help="1=彩色画面 0=灰度")
+    ap.add_argument("--quality", type=int, default=65, help="推流 JPEG 质量（默认 65；80 更清晰但更耗 CPU）")
+    ap.add_argument("--push-every", type=int, default=1, help="每 N 帧推一次流（默认 1=每帧；2 可省一半编码开销）")
     a = ap.parse_args()
     INFER["npu"], INFER["pmin"] = a.npu, a.pmin
+    INFER["quality"], INFER["push_every"] = a.quality, max(1, a.push_every)
     GAMMA, INVERT, COLOR_DISP = a.gamma, a.invert, a.color
 
     print("打开 PL3D ...", flush=True)

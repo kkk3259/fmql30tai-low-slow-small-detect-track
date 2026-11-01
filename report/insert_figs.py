@@ -22,13 +22,29 @@ CONTENT_W_CM = 14.5
 EMU_PER_CM = 360000
 
 # 图号 -> (文件名, 图注)
+def _figkey(k):
+    """图编号排序：数字图按数值升序，非数字图（图 A/B/C…）排在最后。"""
+    m = re.search(r"(\d+)", k)
+    if m:
+        n = int(m.group(1))
+        suf = re.search(r"(\d+)([a-z]?)", k).group(2)
+        return (0, n, suf)
+    return (1, 0, k)
+
+
 FIGMAP = {
     "图 1": ("图1_系统整体框图.png", "图 1  系统整体框图（PS + PL + NPU 三级异构分工与数据流）"),
     "图 2": ("图2_硬件系统连接框图.png", "图 2  硬件系统连接框图（FMQL30TAI 异构平台与外围设备）"),
+    "图 3": ("图3_整机装配示意.png",
+              "图 3  整机装配示意（摄像头 / 主机板 / 上位机 / 电源的摆放与连线走向；板卡实物见图 4）"),
     "图 4": ("图4_硬件接口与连线图.png",
               "图 4  硬件接口与连线实拍（板载丝印可见：PS_UART / PS_ETH / PL_JTAG / PS_JTAG / 12V 电源 / RST 与 PL_KEY 按键 / SFP 与 PCIe 边缘连接器）"),
     "图 5": ("图5_软件处理流程图.png", "图 5  软件处理流程（7 个处理环节与 5 个关键数据接口）"),
     "图 6": ("图6_PL检测链路模块框图.png", "图 6  PL 检测链路模块框图（Black-Hat（MODE 可切，SE=21）→ CFAR → 候选提取；附方向修正与自抑制的实测结论）"),
+    "图 7": ("图7_机械设计外壳切割图.png",
+              "图 7  机械设计——亚克力外壳激光切割图（3 mm 板厚）：含开发板 100×100 轮廓、电源/网口/USB 三处开孔、前面板摄像头镜头孔 Ø14，以及 M3 铜柱与脚垫规格"),
+    "图 8": ("图8_硬件连接特写.png",
+              "图 8  硬件连接实拍——上沿连线区：SD 卡槽 / PS_UART / PS_ETH 千兆网口 / HDMI / 及右侧 12 V 电源输入（板载丝印已标注各接口）"),
     "图 9": ("图9_检测与跟踪效果.png", "图 9  软件基线实际运行效果（真实 720P；左：原始图；中：检测/跟踪叠加；右：二值化结果）"),
     "图 9b": ("图9b_NPU检测效果.png", "图 9b  NPU（ZG330 + YOLOv11n）检测效果：640×640 端到端推理，检测框经坐标反算回原图"),
     "图 10": ("图10_检出率曲线.png", "图 10  检出率随目标尺寸与对比度变化曲线（合成序列 9 组实测，CFAR k=4.0）"),
@@ -44,13 +60,20 @@ FIGMAP = {
               "图 16  软件多尺度的尺寸覆盖矩阵（四路降采样合并后覆盖 2~80 px，代价为单帧 10.6→13.8 ms）"),
     "图 17": ("图17_形态学方向权衡.png",
               "图 17  形态学方向与门限的召回—虚警权衡（100 张真实图 16 组配置；同召回下 Black-Hat 候选数低 3.7 倍）"),
+    "图 A": ("图A_软硬件性能对比.png",
+              "图 A  软件实现与 FPGA 实现的耗时对比（640×360 灰度、同一算法；检测 57.87→4.19 ms 即 13.8 倍、渲染+编码 88.89→12.90 ms 即 6.9 倍、端到端 148.83→41.00 ms 即 3.6 倍，对应 5.92→24.3 fps）"),
+    "图 B": ("图B_三种位流对比.png",
+              "图 B  独立检测器位流与三域位流的实测对比（同口径：独立检测器 PL 13.8 ms / 24.3 fps / LUT 61.9%，三域 PL 4.19 ms / 16.6 fps / LUT 84.4%）"),
+    "图 C": ("图C_网页控制台界面.png",
+              "图 C  网页控制台界面与功能（板端 http.server 实现，零外部依赖；实时推流 + HUD + 状态栏 + 三个 HTTP 接口）"),
+    "图 D": ("图D_NPU判别力验证.png",
+              "图 D  NPU 判别力验证（cls128 二分类 7 组独立输入：合成剪影 0.763/0.905/0.708 判正，纯噪声与白方块 0.000，天空中的鸟 0.299 属合理模糊）"),
+    "图 E": ("图E_启动时间优化.png",
+              "图 E  开机到服务就绪的耗时（312 s → 13.1 s，23.8 倍；位流加载与 IP 配置由 init.d 服务自动完成，开机失败单元 0 个）"),
 }
 
-NOPIC = {
-    "图 3": "【图 3：整机装配示意——待开发板到货后补充实物照片】",
-    "图 7": "【图 7：整机装配实物照片——待开发板到货后补充】",
-    "图 8": "【图 8：硬件连接实物照片——待开发板到货后补充】",
-}
+NOPIC = {}
+
 
 
 def esc(s):
@@ -100,6 +123,16 @@ def text_of(p):
     return t.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
 
 
+def _anchor(key):
+    """把图 key 解析成 (num, suf, 锚点正则)。数字图用十进制，字母图（图 A/B/C）用字母。"""
+    m = re.search(r"(\d+)([a-z]?)", key)
+    if m:
+        num, suf = int(m.group(1)), m.group(2)
+        return num, suf, re.compile(r"^【图\s*%d%s：" % (num, suf))
+    letter = re.sub(r"^图\s*", "", key).strip()
+    return 0, letter, re.compile(r"^【图\s*%s：" % re.escape(letter))
+
+
 def main():
     zin = zipfile.ZipFile(SRC_DOCX)
     doc = zin.read("word/document.xml").decode("utf-8")
@@ -110,7 +143,7 @@ def main():
     sizes, used = {}, set(re.findall(r'Id="([^"]+)"', rels))
     new_rels, new_media, rid_of = [], [], {}
     n = 100
-    for i, key in enumerate(sorted(FIGMAP, key=lambda k: (int(re.search(r"(\d+)", k).group(1)), re.search(r"(\d+)([a-z]?)", k).group(2)))):
+    for i, key in enumerate(sorted(FIGMAP, key=_figkey)):
         fn, _ = FIGMAP[key]
         p = os.path.join(IMG_DIR, fn)
         if not os.path.exists(p):
@@ -134,10 +167,8 @@ def main():
     # ---- ② 收集替换任务（字符串级，不重排文档）----
     jobs = []
     P = re.compile(r"<w:p\b(?:(?!<w:p\b).)*?</w:p>", re.S)
-    for key in sorted(FIGMAP, key=lambda k: (-int(re.search(r"(\d+)", k).group(1)), re.search(r"(\d+)([a-z]?)", k).group(2))):
-        m_ = re.search(r"(\d+)([a-z]?)", key)
-        num, suf = int(m_.group(1)), m_.group(2)
-        pat = re.compile(r"^【图\s*%d%s：" % (num, suf))
+    for key in sorted(FIGMAP, key=lambda k: (-_figkey(k)[0], _figkey(k)[1], _figkey(k)[2])):
+        num, suf, pat = _anchor(key)
         for m in P.finditer(doc):
             p = m.group(0)
             if pat.match(text_of(p).strip()):
@@ -148,9 +179,7 @@ def main():
                 print("  OK 插入 %s -> %s" % (key, FIGMAP[key][1][:34]))
                 break
     for key in NOPIC:
-        m_ = re.search(r"(\d+)([a-z]?)", key)
-        num, suf = int(m_.group(1)), m_.group(2)
-        pat = re.compile(r"^【图\s*%d%s：" % (num, suf))
+        num, suf, pat = _anchor(key)
         for m in P.finditer(doc):
             p = m.group(0)
             if pat.match(text_of(p).strip()):
