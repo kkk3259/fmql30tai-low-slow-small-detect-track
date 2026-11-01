@@ -1,0 +1,112 @@
+==================== 3.1 seq_test.py vs_300.png 4 ====================
+[2026-03-13 09:36:48.890] [info] Device initialization successful, version information:
+[2026-03-13 09:36:48.890] [info] 	icore: FMSHZGV3TECH-AID - 24160628
+[2026-03-13 09:36:48.890] [info] 	device: 25122301
+[2026-03-13 09:36:48.890] [info] Device Protocol: axi
+[2026-03-13 09:36:48.890] [info] Device Name: zg330aiu
+[2026-03-13 09:36:48.890] [info] Device Parameters: 
+[2026-03-13 09:36:48.890] [info] 	dma: 0x80000000
+[2026-03-13 09:36:48.890] [info] 	npu: 0x40000000
+FRAME 0  AR+=3609  RAN  STATUS=0x00720102 n=1
+    #0 x=239 y=173 area=21 peak=150
+    #1 x=0 y=0 area=0 peak=0
+    #2 x=0 y=0 area=0 peak=0
+    #3 x=0 y=0 area=0 peak=0
+    #4 x=0 y=0 area=0 peak=0
+    #5 x=0 y=0 area=0 peak=0
+    #6 x=0 y=0 area=0 peak=0
+    #7 x=0 y=0 area=0 peak=0
+FRAME 1  AR+=3609  RAN  STATUS=0x00730102 n=1
+    #0 x=239 y=173 area=21 peak=150
+    #1 x=0 y=0 area=0 peak=0
+    #2 x=0 y=0 area=0 peak=0
+    #3 x=0 y=0 area=0 peak=0
+    #4 x=0 y=0 area=0 peak=0
+    #5 x=0 y=0 area=0 peak=0
+    #6 x=0 y=0 area=0 peak=0
+    #7 x=0 y=0 area=0 peak=0
+FRAME 2  AR+=3609  RAN  STATUS=0x00740102 n=1
+    #0 x=239 y=173 area=21 peak=150
+    #1 x=0 y=0 area=0 peak=0
+    #2 x=0 y=0 area=0 peak=0
+    #3 x=0 y=0 area=0 peak=0
+    #4 x=0 y=0 area=0 peak=0
+    #5 x=0 y=0 area=0 peak=0
+    #6 x=0 y=0 area=0 peak=0
+    #7 x=0 y=0 area=0 peak=0
+FRAME 3  AR+=3609  RAN  STATUS=0x00750102 n=1
+    #0 x=239 y=173 area=21 peak=150
+    #1 x=0 y=0 area=0 peak=0
+    #2 x=0 y=0 area=0 peak=0
+    #3 x=0 y=0 area=0 peak=0
+    #4 x=0 y=0 area=0 peak=0
+    #5 x=0 y=0 area=0 peak=0
+    #6 x=0 y=0 area=0 peak=0
+    #7 x=0 y=0 area=0 peak=0
+
+==================== 3.2 seq_test.py vs_100.png 2 ====================
+[2026-03-13 09:36:50.173] [info] Device initialization successful, version information:
+[2026-03-13 09:36:50.174] [info] 	icore: FMSHZGV3TECH-AID - 24160628
+[2026-03-13 09:36:50.174] [info] 	device: 25122301
+[2026-03-13 09:36:50.174] [info] Device Protocol: axi
+[2026-03-13 09:36:50.174] [info] Device Name: zg330aiu
+[2026-03-13 09:36:50.174] [info] Device Parameters: 
+[2026-03-13 09:36:50.174] [info] 	dma: 0x80000000
+[2026-03-13 09:36:50.174] [info] 	npu: 0x40000000
+FRAME 0  AR+=3609  RAN  STATUS=0x00760102 n=1
+    #0 x=39 y=173 area=21 peak=150
+    #1 x=0 y=0 area=0 peak=0
+    #2 x=0 y=0 area=0 peak=0
+    #3 x=0 y=0 area=0 peak=0
+    #4 x=0 y=0 area=0 peak=0
+    #5 x=0 y=0 area=0 peak=0
+    #6 x=0 y=0 area=0 peak=0
+    #7 x=0 y=0 area=0 peak=0
+FRAME 1  AR+=3615  RAN  STATUS=0x00770802 n=8
+    #0 x=551 y=171 area=21 peak=150
+    #1 x=558 y=358 area=2 peak=34
+    #2 x=286 y=359 area=2 peak=23
+    #3 x=270 y=359 area=2 peak=22
+    #4 x=278 y=359 area=2 peak=22
+    #5 x=222 y=359 area=2 peak=21
+    #6 x=230 y=359 area=2 peak=21
+    #7 x=258 y=359 area=2 peak=21
+
+==================== 3.3 cam3d_test.py --n 6 --npu 0 ====================
+[2026-03-13 09:36:51.373] [info] Device initialization successful, version information:
+[2026-03-13 09:36:51.373] [info] 	icore: FMSHZGV3TECH-AID - 24160628
+[2026-03-13 09:36:51.373] [info] 	device: 25122301
+[2026-03-13 09:36:51.373] [info] Device Protocol: axi
+[2026-03-13 09:36:51.373] [info] Device Name: zg330aiu
+[2026-03-13 09:36:51.373] [info] Device Parameters: 
+[2026-03-13 09:36:51.373] [info] 	dma: 0x80000000
+[2026-03-13 09:36:51.373] [info] 	npu: 0x40000000
+[ WARN:0@0.191] global /io/opencv/modules/videoio/src/cap_v4l.cpp (902) open VIDEOIO(V4L2:/dev/video0): can't open camera by index
+PL3D base=0x1000 VERSION=0x00010000
+cap fail
+AVG PL=0.0ms  cand/frame=0.0
+
+==================== 3.4 npu_trigger_test.py ====================
+测试图 /root/ip2/npu_trigger.png  白点数=4  尺寸=640x360
+[2026-03-13 09:36:52.453] [info] Device initialization successful, version information:
+[2026-03-13 09:36:52.453] [info] 	icore: FMSHZGV3TECH-AID - 24160628
+[2026-03-13 09:36:52.453] [info] 	device: 25122301
+[2026-03-13 09:36:52.453] [info] Device Protocol: axi
+[2026-03-13 09:36:52.453] [info] Device Name: zg330aiu
+[2026-03-13 09:36:52.453] [info] Device Parameters: 
+[2026-03-13 09:36:52.453] [info] 	dma: 0x80000000
+[2026-03-13 09:36:52.453] [info] 	npu: 0x40000000
+PL3D base=0x1000 VERSION=0x00010000
+PL: st=0x00780401 dt=4.19ms  n=4  总耗时 10ms
+  cand0 x=400 y=120 area=6 peak=195
+  cand1 x=460 y=120 area=6 peak=195
+  cand2 x=520 y=120 area=6 peak=195
+  cand3 x=580 y=120 area=6 peak=195
+[2K[03/13/26 09:36:52.861] [W] You are using Icraft v3.33.1 to parse the json file compiled by Icraft v3.39.0
+[2K[03/13/26 09:36:52.861] [W] You are using XIR 3.33.1.0 to parse the json file compiled by XIR 3.39.0.0
+[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2K[2KNPU ready
+[2K[2K  NPU cand0  p=['0.802', '0.197']  1.62ms
+[2K[2K  NPU cand1  p=['0.999', '0.000']  1.35ms
+[2K[2K  NPU cand2  p=['0.999', '0.000']  1.27ms
+[2K[2K  NPU cand3  p=['0.999', '0.000']  1.29ms
+NPU 总 5.53ms  平均 1.38ms/候选
