@@ -1,4 +1,4 @@
-# deploy_tracker.ps1 —— 把带航迹跟踪的 cam3d_pipe.py 部署到板子
+﻿# deploy_tracker.ps1 —— 把带航迹跟踪的 cam3d_pipe.py 部署到板子
 #
 # 前置：板子已加载三域位流（ours3d_s5.bin），且 169.254.67.100 可 ping
 # 用法：powershell -ExecutionPolicy Bypass -File ps\deploy_tracker.ps1
