@@ -53,7 +53,8 @@ def _merge(boxes, dist=18.0):
             iom = inter / max(1.0, min(bw * bh, ow * oh))
             ox, oy = (o[0] + o[2]) / 2.0, (o[1] + o[3]) / 2.0
             d = ((cx - ox) ** 2 + (cy - oy) ** 2) ** 0.5
-            r = max(dist, 0.85 * max(ow, oh, bw, bh))
+            # 半径按尺寸缩放，但必须封顶：否则一个大框会把整片邻居全吞掉
+            r = max(dist, min(0.55 * max(ow, oh, bw, bh), 60.0))
             if iom >= 0.40 or d <= r:
                 dup = True
                 break
