@@ -108,3 +108,71 @@ fps=29.8   err=''                    n=0
 
 验证方法：把 `t4_fourdrones.png`（四架无人机剪影）显示在屏幕上、镜头对着它，应出现 4 个框。
 
+## 十、致命的第三个 global bug（2026-11-01 深夜，用户报"没用啊"）
+
+页面此前**从来没跑过 yolo**。证据是三件同时出现的事：
+
+```
+PL_ms  = 0.0     ← PL 被跳过（说明 USE_YOLO 确实是 True）
+npu_ms = 0.0     ← yolo 却也没跑
+n      = 0       ← 所以永远没有目标
+```
+
+根因（**这是本项目第三次踩同一个坑**）：
+
+```python
+def main():
+    global GAMMA, INVERT, COLOR_DISP, USE_YOLO    # ← 漏了 YOLO
+    ...
+    YOLO = Yolo()     # 只赋给 main() 的局部变量，模块级 YOLO 恒为 None
+```
+
+而检测分支的守卫是 `if USE_YOLO and YOLO is not None:` → 恒不成立。
+启动日志里那句 `YOLO ok`（模型加载成功）把问题掩盖了——**加载成功 ≠ 用上了**。
+
+前两次同款：`GAMMA = args.gamma` 让 `--gamma` 从未生效；`USE_YOLO` 漏在 global 里导致 PL 与 NPU 抢 DMA 报 `pl: Write failed`。
+
+修完后 `npu_ms` 从 0.0 → **26.3**，这就是"真的在跑"的硬证据。
+
+## 十一、45 ms 的热点：sigmoid 只算需要的部分
+
+拆解 `detect()` 各阶段（板上实测）：
+
+| 阶段 | 耗时 |
+|---|---|
+| resize + copy | 4.3 ms |
+| Tensor build | 0.7 ms |
+| **forward** | **2.9 ms** |
+| read OUT0（2.1 MB） | 7.3 ms |
+| read OUT1 | 2.2 ms |
+| **`sig(o0[4:]).max(axis=0)`** | **45.7 ms** ← 元凶 |
+
+`o0[4:]` 是 60×8400 = **50.4 万个元素**，`np.exp` 在这颗核上要 45 ms。
+
+因为 sigmoid 单调，`max` 后再 sigmoid 与 sigmoid 后 max **完全等价**：
+
+```python
+ml = o0[4:].max(axis=0)      # 先取 60 类里最大的 logit（纯比较，很快）
+sc = sig(o1) * sig(ml)       # 只对 8400 个值算 exp
+```
+
+**45.7 ms → 3 ms**。再加灰度直通（省一次 640×360 的 `GRAY2BGR`），`detect()` **80 ms → 30 ms**。
+
+页面实测：`fps=19.9`、`npu_ms=26.3`（vs 修之前 fps 29.8 但什么都没干）。
+
+## 十二、灰度直通路径验证
+
+页面传的是 2-D 灰度（`YOLO.detect(gray)`），`detect()` 里新增 `if bgr.ndim == 2:` 分支。六张图按 640×360 灰度重跑，全部能出框（无回归）：
+
+| 图 | 框数 | 耗时 |
+|---|---|---|
+| t4_fourdrones | 6 | 30.2 ms |
+| t2_twodrones | 1 | 27.2 ms |
+| t5_plane_drone | 3 | 29.8 ms |
+| t1_birds | 1 | 24.4 ms |
+| t3_field_drone | 1 | 24.8 ms |
+| t6_plane_bird | 2 | 26.8 ms |
+
+**注意**：t4 那张是竖图（324×428），强行缩到 640 宽再裁 640×360 会把机身切掉，框变成 3×23 的碎片——这是这套"模拟相机"脚本的失真，不是模型问题。真机是横图 640×480 裁 640×360，不存在这个失真。
+
+
