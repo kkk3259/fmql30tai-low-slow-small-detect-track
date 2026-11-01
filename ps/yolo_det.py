@@ -74,12 +74,23 @@ class Yolo:
         conf = float(os.environ.get('CONF', '0.45')) if conf is None else conf
         iou = float(os.environ.get('IOU', '0.30')) if iou is None else iou
         h0, w0 = bgr.shape[:2]
-        sx, sy = w0 / 640.0, h0 / 640.0      # 解码在 640x640 空间，必须映回原图
-        if bgr.ndim == 2:                    # 灰度直通：省一次 640x360 的 GRAY2BGR
-            g = cv2.resize(bgr, (640, 640), interpolation=cv2.INTER_AREA)
-            rgb = cv2.cvtColor(g, cv2.COLOR_GRAY2RGB)[None]
+        # —— letterbox 到 640x640（等比缩放 + 114 灰边），不要拉伸 ——
+        # 实测（t4 四架无人机，板上）：同一张 640x360 帧，
+        #   拉伸 (cv2.resize -> 640x640)：最高分 0.308，≥0.45 的锚点 0 个
+        #   letterbox              ：最高分 0.689，≥0.45 的锚点 11 个
+        # 模型训练时用的是 letterbox，拉伸会把目标按 1.78 倍纵向压扁，直接掉分。
+        lb_s = min(640.0 / w0, 640.0 / h0)
+        nw, nh = max(1, int(round(w0 * lb_s))), max(1, int(round(h0 * lb_s)))
+        lb_x, lb_y = (640 - nw) // 2, (640 - nh) // 2
+        if bgr.ndim == 2:                    # 灰度直通
+            small = cv2.resize(bgr, (nw, nh), interpolation=cv2.INTER_AREA)
+            body = cv2.cvtColor(small, cv2.COLOR_GRAY2RGB)
         else:
-            rgb = cv2.cvtColor(cv2.resize(bgr, (640, 640)), cv2.COLOR_BGR2RGB)[None]
+            small = cv2.resize(bgr, (nw, nh), interpolation=cv2.INTER_AREA)
+            body = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
+        buf = np.full((640, 640, 3), 114, np.uint8)
+        buf[lb_y:lb_y + nh, lb_x:lb_x + nw] = body
+        rgb = buf[None]
         t = self.xrt.Tensor(np.ascontiguousarray(rgb.astype(np.uint8)), self.tt)
         outs = self.sess.forward([t])
         o0 = read_tensor(outs[0])[0]
@@ -106,8 +117,10 @@ class Yolo:
             cy = (2 * a[1] + gy - 0.5) * st
             w = 4 * a[2] * a[2] * st
             h = 4 * a[3] * a[3] * st
-            boxes.append([(cx - w / 2) * sx, (cy - h / 2) * sy,
-                          (cx + w / 2) * sx, (cy + h / 2) * sy, float(sc[i])])
+            # 640x640 空间 -> 原图：先减 letterbox 偏移，再除缩放比
+            boxes.append([((cx - w / 2) - lb_x) / lb_s, ((cy - h / 2) - lb_y) / lb_s,
+                          ((cx + w / 2) - lb_x) / lb_s, ((cy + h / 2) - lb_y) / lb_s,
+                          float(sc[i])])
         if not boxes:
             return []
         # NMS

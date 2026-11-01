@@ -175,4 +175,59 @@ sc = sig(o1) * sig(ml)       # 只对 8400 个值算 exp
 
 **注意**：t4 那张是竖图（324×428），强行缩到 640 宽再裁 640×360 会把机身切掉，框变成 3×23 的碎片——这是这套"模拟相机"脚本的失真，不是模型问题。真机是横图 640×480 裁 640×360，不存在这个失真。
 
+## 十三、决定性发现：必须用 letterbox，不能拉伸（2026-11-01 深夜）
+
+之前 `detect()` 里是 `cv2.resize(img, (640,640))` —— **把 640×360 纵向拉伸 1.78 倍**。模型训练用的是 letterbox（等比缩放 + 灰边），拉伸会直接把分数打下来。
+
+同一张图（t4 四架无人机，板上实测）：
+
+| 预处理 | 最高分 | ≥0.45 的锚点数 | detect 结果 |
+|---|---|---|---|
+| 拉伸到 640×640 | 0.308 | **0** | **0 个框** |
+| letterbox 到 640×640 | **0.689** | **11** | 正常出框 |
+
+更狠的对照（用假相机跑完整网页链路，`ps/test_page_yolo.py`）：
+
+```
+改之前（拉伸）：PAGE_INFO frames=11 npu_ms=26.2 n=0   → VERDICT PAGE-YOLO-FAIL
+改之后（letterbox）：PAGE_INFO frames=9  npu_ms=30.5 n=5   → VERDICT PAGE-YOLO-OK
+   x=393 y=122 area=1031 p=0.833
+   x=215 y=214 area=332  p=0.691
+   x=390 y=155 area=481  p=0.691
+   x=231 y=235 area=94   p=0.500
+   x=344 y=218 area=757  p=0.500
+```
+
+**这就是"网页一个目标都没有"的最后一块拼图**：即使 global bug 修好了，拉伸预处理也会让分数掉到 0.31，永远过不了 0.45 的阈值。
+
+改法（`ps/yolo_det.py`）：
+
+```python
+lb_s = min(640.0 / w0, 640.0 / h0)
+nw, nh = int(round(w0 * lb_s)), int(round(h0 * lb_s))
+lb_x, lb_y = (640 - nw) // 2, (640 - nh) // 2
+buf = np.full((640, 640, 3), 114, np.uint8)      # 114 灰边，与训练一致
+buf[lb_y:lb_y+nh, lb_x:lb_x+nw] = cv2.cvtColor(cv2.resize(img, (nw, nh)), ...)
+# 反变换：box 先减 lb_x/lb_y，再除 lb_s
+```
+
+**踩坑记录**：第一次改的时候变量名撞了——letterbox 的缩放比叫 `sc`，而分数数组后面也叫 `sc`，
+导致 `boxes.append([...])` 里除以了一个 8400 维数组，报
+`ValueError: The truth value of an array with more than one element is ambiguous`。
+改名成 `lb_s / lb_x / lb_y` 后正常。
+
+## 十四、端到端验证脚本
+
+`ps/test_page_yolo.py`：把 `cv2.VideoCapture` 换成一个"假相机"（每帧返回 t4 图片缩放成的
+640×480 画面），然后用 `cam3d_pipe.main()` 真正的服务代码起在 8099 端口，读 `/info`
+看 `n` 与 `cands`。
+
+这是唯一能证明"**网页上的框确实来自 yolo11n**"的方法——不依赖现场摆拍。
+
+```bash
+cd /root/ip2 && python3 test_page_yolo.py
+# 期望：VERDICT PAGE-YOLO-OK，n≥3
+```
+
+
 
