@@ -43,6 +43,30 @@ TMP = {
 }
 
 
+def find_cam(fallback=0):
+    """按 v4l2 名字找 USB Camera，返回设备号；找不到则返回 fallback。
+
+    设备号会漂移：同一台相机插在不同 USB 口上会枚举成 /dev/video0 / video1 / video3，
+    而板载 Linlon VPU 固定占一个号。硬编码 VideoCapture(0) 会在换口后打不开，
+    表现为 read() 一直失败、/info 的 frames 不涨（服务空转但看不出错）。
+    """
+    import subprocess
+    import re
+    try:
+        out = subprocess.run(["v4l2-ctl", "--list-devices"],
+                             capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return fallback
+    lines = out.split("\n")
+    for i, ln in enumerate(lines):
+        if "USB Camera" in ln:
+            for nxt in lines[i + 1:i + 6]:
+                m = re.search(r"/dev/video(\d+)", nxt)
+                if m:
+                    return int(m.group(1))
+    return fallback
+
+
 # ---------------------------------------------------------------- 航迹跟踪
 
 
@@ -160,7 +184,9 @@ TRACKER = Tracker()
 # ---------------------------------------------------------------- 推理线程
 def infer_loop(pl, net):
     """相机 -> PL -> 候选 -> (NPU) -> 画框 -> JPEG 缓冲。"""
-    cap = cv2.VideoCapture(0)
+    cam_idx = find_cam(0)
+    print("[cam] using /dev/video%d" % cam_idx, flush=True)
+    cap = cv2.VideoCapture(cam_idx)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"YUYV"))
