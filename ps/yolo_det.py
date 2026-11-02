@@ -199,18 +199,32 @@ class Yolo:
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
             ox, oy = col * cell + (cell - nw) // 2, r * cell + (cell - nh) // 2
             canvas[oy:oy + nh, ox:ox + nw] = img
-            meta.append((ox, oy, s, w, h))
+            meta.append((ox, oy, s, w, h, nw, nh))
         if not meta:
             return []
         # 画布本身就是 640×640，detect() 里的 letterbox 退化为恒等变换
         boxes = self.detect(canvas, conf=conf, iou=iou)
         out = []
         for b in boxes:
-            cx, cy = (b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0
-            k = int(cy // cell) * grid + int(cx // cell)
-            if k < 0 or k >= len(meta):
+            # 【关键】按「与各格真实贴图矩形的重叠面积最大」归属格子。
+            # 原来用「框中心 // cell」判断，当目标框伸出贴图矩形（留白区）时会
+            # 被算到相邻格，再用那一格的偏移反算坐标 → 凭空多出一个错位框，
+            # 且偏移量固定（约一个格宽），分数与原框相同。
+            best_k, best_ov = -1, 0.0
+            for _k, (_ox, _oy, _s, _w, _h, _nw, _nh) in enumerate(meta):
+                _rx1, _ry1 = _ox, _oy
+                _rx2, _ry2 = _ox + _nw, _oy + _nh
+                _ix = max(0.0, min(b[2], _rx2) - max(b[0], _rx1))
+                _iy = max(0.0, min(b[3], _ry2) - max(b[1], _ry1))
+                _ov = _ix * _iy
+                if _ov > best_ov:
+                    best_ov, best_k = _ov, _k
+            if best_k < 0 or best_ov <= 0.0:
+                continue                       # 完全落在留白里，丢弃
+            k = best_k
+            if k >= len(meta):
                 continue
-            ox, oy, s, w, h = meta[k]
+            ox, oy, s, w, h = meta[k][0:5]
             x1 = min(max((b[0] - ox) / s, 0.0), w - 1.0)
             y1 = min(max((b[1] - oy) / s, 0.0), h - 1.0)
             x2 = min(max((b[2] - ox) / s, 0.0), w - 1.0)

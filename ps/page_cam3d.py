@@ -75,7 +75,7 @@ canvas.chart{width:100%;height:74px;display:block}
       <div class="ctl" style="margin-top:8px">
         <label><input type="checkbox" id="c_pl" checked> 显示 PL 疑似目标（灰细框）</label></div>
       <div style="font-size:10.5px;color:#5a6f85;margin-top:8px;line-height:1.5">
-        <b>绿框</b> = 已确认目标（连续 ≥2 帧都出现，稳定）　<b>红框</b> = 疑似目标（只出现 1 帧，可能是噪声，会自己消失）<br>滑条只影响网页显示，不改变板子里的 CFAR 门限。</div>
+        <b>绿框 = NPU 判为无人机（置信度 ≥50%）&nbsp;&nbsp;橙框 = PL 检出但 NPU 判不是<br>灰细框 = 仅 PL 候选（NPU 未通过或未判，勾选才显示）；框上数字 = 目标尺寸 px 与置信度<br>滑条只影响网页显示，不改变板子里的 CFAR 门限。</div>
     </div>
     <div class="card">
       <h2>耗时曲线（近 60 帧）</h2>
