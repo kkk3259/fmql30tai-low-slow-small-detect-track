@@ -123,6 +123,34 @@ def detect_loop(pl, y):
             newprev[i] = (b[5], b[6], b[7], b[8],
                           max(1, FRAME_N[0] - DET_FRAME[0]))
         PREV[0] = newprev
+        # 【2026-11-02】IoU 合并：部分重叠也能合（包含度判据对部分重叠无效）
+        outv.sort(key=lambda z: -z[4])
+        mg = []
+        for (x1, y1, x2, y2, sc) in out:
+            ax1, ay1, ax2, ay2 = x1, y1, x2, y2
+            hit_any = False
+            for m in mg:
+                bx1, by1, bx2, by2 = m[0], m[1], m[2], m[3]
+                iw = min(ax2, bx2) - max(ax1, bx1)
+                ih = min(ay2, by2) - max(ay1, by1)
+                if iw <= 0 or ih <= 0:
+                    continue
+                inter = float(iw * ih)
+                area_a = float((ax2 - ax1) * (ay2 - ay1))
+                area_b = float((bx2 - bx1) * (by2 - by1))
+                iou = inter / max(1.0, area_a + area_b - inter)
+                if iou > 0.25:
+                    m[0] = min(bx1, ax1); m[1] = min(by1, ay1)
+                    m[2] = max(bx2, ax2); m[3] = max(by2, ay2)
+                    m[4] = max(m[4], sc)
+                    hit_any = True
+                    break
+            if not hit_any:
+                mg.append([ax1, ay1, ax2, ay2, sc])
+        outv = []
+        for (x1, y1, x2, y2, sc) in mg:
+            cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+            outv.append((x1, y1, x2, y2, sc, cx, cy, 0.0, 0.0))
         BOXES[0] = outv
         DET_FRAME[0] = FRAME_N[0]      # 记下这次检测用的是第几帧
         DET_CNT[0] += 1
@@ -155,13 +183,8 @@ def main():
         FRAME[0] = f                                   # 只丢最新帧，检测自己来取
         vis = cv2.resize(f, (OUT_W, OUT_H))            # 画面路径：不烧框，直接送编码
         FRAME_N[0] = n
-        dtn = n - DET_FRAME[0]                          # 距上次检测过了几帧
         for b in BOXES[0]:
             x1, y1, x2, y2, sc = b[0], b[1], b[2], b[3], b[4]
-            if len(b) > 8:                              # 速度外推
-                dx = b[7] * dtn
-                dy = b[8] * dtn
-                x1, x2, y1, y2 = x1 + dx, x2 + dx, y1 + dy, y2 + dy
             aa_rect(vis, int(x1), int(y1), int(x2), int(y2), (80, 230, 60), 3)
             cv2.putText(vis, "%.0f%%" % (sc * 100), (int(x1), max(12, int(y1) - 5)),
                         0, 0.65, (80, 230, 60), 2, cv2.LINE_AA)

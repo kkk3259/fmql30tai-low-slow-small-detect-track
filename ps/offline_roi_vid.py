@@ -184,8 +184,8 @@ def main():
                 if iw <= 0 or ih <= 0:
                     continue
                 inter = iw * ih
-                smaller = min(c["w"] * c["h"], m["w"] * m["h"])
-                if smaller > 0 and inter / smaller >= 0.50:
+                uni = c["w"] * c["h"] + m["w"] * m["h"] - inter
+                if uni > 0 and inter / uni > 0.25:
                     ux1, uy1 = min(ax1, bx1), min(ay1, by1)
                     ux2, uy2 = max(ax2, bx2), max(ay2, by2)
                     m["x"], m["y"] = (ux1 + ux2) / 2, (uy1 + uy2) / 2
