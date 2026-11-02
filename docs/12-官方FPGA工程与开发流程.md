@@ -402,9 +402,9 @@ examples/1_single_input+ai/PLin+SingleNet+HDMI/src/
 | 9 | **FPGA 工程源码** | **有**：`fpai_demo_fpga.rar`（含 `AI_Mate.edif` 69.6 MB）|
 | 10 | **Procise License** | **仍缺**（唯一）|
 
-### 7.2 P 的卡点变化
+### 7.2 关键问题与解决结果
 
-| P 之前的卡点 | 现在 |
+| 问题 | 解决结果 |
 |---|---|
 | PL 系统时钟引脚找不到 | **C8 / C7，200 MHz，`DIFF_SSTL15`** |
 | xdc 全注释 | **可直接用官方 `impl_constraints.xdc` 改造** |

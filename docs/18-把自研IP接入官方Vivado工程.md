@@ -8,7 +8,7 @@
 > - 官方工程 = `D:\firstharness\official\fpai_demo_fpga\fpai_demo_fpga\fpai_demo_vivado.xpr`（已从 rar 完整解压，含 `ps_ai.bd`、`rtl/`、`PS_AI IP/`）
 > - 官方约束 = `constrs_1\impl_constraints.xdc`（C8/C7 200 MHz 差分、J1/M6 LED、F8 复位）
 > - JFM_Kits = `D:\firstharness\JFM_Kits`（含 `ip_patch/run.tcl`、`030ai` 补丁目录）
-> - 本机尚未安装 Vivado（必须先装，官方指定 **2018.3**）
+> - 本机需安装 Vivado **2018.3**（官方指定版本）
 
 ---
 

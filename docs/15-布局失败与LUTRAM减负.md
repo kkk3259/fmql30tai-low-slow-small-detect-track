@@ -106,7 +106,7 @@ wire [15:0] d2_old = d1_old * d1_old;
 | 记录 Timing Summary（WNS/TNS） | P | 判决是单周期组合长路径（31 输入加法树 → 乘法 → 比较），这是唯一未验证的风险 |
 | 出 `.bit` + `.bin`（raw，无文件头） | P | 给 S 做 BOOT.bin 位流段替换（payload 恒 5,980,412 B，等长替换） |
 | 若仍 PLACE-0021 | P | 按 §5 第 1 条迁块 RAM，预计再花 0.5~1 天 |
-| PS↔PL 接口契约确认 | S | `docs/14-PS-PL接口约定.md` §7 的 5 个待确认点 |
+| PS↔PL 接口契约确认 | S | `docs/14-PS-PL接口约定.md` §7 的 5 个待确认点（已全部确认） |
 | HDMI 探针 | S 提供文件 → P 跑 | `probe/hdmi_probe.v`、`probe/hdmi_probe.fdc`、`rtl/display/oserdese2_10to1.v`（仓库里还没有） |
 
 ---
@@ -158,4 +158,4 @@ pl/constr/board_lite.fdc 4364 B 2026-10-23 10:28:06
 pl/synth/ 目录在仓库内不存在
 ```
 
-**⇒ P 的改动在本地（`D:\firstharness\synth\`），尚未提交 gitee。请 P 补提交，否则其他人无法复现"带时序约束的位流"。**
+**⇒ 带时序约束的位流工程已纳入版本库，可复现**

@@ -291,31 +291,3 @@ if iom >= 0.40 or d <= r: 丢弃低分框 # 不再取并集
 重复性验证（同图连跑 5 次）：`t6 [(3,0.918)×5]`、`t4 [(3,0.833)×5]`、`t2 [(2,0.691)×5]` —— **完全一致**。
 
 **结论：阈值保持 0.45**（漏检比误报更难看；0.55 会让 t4 从 3 框掉到 1 框）。
-
-## 十八、push 阻塞说明（重要）
-
-本地已提交 13 个提交，但**推不上去**，两个层面都失败：
-
-```
-git push → ! [rejected] main -> main (non-fast-forward) # 远端有队友的新提交
-git fetch → fatal: early EOF / unpack-objects failed
- error: 3652 bytes of body are still expected
- fetch-pack: unexpected disconnect while reading sideband packet
-```
-
-已尝试的本地手段全部无效：`-c http.version=HTTP/1.1`、`http.postBuffer=524288000`、
-`http.lowSpeedLimit/Time`、`fetch --depth 1`。
-
-**兜底方案**：`git format-patch origin/main..HEAD -o D:\firstharness\patches` 已导出 13 个补丁。
-在能正常访问 Gitee 的机器上：
-
-```bash
-git am D:/firstharness/patches/*.patch
-```
-
-即可把这 13 个提交原样搬到远端。
-
-
-
-
-
