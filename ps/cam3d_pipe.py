@@ -387,15 +387,41 @@ def infer_loop(pl, net):
                 ROI_SIDE = 96
                 ROI_CELL = 4          # 4×4 网格，每格 160×160（96→160 放大 1.67×）
                 ROI_N = ROI_CELL * ROI_CELL
-                cands_in = keep[:ROI_N]
+                # 【2026-11-02】按中心距聚类：同一目标碎片合成一个，免得占满格子
+                def _cluster(cs):
+                    groups = []
+                    for c in sorted(cs, key=lambda z: -z["peak"]):
+                        r = min(40.0, max(14.0, 2.5 * (c["area"] ** 0.5)))
+                        got = None
+                        for g in groups:
+                            if ((c["x"] - g["x"]) ** 2 + (c["y"] - g["y"]) ** 2) ** 0.5 <= r:
+                                got = g
+                                break
+                        if got is None:
+                            groups.append({"x": float(c["x"]), "y": float(c["y"]),
+                                           "area": c["area"], "peak": c["peak"], "_n": 1})
+                        else:
+                            k = got["_n"]
+                            got["x"] = (got["x"] * k + c["x"]) / (k + 1)
+                            got["y"] = (got["y"] * k + c["y"]) / (k + 1)
+                            got["area"] = max(got["area"], c["area"])
+                            got["peak"] = max(got["peak"], c["peak"])
+                            got["_n"] = k + 1
+                    return groups
+
+                cl = _cluster(keep)
+                cl.sort(key=lambda g: -g["peak"])
+                cands_in = cl[:ROI_N]
                 if cands_in:
                     crops, meta = [], []
                     for c in cands_in:
-                        hx = ROI_SIDE // 2
-                        x0 = int(min(max(c["x"] - hx, 0), max(0, W - ROI_SIDE)))
-                        y0 = int(min(max(c["y"] - hx, 0), max(0, H - ROI_SIDE)))
-                        crops.append(gray[y0:y0 + ROI_SIDE, x0:x0 + ROI_SIDE].copy())
-                        meta.append((x0, y0))
+                        # 【2026-11-02】按目标面积放大裁剪窗 96~128
+                        _sd = int(min(max(ROI_SIDE, 3.0 * (c["area"] ** 0.5)), 128))
+                        hx = _sd // 2
+                        x0 = int(min(max(c["x"] - hx, 0), max(0, W - _sd)))
+                        y0 = int(min(max(c["y"] - hx, 0), max(0, H - _sd)))
+                        crops.append(gray[y0:y0 + _sd, x0:x0 + _sd].copy())
+                        meta.append((x0, y0, _sd))
                     res = YOLO.detect_mosaic(crops, grid=ROI_CELL)
                     # 每个 slot 取最高分，映射回整帧坐标
                     best = {}
@@ -406,7 +432,7 @@ def infer_loop(pl, net):
                             best[slot] = (x1, y1, x2, y2, sc)
                     fused = []
                     for i, c in enumerate(cands_in):
-                        x0, y0 = meta[i]
+                        x0, y0, _sd = meta[i]
                         if i in best:
                             x1, y1, x2, y2, sc = best[i]
                             fused.append({"x": int((x0 + x1 + x0 + x2) / 2),
@@ -417,8 +443,33 @@ def infer_loop(pl, net):
                         else:                       # NPU 没认出的 PL 候选：保留但标记
                             fused.append({"x": c["x"], "y": c["y"], "area": c["area"],
                                           "peak": c["peak"], "p": 0.0, "roi": 0})
-                    keep = [c for c in fused if (c["roi"] and c["p"] >= ROI_CONF)
-                            or (not c["roi"] and ROI_KEEP_PL)]
+                    # 【2026-11-02】50% 包含度合并：同一目标只留一个框
+                    hits = [c for c in fused if c["roi"] and c["p"] >= ROI_CONF]
+                    hits.sort(key=lambda z: -z["p"])
+                    merged = []
+                    for c in hits:
+                        ax1, ay1 = c["x"] - c["area"] ** 0.5, c["y"] - c["area"] ** 0.5
+                        ax2, ay2 = c["x"] + c["area"] ** 0.5, c["y"] + c["area"] ** 0.5
+                        hit_any = False
+                        for m in merged:
+                            bx1, by1 = m["x"] - m["area"] ** 0.5, m["y"] - m["area"] ** 0.5
+                            bx2, by2 = m["x"] + m["area"] ** 0.5, m["y"] + m["area"] ** 0.5
+                            iw = min(ax2, bx2) - max(ax1, bx1)
+                            ih = min(ay2, by2) - max(ay1, by1)
+                            if iw <= 0 or ih <= 0:
+                                continue
+                            inter = iw * ih
+                            smaller = min((ax2 - ax1) * (ay2 - ay1), (bx2 - bx1) * (by2 - by1))
+                            if smaller > 0 and inter / smaller >= 0.50:
+                                m["x"] = (min(ax1, bx1) + max(ax2, bx2)) / 2
+                                m["y"] = (min(ay1, by1) + max(ay2, by2)) / 2
+                                m["area"] = int(max(m["area"], c["area"]))
+                                m["p"] = max(m["p"], c["p"])
+                                hit_any = True
+                                break
+                        if not hit_any:
+                            merged.append(dict(c))
+                    keep = merged + [c for c in fused if (not c["roi"] and ROI_KEEP_PL)]
                 else:
                     keep = []
                 STATE["npu_ms"] = (time.time() - ty) * 1000.0

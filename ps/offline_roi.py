@@ -44,8 +44,18 @@ def run_one(pl, y, name):
     ok = [c for c in c1 + c2 if c["area"] >= 4 and c["peak"] >= 8
           and 4 <= c["y"] < H - 4 and 4 <= c["x"] < W - 4]
     # 两种极性各取前 8（按 peak），避免一路的虚警把另一路的真目标挤掉
-    a = sorted([c for c in ok if c["pol"] == 0], key=lambda c: -c["peak"])[:8]
-    b = sorted([c for c in ok if c["pol"] == 1], key=lambda c: -c["peak"])[:8]
+    def _pick(cs, k=8, mind=40.0):
+        # 按 peak 降序贪心，且彼此间隔 >= mind，避免树线/云边一堆挤满格子
+        out = []
+        for c in sorted(cs, key=lambda z: -z["peak"]):
+            if all(((c["x"]-o["x"])**2 + (c["y"]-o["y"])**2) ** 0.5 >= mind for o in out):
+                out.append(c)
+            if len(out) >= k:
+                break
+        return out
+
+    a = _pick([c for c in ok if c["pol"] == 0], 8)
+    b = _pick([c for c in ok if c["pol"] == 1], 8)
     cands = c1 + c2
     keep = a + b
     cands_in = keep[:ROI_CELL * ROI_CELL]

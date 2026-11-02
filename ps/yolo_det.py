@@ -143,7 +143,7 @@ class Yolo:
                 h = 4 * a[3] * a[3] * st
                 x1, y1, x2, y2 = cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
             # 该模型对小目标的外接框系统性偏小，按中心外扩 BOX_PAD 倍便于观看
-            pad = float(os.environ.get('BOX_PAD', '1.25'))
+            pad = float(os.environ.get('BOX_PAD', '1.10'))
             if pad != 1.0:
                 mx, my = (x1 + x2) / 2, (y1 + y2) / 2
                 hw, hh = (x2 - x1) * pad / 2, (y2 - y1) * pad / 2
