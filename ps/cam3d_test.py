@@ -68,11 +68,12 @@ class PL3D(object):
         st = 0
         t0 = time.time()
         # 触发可能被吞（实测连续触发时约一半不启动），AR 不长就重发，最多 5 次
-        for _try in range(5):
+        for _try in range(3):
             self.reg.write(REG + R_CTRL, 0)
             time.sleep(0.001)
             self.reg.write(REG + R_CTRL, 1)
             t1 = time.time()
+            _last_ar = -1
             # 自适应等待：正常帧 ~5ms 完成；若 AR 完全没涨说明触发被吞，
             # 2ms 就能判定并立刻重发，不必等固定超时
             while time.time() - t1 < 0.050:
@@ -82,7 +83,8 @@ class PL3D(object):
                 if (a1 - a0) > 3000 and not (st & 1):
                     break
                 if (a1 - a0) == 0 and (time.time() - t1) > 0.002:
-                    break          # 触发没生效，立即重试
+                    break          # AR 停止增长（触发被吞或卡住），立即重试
+                _last_ar = a1
                 time.sleep(0.0001)
             a1 = self.reg.read(REG + R_AR) & 0xFFFFFFFF
             st = self.reg.read(REG + R_STATUS) & 0xFFFFFFFF

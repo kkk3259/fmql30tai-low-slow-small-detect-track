@@ -562,7 +562,7 @@ def infer_loop(pl, net):
                     keep = []
                 STATE["npu_ms"] = (time.time() - ty) * 1000.0
             except Exception as e:                            # noqa: BLE001
-                STATE["err"] = "roi:%s" % e
+                STATE["err"] = "roi:%s" % str(e)[:120]
 
         # NPU re-check
         if (not USE_YOLO) and INFER["npu"] and net is not None and keep:
@@ -785,7 +785,7 @@ def main():
 
         if USE_YOLO:
             try:
-                YOLO = Yolo(dev=pl.dev)     # 复用 PL3D 的 Device，避免抢 DMA
+                YOLO = Yolo(dev=pl.dev)     # 复用 PL3D 的 Device（自建 Device 会把 PL 的 DMA 区域顶掉）
                 print("YOLO ok (shared dev)", flush=True)
             except Exception as e:                             # noqa: BLE001
                 print("YOLO unavailable: %s" % e, flush=True)
