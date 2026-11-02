@@ -420,16 +420,6 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                 lf_rp     <= 5'd0;
                 lf_cnt    <= 5'd0;
                 lbcnt     <= 6'd0;
-                // 【2026-11-02】帧起点一并清读通路：地址队列 + 跨域 toggle + 在途 AR。
-                // 这三处原来不清，上一帧残留会让本帧多读 1 个 64 字节 beat，
-                // 表现为整幅右移 64 像素、且残留量随进程而变。
-                lin_req_t      <= 1'b0;
-                adq_wp         <= 2'd0;
-                adq_rp         <= 2'd0;
-                adq_cnt        <= 3'd0;
-                plat_arvalid_q <= 1'b0;
-                req_pend       <= 1'b0;
-                pend_wd        <= 10'd0;
             end else if (start_dly != 7'd0) begin
                 start_dly <= start_dly - 7'd1;
                 if (start_dly == 7'd1) feed_on <= 1'b1;

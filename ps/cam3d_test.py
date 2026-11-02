@@ -88,7 +88,7 @@ class PL3D(object):
         # 第一遍窗口读常返回全 0（实测），读两遍取第二遍
         for _pass in range(2):
             words = []
-            for i in range(60):
+            for i in range(57):   # MAX_CAND=32 -> 1+32*7=225B -> 57 字
                 self.reg.write(REG + R_WIN, i)
                 self.reg.read(REG + R_WIN)
                 words.append(self.reg.read(REG + R_WIN) & 0xFFFFFFFF)
