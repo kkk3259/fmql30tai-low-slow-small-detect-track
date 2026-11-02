@@ -24,7 +24,8 @@ module candidate_extract_stream #(
     // DENOISE=1：要求左邻也是前景才保留（滤掉 1px 孤立点与 1px 宽细线）。
     // 代价：1 个寄存器 + 1 个与门，延迟 1 拍，无行缓存。
     // 默认 0 —— 保证所有历史回归用例（参考表按“不去噪”生成）保持 0 差异。
-    parameter DENOISE = 0
+    parameter DENOISE = 0,
+    parameter BORDER = 24
 )(
     input  wire clk,
     input  wire rst_n,
@@ -333,6 +334,12 @@ module candidate_extract_stream #(
                 6'd50: begin
                     cy[pi]  <= dv_q[15:0];
                     dv_step <= 6'd0;
+                    // 【2026-11-02】边界排除：三域里画面 pad 边沿会产生 peak 200+ 的
+                    // 伪目标，把候选表 8 个槽位全部占满（probe5 实测 t2 的 8 条全在
+                    // y=359）。这里把贴近画面四边的组件 peak 清零，让它在排序中沉底。
+                    if ((dv_q[15:0] < BORDER) || (dv_q[15:0] > (H - BORDER)) ||
+                        (cx[pi] < BORDER) || (cx[pi] > (W - BORDER)))
+                        cpeak[pi] <= 8'd0;
                     if (pi >= MAX_COMP - 1) begin
                         state <= S_SORT; si <= 0; sort_phase <= 0;
                     end else begin
