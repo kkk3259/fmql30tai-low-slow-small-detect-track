@@ -278,6 +278,10 @@ module ip2_axi_top #(
     // ---- 写主机 ----
     wire        wr_start;
     wire        wr_busy, wr_done, wr_error;
+    // 写主控已删除：这三个信号接常量，FSM 里"等 wr_done"的分支本来就走不到
+    assign wr_busy  = 1'b0;
+    assign wr_done  = 1'b0;
+    assign wr_error = 1'b0;
 
     // ---- IP2 链 ----
     wire [7:0]  ch_o_data;
@@ -391,20 +395,19 @@ module ip2_axi_top #(
         .dbg_ccl_vcnt(ch_dbg_vcnt)
     );
 
-    ip2_axi_master_wr u_wr (
-        .clk(clk), .rst_n(rst_n),
-        .start(wr_start),
-        .base_addr(result_addr),
-        .cand_bytes(288'd0),          // DDR 写回已停用：候选表改走寄存器窗口（写主控保留以维持 FSM 计时）
-        .status_word({1'b1, err_flag, 14'd0, frame_id}),
-        .busy(wr_busy), .done(wr_done), .error(wr_error),
-        .m_awaddr(m_axi_awaddr), .m_awlen(m_axi_awlen),
-        .m_awsize(m_axi_awsize), .m_awburst(m_axi_awburst),
-        .m_awvalid(m_axi_awvalid), .m_awready(m_axi_awready),
-        .m_wdata(m_axi_wdata), .m_wstrb(m_axi_wstrb), .m_wlast(m_axi_wlast),
-        .m_wvalid(m_axi_wvalid), .m_wready(m_axi_wready),
-        .m_bresp(m_axi_bresp), .m_bvalid(m_axi_bvalid), .m_bready(m_axi_bready)
-    );
+    // ---- AXI 写主控已删除（省约 1,500 LUT）----
+    // 候选表改走 AXI-Lite 寄存器窗口（0x10 / 0x18~0x38），不再写回 DDR；
+    // 端口保留并接常量 0，避免改动 BD 封装（ip2_axi_bd_wrap）的接口。
+    assign m_axi_awaddr  = 32'd0;
+    assign m_axi_awlen   = 8'd0;
+    assign m_axi_awsize  = 3'd0;
+    assign m_axi_awburst = 2'd0;
+    assign m_axi_awvalid = 1'b0;
+    assign m_axi_wdata   = 64'd0;
+    assign m_axi_wstrb   = 8'd0;
+    assign m_axi_wlast   = 1'b0;
+    assign m_axi_wvalid  = 1'b0;
+    assign m_axi_bready  = 1'b1;
 
     assign rd_start = (fst == F_RST) && (rstc == 5'd31);
     assign wr_start = (fst == F_WAIT) && (ocount >= N_BYTES[8:0]) && !wr_busy && !wr_done;

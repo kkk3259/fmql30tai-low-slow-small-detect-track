@@ -58,7 +58,7 @@ module cfar_threshold_stream #(
     parameter FLOOR = 3,
     // 1 = rb1/rb2 用同步读（推断成 BRAM，省约 10,000 LUTRAM）
     // 0 = 原组合读（推断成 LUTRAM）
-    parameter USE_BRAM = 0
+    parameter USE_BRAM = 1
 )(
     input  wire clk,
     input  wire rst_n,

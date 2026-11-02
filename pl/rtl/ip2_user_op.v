@@ -135,11 +135,7 @@ module ip2_user_op #(
     reg  [31:0]  dbg_req;                 // 核心发出的行请求数
     reg  [7:0]   raw_idx;                 // 快照字节索引（ra 域写入）
     wire [31:0] dbg_stat;                 // 平台口状态快照（见第 5 节）
-// --- 像素捕获：记录前 256 个"检测器看到的"像素字节（诊断用） ---
-reg  [7:0]  cap_mem [0:255];
-reg  [8:0]  cap_wd;
-reg  [7:0]  cap_idx;
-reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
+// 像素捕获 LA 已删除（诊断用，省 256x8 LUTRAM）
     wire [5:0] ra_word = done_sel_w ? 6'h0C : itf_ra_awaddr[5:0];
     wire [5:0] rd_word = done_sel_r ? 6'h0C : itf_ra_araddr[5:0];
 
@@ -161,14 +157,12 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                            (rd_addr12_q[3:2] == 2'd1) ? dbg_rv :
                            (rd_addr12_q[3:2] == 2'd2) ? dbg_wd : dbg_stat;
     wire        dbg_sel_q = (rd_addr12_q[11:4] == 8'h09);
-    wire        cap_sel_q = (rd_addr12_q[11:0] == 12'h0B8);
     wire        req_sel_q = (rd_addr12_q[11:0] == 12'h0A0);
     wire        raw_sel_q = (rd_addr12_q[11:0] == 12'h0C4);
     wire [7:0]  raw_dat_q = raw_word[{raw_idx, 3'b000} +: 8];
     assign itf_ra_rdata   = rd_is_done_q ? {31'b0, rd_data_q[1]} :
                             raw_sel_q    ? {24'd0, raw_dat_q} :
                             req_sel_q    ? dbg_req :
-                            cap_sel_q    ? {24'd0, cap_dat_q} :
                             dbg_sel_q    ? dbg_word :
                             rd_data_q;
 
@@ -231,9 +225,6 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                     la_raddr <= itf_ra_awdata[7:0];
                 if (itf_ra_awaddr[11:0] == 12'h0AC)
                     la_clr_t <= ~la_clr_t;
-                // 像素捕获索引：0xB4 写要看的字节下标
-                if (itf_ra_awaddr[11:0] == 12'h0B4)
-                    cap_idx <= itf_ra_awdata[7:0];
                 if (itf_ra_awaddr[11:0] == 12'h0C0)
                     raw_idx <= itf_ra_awdata[7:0];
             end
@@ -268,9 +259,6 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                 rd_addr_q    <= rd_word;
                 rd_addr12_q  <= itf_ra_araddr[11:0];
                 rd_is_done_q <= done_sel_r;
-                // 像素捕获读口：0xB8 返回 cap_mem[cap_idx]
-                if (itf_ra_araddr[11:0] == 12'h0B8)
-                    cap_dat_q <= cap_mem[cap_idx];
                 rd_t         <= ~rd_t;
                 rd_busy      <= 1'b1;
                 rd_tmo       <= 12'd0;
@@ -564,14 +552,8 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
 
 
     //=========================================================================
-    // 6. 像素捕获（诊断）：记录前 256 个真正送进检测器的字节
+    // 6. 像素捕获已删除（原 256×8 诊断缓冲，拆包完成后不再需要）
     //=========================================================================
-    always @(posedge core_clk or negedge core_rst_n)
-        if (!core_rst_n) cap_wd <= 9'd0;
-        else if (!lf_empty && ext_space && (cap_wd != 9'h1FF)) cap_wd <= cap_wd + 9'd1;
-
-    always @(posedge core_clk)
-        if (!lf_empty && ext_space && (cap_wd < 9'd256)) cap_mem[cap_wd[7:0]] <= ext_byte;
 
     //=========================================================================
     // 7. 检测器本体（core_clk 50 MHz，像素由外部直推 USE_EXT=1）
