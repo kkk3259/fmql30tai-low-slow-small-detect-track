@@ -10,8 +10,8 @@
 
 ```
 forward 4.24 ms
-OUT0  shape (1, 64, 8400)  float32 logits  min -83.06  max 14.52
-OUT1  shape (1, 1, 8400)   float32 logits  min -60.50  max  1.61
+OUT0 shape (1, 64, 8400) float32 logits min -83.06 max 14.52
+OUT1 shape (1, 1, 8400) float32 logits min -60.50 max 1.61
 ```
 
 - `8400 = 80² + 40² + 20²`，对应 stride **8 / 16 / 32**
@@ -25,8 +25,8 @@ score = sigmoid(out1) × max(sigmoid(out0[4:]))
 
 cx = (2·sigmoid(x) + gx − 0.5) × stride
 cy = (2·sigmoid(y) + gy − 0.5) × stride
-w  = 4 · sigmoid(w)² × stride        ← 关键：乘 stride，不是 anchor
-h  = 4 · sigmoid(h)² × stride
+w = 4 · sigmoid(w)² × stride ← 关键：乘 stride，不是 anchor
+h = 4 · sigmoid(h)² × stride
 ```
 
 ## 三、踩过的三个坑
@@ -41,8 +41,8 @@ h  = 4 · sigmoid(h)² × stride
 
 | 图 | 内容 | 框数 | 评价 |
 |---|---|---|---|
-| t4_fourdrones | 四架剪影 | **4** | ✅ 框数 = 目标数 |
-| t2_twodrones | 飞机 + 无人机 | 2 | 无人机 ✓、飞机 0.46（可被 0.5 阈值滤掉） |
+| t4_fourdrones | 四架剪影 | **4** | 框数 = 目标数 |
+| t2_twodrones | 飞机 + 无人机 | 2 | 无人机 、飞机 0.46（可被 0.5 阈值滤掉） |
 | t3_field_drone | 草地一架 | 2 | 1 真 1 误 |
 | t5_plane_drone | 飞机 + 无人机 | 4 | 有重复 |
 | t1_birds | 天鹅群 + 飞鸟 | 3 | 主框在飞鸟上 |
@@ -66,7 +66,7 @@ sed -i 's|--push-every 1"|--push-every 1 --yolo 1"|' /etc/init.d/ip2d3
 
 # 回退到 PL + cls128
 /etc/init.d/ip2d3 stop
-cp /root/ip2d3.bak /etc/init.d/ip2d3        # 或用 /root/enable_yolo.sh 前先备份
+cp /root/ip2d3.bak /etc/init.d/ip2d3 # 或用 /root/enable_yolo.sh 前先备份
 /etc/init.d/ip2d3 start
 ```
 
@@ -97,9 +97,9 @@ cp /root/ip2d3.bak /etc/init.d/ip2d3        # 或用 /root/enable_yolo.sh 前先
 ## 九、收尾实测（round 14）
 
 ```
-网页 http://169.254.67.100:8080/     在线
-cam3d_pipe.py --yolo 1               PID 4269
-fps=29.8   err=''                    n=0
+网页 http://169.254.67.100:8080/ 在线
+cam3d_pipe.py --yolo 1 PID 4269
+fps=29.8 err='' n=0
 ```
 
 `n=0` 解释：当前镜头对着办公室（同事 + 桌子），**画面里没有无人机**，yolo11n 是无人机专用模型，不会对人和桌子出框 —— 这是**正确行为**（无序报）。
@@ -113,18 +113,18 @@ fps=29.8   err=''                    n=0
 页面此前**从来没跑过 yolo**。证据是三件同时出现的事：
 
 ```
-PL_ms  = 0.0     ← PL 被跳过（说明 USE_YOLO 确实是 True）
-npu_ms = 0.0     ← yolo 却也没跑
-n      = 0       ← 所以永远没有目标
+PL_ms = 0.0 ← PL 被跳过（说明 USE_YOLO 确实是 True）
+npu_ms = 0.0 ← yolo 却也没跑
+n = 0 ← 所以永远没有目标
 ```
 
 根因（**这是本项目第三次踩同一个坑**）：
 
 ```python
 def main():
-    global GAMMA, INVERT, COLOR_DISP, USE_YOLO    # ← 漏了 YOLO
-    ...
-    YOLO = Yolo()     # 只赋给 main() 的局部变量，模块级 YOLO 恒为 None
+ global GAMMA, INVERT, COLOR_DISP, USE_YOLO # ← 漏了 YOLO
+ ...
+ YOLO = Yolo() # 只赋给 main() 的局部变量，模块级 YOLO 恒为 None
 ```
 
 而检测分支的守卫是 `if USE_YOLO and YOLO is not None:` → 恒不成立。
@@ -152,8 +152,8 @@ def main():
 因为 sigmoid 单调，`max` 后再 sigmoid 与 sigmoid 后 max **完全等价**：
 
 ```python
-ml = o0[4:].max(axis=0)      # 先取 60 类里最大的 logit（纯比较，很快）
-sc = sig(o1) * sig(ml)       # 只对 8400 个值算 exp
+ml = o0[4:].max(axis=0) # 先取 60 类里最大的 logit（纯比较，很快）
+sc = sig(o1) * sig(ml) # 只对 8400 个值算 exp
 ```
 
 **45.7 ms → 3 ms**。再加灰度直通（省一次 640×360 的 `GRAY2BGR`），`detect()` **80 ms → 30 ms**。
@@ -189,13 +189,13 @@ sc = sig(o1) * sig(ml)       # 只对 8400 个值算 exp
 更狠的对照（用假相机跑完整网页链路，`ps/test_page_yolo.py`）：
 
 ```
-改之前（拉伸）：PAGE_INFO frames=11 npu_ms=26.2 n=0   → VERDICT PAGE-YOLO-FAIL
-改之后（letterbox）：PAGE_INFO frames=9  npu_ms=30.5 n=5   → VERDICT PAGE-YOLO-OK
-   x=393 y=122 area=1031 p=0.833
-   x=215 y=214 area=332  p=0.691
-   x=390 y=155 area=481  p=0.691
-   x=231 y=235 area=94   p=0.500
-   x=344 y=218 area=757  p=0.500
+改之前（拉伸）：PAGE_INFO frames=11 npu_ms=26.2 n=0 → VERDICT PAGE-YOLO-FAIL
+改之后（letterbox）：PAGE_INFO frames=9 npu_ms=30.5 n=5 → VERDICT PAGE-YOLO-OK
+ x=393 y=122 area=1031 p=0.833
+ x=215 y=214 area=332 p=0.691
+ x=390 y=155 area=481 p=0.691
+ x=231 y=235 area=94 p=0.500
+ x=344 y=218 area=757 p=0.500
 ```
 
 **这就是"网页一个目标都没有"的最后一块拼图**：即使 global bug 修好了，拉伸预处理也会让分数掉到 0.31，永远过不了 0.45 的阈值。
@@ -206,7 +206,7 @@ sc = sig(o1) * sig(ml)       # 只对 8400 个值算 exp
 lb_s = min(640.0 / w0, 640.0 / h0)
 nw, nh = int(round(w0 * lb_s)), int(round(h0 * lb_s))
 lb_x, lb_y = (640 - nw) // 2, (640 - nh) // 2
-buf = np.full((640, 640, 3), 114, np.uint8)      # 114 灰边，与训练一致
+buf = np.full((640, 640, 3), 114, np.uint8) # 114 灰边，与训练一致
 buf[lb_y:lb_y+nh, lb_x:lb_x+nw] = cv2.cvtColor(cv2.resize(img, (nw, nh)), ...)
 # 反变换：box 先减 lb_x/lb_y，再除 lb_s
 ```
@@ -256,9 +256,9 @@ cd /root/ip2 && python3 test_page_yolo.py
 新判据（`ps/yolo_det.py`）：
 
 ```python
-iom = 交集 / min(框A面积, 框B面积)            # 小框被大框盖住的比例
-r   = max(18, min(0.55 * max(w, h), 60.0))    # 按尺寸缩放，但封顶 60px
-if iom >= 0.40 or d <= r:  丢弃低分框          # 不再取并集
+iom = 交集 / min(框A面积, 框B面积) # 小框被大框盖住的比例
+r = max(18, min(0.55 * max(w, h), 60.0)) # 按尺寸缩放，但封顶 60px
+if iom >= 0.40 or d <= r: 丢弃低分框 # 不再取并集
 ```
 
 **封顶 60px 是必须的**：不封顶时，一个 300px 的大误报框半径能到 250px，把整片真目标全吞掉——表现为"提高阈值后框数反而变多"（去掉大框，露出两个真框）。
@@ -267,9 +267,9 @@ if iom >= 0.40 or d <= r:  丢弃低分框          # 不再取并集
 
 | 图 | 目标数 | 改前 | 改后 |
 |---|---|---|---|
-| t2 飞机+无人机 | 2 | 3 | **2** ✅ |
-| t3 草地一架 | 1 | 2 | **1** ✅ |
-| t5 飞机+无人机 | 2 | 4 | **2** ✅ |
+| t2 飞机+无人机 | 2 | 3 | **2** |
+| t3 草地一架 | 1 | 2 | **1** |
+| t5 飞机+无人机 | 2 | 4 | **2** |
 | t6 客机+鸟 | 1 | 2 | **2**（客机误判 + 鸟） |
 | t4 四架剪影 | 4 | 3 | 3（竖图 letterbox 后分辨率不足） |
 | t1 天鹅群 | 0 | 7 | 4（天鹅误判） |
@@ -297,10 +297,10 @@ if iom >= 0.40 or d <= r:  丢弃低分框          # 不再取并集
 本地已提交 13 个提交，但**推不上去**，两个层面都失败：
 
 ```
-git push  → ! [rejected] main -> main (non-fast-forward)   # 远端有队友的新提交
+git push → ! [rejected] main -> main (non-fast-forward) # 远端有队友的新提交
 git fetch → fatal: early EOF / unpack-objects failed
-            error: 3652 bytes of body are still expected
-            fetch-pack: unexpected disconnect while reading sideband packet
+ error: 3652 bytes of body are still expected
+ fetch-pack: unexpected disconnect while reading sideband packet
 ```
 
 已尝试的本地手段全部无效：`-c http.version=HTTP/1.1`、`http.postBuffer=524288000`、

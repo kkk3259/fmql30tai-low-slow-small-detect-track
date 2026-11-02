@@ -233,7 +233,7 @@ def run_sequence(src, enhancer, cfg, out_path=None, csv_path=None, max_frames=0)
         # ---- 标准预处理 ----
         gray = to_gray_down(frame, cfg["down"])
 
-        # ---- ★ v3 时域增强 ----
+        # ----  v3 时域增强 ----
         enh = enhancer(gray)
 
         # ---- 后续与 v1 一致：高斯 → Top-Hat → CFAR → 候选 ----
@@ -353,7 +353,7 @@ def main():
     print("  真值帧数    : {}".format(r["n_gt"]))
     print("  检出(命中)  : {}".format(r["hits"]))
     print("  漏检        : {}".format(r["misses"]))
-    print("  ★ 检出率 Pd : {:.1f}%".format(r["pd"]))
+    print("   检出率 Pd : {:.1f}%".format(r["pd"]))
     print("  虚警数      : {}".format(r["fp"]))
     print("  候选/帧     : {:.2f}".format(r["cand_avg"]))
     print("  单帧耗时    : {:.2f} ms".format(r["ms_per_frame"]))

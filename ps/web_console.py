@@ -364,7 +364,7 @@ class PlDetector(object):
       每候选 7 字节 : x_hi x_lo  y_hi y_lo  area_hi area_lo  peak
                       ↑ x/y 16 位          ↑ area **16 位**（2026-10-29 起，原 8 位）
 
-    ⚠️ 0x40 不能用：6 位 s_axi 地址下 0x40 绕回 0x00 = 误触发一帧。
+    [WARN] 0x40 不能用：6 位 s_axi 地址下 0x40 绕回 0x00 = 误触发一帧。
 
     注意：这是"检测器"而非"判别器"——它直接给出候选坐标，不需要 PS 再跑粗筛。
     """
@@ -704,7 +704,7 @@ class Handler(BaseHTTPRequestHandler):
 def draw_overlay(gray, cands, confirmed, cfg, backend_name, view="raw"):
     """生成显示帧。
 
-    ⚠️ 2026-10-30 起只保留 raw 视图。
+    [WARN] 2026-10-30 起只保留 raw 视图。
     原先的 tophat / binary 视图是用 Python 侧 cv2 复现的，参数与 PL 的 RTL 不一致
     （5×5 方核 vs SE=21、Top-Hat vs Black-Hat、k=4.0 vs K=1.0、BORDER_REFLECT vs
     因果窗口），画出来的"增强图"和 FPGA 实际看到的东西对不上，作为演示会误导。
@@ -769,11 +769,11 @@ def main():
         try:
             ver = pl_det.open()
         except Exception as e:
-            print("  ✗ PL 后端初始化失败：%s" % e)
+            print("   PL 后端初始化失败：%s" % e)
             print("    提示：--backend pl 必须在板上运行，且位流已加载")
             return 1
-        print("  ✓ PL VERSION = 0x%08X（基址 %s）" % (ver, a.reg_base))
-        print("  ✓ 候选视图 = %s（%s）" % (
+        print("   PL VERSION = 0x%08X（基址 %s）" % (ver, a.reg_base))
+        print("   候选视图 = %s（%s）" % (
             pl_det._view,
             "113 字窗口 / 最多 64 个候选" if pl_det._view == "window"
             else "0x18 兼容视图 / 最多 5 个候选（老构建）"))
@@ -796,14 +796,14 @@ def main():
             try:
                 judge.open()
             except Exception as e:
-                print("  ✗ 模型加载失败：%s" % e)
+                print("   模型加载失败：%s" % e)
                 return 1
         else:
             judge = Cls128Judge(a.json, a.raw, a.cell)
             try:
                 judge.open()
             except Exception as e:
-                print("  ✗ 模型加载失败：%s" % e)
+                print("   模型加载失败：%s" % e)
                 return 1
 
     # ---- 采集 ----
@@ -816,7 +816,7 @@ def main():
             break
         time.sleep(0.05)
     if grab.latest() is None:
-        print("  ✗ 取不到帧")
+        print("   取不到帧")
         return 1
 
     det = pl_det if pl_det is not None else DualDetector(topk=a.topk)
@@ -828,7 +828,7 @@ def main():
     srv = ThreadingHTTPServer(("0.0.0.0", a.port), Handler)
     srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    print("  ✓ 控制台: http://<IP>:%d/" % a.port)
+    print("   控制台: http://<IP>:%d/" % a.port)
     print("  backend=%s  grid=%s  src=%s" % (a.judge, grid_info, a.src))
 
     fps_t, fps_n = time.time(), 0

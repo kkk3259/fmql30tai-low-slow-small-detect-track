@@ -391,9 +391,9 @@ if y > FY - 8:
 if ry > FY - 8:
     over.append("右栏结束 y=%.0f 超过底部 %.0f" % (ry, FY))
 for o in over:
-    print("  ⚠️ 版面溢出：" + o)
+    print("  [WARN] 版面溢出：" + o)
 if not over:
-    print("  ✓ 版面检查通过（左栏结束 y=%.0f，右栏结束 y=%.0f，底部 %.0f）" % (y, ry, FY))
+    print("   版面检查通过（左栏结束 y=%.0f，右栏结束 y=%.0f，底部 %.0f）" % (y, ry, FY))
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(REPO, "docs", "poster")

@@ -114,8 +114,8 @@ def write_seq(frames, boxes, out_mp4, out_csv, fps=30, skip_invalid=True):
         wr.writerows(rows)
 
     print("")
-    print("  ✅ 已生成视频 : {}  ({} 帧, {}x{})".format(out_mp4, len(frames), w, h))
-    print("  ✅ 已生成真值 : {}  ({} 行有效标注)".format(out_csv, n_ok))
+    print("  [OK] 已生成视频 : {}  ({} 帧, {}x{})".format(out_mp4, len(frames), w, h))
+    print("  [OK] 已生成真值 : {}  ({} 行有效标注)".format(out_csv, n_ok))
     print("")
     print("  下一步跑评测：")
     print("    python baseline\\detect_v1.py --src \"{}\"".format(out_mp4))
@@ -174,8 +174,8 @@ def main():
         out_csv = os.path.join(a.out, a.seq + "_gt.csv")
         with open(out_csv, "w", newline="", encoding="utf-8") as f:
             wr = csv.writer(f); wr.writerow(["frame", "x", "y"]); wr.writerows(rows)
-        print("  ✅ {} 帧 -> {}".format(i, out_mp4))
-        print("  ✅ 真值 {} 行 -> {}".format(len(rows), out_csv))
+        print("  [OK] {} 帧 -> {}".format(i, out_mp4))
+        print("  [OK] 真值 {} 行 -> {}".format(len(rows), out_csv))
         print("     （Anti-UAV 是红外视频，注意转换到灰度链路的适配）")
         return
 

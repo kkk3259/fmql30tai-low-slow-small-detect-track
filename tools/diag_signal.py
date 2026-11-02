@@ -117,10 +117,10 @@ def main():
     print("  ── 判读 ──")
     ratio = th_arr.mean() / max(thr_arr.mean(), 1e-6)
     if ratio < 1.0:
-        print("  ✗ 目标增强值【低于门限】→ 瓶颈在【CFAR 门限偏高】或【Top-Hat 增强不足】")
+        print("   目标增强值【低于门限】→ 瓶颈在【CFAR 门限偏高】或【Top-Hat 增强不足】")
         print("     下一步：试 --k 3 --floor 2（降门限），看比值是否 >1")
     else:
-        print("  ✓ 目标增强值已过门限，但检出率仍低 → 瓶颈可能在【候选筛选/排序】环节")
+        print("   目标增强值已过门限，但检出率仍低 → 瓶颈可能在【候选筛选/排序】环节")
 
 
 if __name__ == "__main__":

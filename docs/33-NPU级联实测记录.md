@@ -7,32 +7,32 @@
 
 | 能力 | 状态 | 实测数字 |
 |---|---|---|
-| NPU 设备打开 | ✅ | `device: 25122301`、`npu: 0x40000000`、`dma: 0x80000000` |
-| 模型加载（json+raw） | ✅ | cls128 `ops = 121`、yolov5s `ops = 114` |
-| `apply()` | ✅ | cls128 704.8 ms、yolov5s 452.4 ms（一次性的算子下发） |
-| 前向推理 | ✅ | cls128 **0.68 ms**、yolov5s **2.7 ms** |
-| 输出回读 | ✅ | `outs[0].read(bytearray, 0, n)` 拿到 2×float32 |
-| PL→NPU 级联 | ✅ | 8 个候选逐个判，总 **7.2 ms（0.90 ms/个）** |
+| NPU 设备打开 | | `device: 25122301`、`npu: 0x40000000`、`dma: 0x80000000` |
+| 模型加载（json+raw） | | cls128 `ops = 121`、yolov5s `ops = 114` |
+| `apply()` | | cls128 704.8 ms、yolov5s 452.4 ms（一次性的算子下发） |
+| 前向推理 | | cls128 **0.68 ms**、yolov5s **2.7 ms** |
+| 输出回读 | | `outs[0].read(bytearray, 0, n)` 拿到 2×float32 |
+| PL→NPU 级联 | | 8 个候选逐个判，总 **7.2 ms（0.90 ms/个）** |
 
 ## 2. 可复现的调用序列
 
 ```python
 import icraft.xrt as xrt
 import icraft.xir as xir
-from icraft.zg330backend import ZG330Backend     # 注意：不在 xrt 里
+from icraft.zg330backend import ZG330Backend # 注意：不在 xrt 里
 from icraft.host_backend import HostBackend
 
 net = xir.Network.CreateFromJsonFile(JSON_PATH)
-net.lazyLoadParamsFromFile(RAW_PATH)              # .raw 权重
+net.lazyLoadParamsFromFile(RAW_PATH) # .raw 权重
 
-dev  = xrt.Device.Open("axi://zg330aiu?npu=0x40000000&dma=0x80000000")
+dev = xrt.Device.Open("axi://zg330aiu?npu=0x40000000&dma=0x80000000")
 sess = xrt.Session.Create([ZG330Backend, HostBackend], net.view(0),
-                          [dev, xrt.HostDevice.Default()])
+ [dev, xrt.HostDevice.Default()])
 sess.apply()
 
 buf = bytearray(8)
-outs = sess.forward([t_in])                       # t_in 见下
-outs[0].read(buf, 0, 8)                           # 两个 float32
+outs = sess.forward([t_in]) # t_in 见下
+outs[0].read(buf, 0, 8) # 两个 float32
 ```
 
 ### 输入要求（踩过的坑）
@@ -54,7 +54,7 @@ outs[0].read(buf, 0, 8)                           # 两个 float32
 | `outs[0].to(host_region)` | `InternalError` |
 | `host.copyFrom(0, out, 0, 8)` | 不报错但值恒 0 |
 | `sess.forward([in],[out])` 双参 | `InternalError` |
-| **`outs[0].read(buf, 0, n)`** | ✅ 正确 |
+| **`outs[0].read(buf, 0, n)`** | 正确 |
 
 > **重要教训**：上面那一堆 `InternalError` 我一度归因于“Python 绑定 3.39 与库 3.33 ABI 不一致”，**这是错的**。
 > 真因是当时板上烧的是**独立检测器位流**（没有 AI_Mate），`ZG330BackendNode::init` 失败，
@@ -65,19 +65,19 @@ outs[0].read(buf, 0, 8)                           # 两个 float32
 ## 3. 级联脚本 `ps/cascade.py`
 
 ```
-Classifer.  predict(img128_bgr) -> (p0, p1)
-            crop_box(gray, x, y, side, out=128)   按目标边长裁正方形再缩放
---boxes     手工框
---from-pl   走 detect3d.Det3D 拿 PL 候选
+Classifer. predict(img128_bgr) -> (p0, p1)
+ crop_box(gray, x, y, side, out=128) 按目标边长裁正方形再缩放
+--boxes 手工框
+--from-pl 走 detect3d.Det3D 拿 PL 候选
 --side/--zoom/--thr/--cls/--limit
 ```
 
 实测（三域位流，`card_synth.png`）：
 
 ```
-PL:  VERSION=0x00010000  base=0x1000  status=0x00000804 n=8  31.2 ms
+PL: VERSION=0x00010000 base=0x1000 status=0x00000804 n=8 31.2 ms
 NPU: 8 个候选逐个判，总 7.2 ms（0.90 ms/个）
-     全部 [0.999, 0.000]（判为非无人机）
+ 全部 [0.999, 0.000]（判为非无人机）
 ```
 
 分类器判别力抽查（cls128 二分类模型）：
@@ -106,7 +106,7 @@ NPU: 8 个候选逐个判，总 7.2 ms（0.90 ms/个）
 ## 5. 还没打通的
 
 1. 三域里检测器坐标错乱：`status=0x00000804 err=1`、x 被压缩、两个簇间距恒 320。
-   已在适配层 `ip2_user_op.v` 定位并修了 4 个 bug（AR 重置地址 / 字节交织 / 首地址未装载 / 突发末拍地址不推进），
-   fix5 编译中，待上板验证。
+ 已在适配层 `ip2_user_op.v` 定位并修了 4 个 bug（AR 重置地址 / 字节交织 / 首地址未装载 / 突发末拍地址不推进），
+ fix5 编译中，待上板验证。
 2. **`err=1`**：检测器写完候选表后等 DDR 写完成，而写通道我们没接（`cand_bytes=0` 走寄存器窗口）。
-   属"无害但会提前掐帧"，修法是让 FSM 忽略写完成或把写通道接上。
+ 属"无害但会提前掐帧"，修法是让 FSM 忽略写完成或把写通道接上。

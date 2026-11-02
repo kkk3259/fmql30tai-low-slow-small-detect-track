@@ -52,28 +52,28 @@ def check_devmem():
     try:
         fd = os.open("/dev/mem", os.O_RDWR | os.O_SYNC)
     except PermissionError:
-        print("    ✗ 打不开 /dev/mem —— 需要 sudo 运行")
+        print("     打不开 /dev/mem —— 需要 sudo 运行")
         return None
     except FileNotFoundError:
-        print("    ✗ 没有 /dev/mem —— 内核配置异常")
+        print("     没有 /dev/mem —— 内核配置异常")
         return None
-    print("    ✓ 可打开")
+    print("     可打开")
     try:
         buf = mmap.mmap(fd, REG_WINDOW, mmap.MAP_SHARED,
                         mmap.PROT_READ | mmap.PROT_WRITE, offset=REG_BASE)
     except OSError as e:
-        print("    ✗ mmap %s 失败: %s" % (hx(REG_BASE), e))
+        print("     mmap %s 失败: %s" % (hx(REG_BASE), e))
         print("      可能是内核开了 CONFIG_STRICT_DEVMEM，或该地址段被别的驱动占用")
         os.close(fd)
         return None
-    print("    ✓ 已映射 %s (%d KiB)" % (hx(REG_BASE), REG_WINDOW // 1024))
+    print("     已映射 %s (%d KiB)" % (hx(REG_BASE), REG_WINDOW // 1024))
     return fd, buf
 
 
 def check_udmabuf():
     print("[2] udmabuf（PS 与 PL 共享的大块内存）")
     if not os.path.exists(UDMABUF_DEV):
-        print("    ✗ 没有 %s —— 内核模块 u-dma-buf 没加载，或设备树没配" % UDMABUF_DEV)
+        print("     没有 %s —— 内核模块 u-dma-buf 没加载，或设备树没配" % UDMABUF_DEV)
         return False
     try:
         with open(os.path.join(UDMABUF_SYS, "phys_addr")) as f:
@@ -81,18 +81,18 @@ def check_udmabuf():
         with open(os.path.join(UDMABUF_SYS, "size")) as f:
             size = int(f.read().strip(), 0)
     except OSError as e:
-        print("    ⚠ 读 sysfs 失败: %s" % e)
+        print("    [WARN] 读 sysfs 失败: %s" % e)
         phys, size = -1, -1
     print("    phys_addr = %s   size = %d (%.1f MiB)" % (hx(phys), size, size / 1048576.0))
     ok = True
     if phys != 0x30100000:
-        print("    ⚠ 期望 phys_addr = 0x30100000（docs/14 约定）")
+        print("    [WARN] 期望 phys_addr = 0x30100000（docs/14 约定）")
         ok = False
     if size < 0x1000000:
-        print("    ⚠ size 期望 ≥ 16 MiB（至少要装下帧区）")
+        print("    [WARN] size 期望 ≥ 16 MiB（至少要装下帧区）")
         ok = False
     if ok:
-        print("    ✓ 帧区 0x30100000、结果区 0x31000000 都落在里面")
+        print("     帧区 0x30100000、结果区 0x31000000 都落在里面")
     return ok
 
 
@@ -126,10 +126,10 @@ def main():
 
     ok = True
     if ver == VERSION_EXPECT:
-        print("    ✓ VERSION 正确 —— 位流已加载、地址映射对、BD 挂对了")
+        print("     VERSION 正确 —— 位流已加载、地址映射对、BD 挂对了")
     else:
         ok = False
-        print("    ✗ VERSION 不对（期望 %s）" % hx(VERSION_EXPECT))
+        print("     VERSION 不对（期望 %s）" % hx(VERSION_EXPECT))
         print("      依次排查：① 位流真加载了吗（fpga_manager state / FSBL 日志）")
         print("                ② BD 里寄存器段是不是 0x43C00000、挂在 M_AXI_GP0")
         print("                ③ 这段地址在 /proc/iomem 里有没有被别的驱动先占")
@@ -150,11 +150,11 @@ def main():
             got_busy |= bool(s & 1)
             if (s >> 1) & 1:
                 got_done = True
-                print("    ✓ done 置起，用时 %.1f ms，n_cand=%d" % ((time.time() - t0) * 1000, (s >> 8) & 0xFF))
+                print("     done 置起，用时 %.1f ms，n_cand=%d" % ((time.time() - t0) * 1000, (s >> 8) & 0xFF))
                 break
             time.sleep(0.0002)
         if not got_done:
-            print("    ✗ 200 ms 内没等到 done（busy 见过=%s）" % got_busy)
+            print("     200 ms 内没等到 done（busy 见过=%s）" % got_busy)
             print("      说明 CTRL 写进去了但流水线没跑完：检查帧地址/结果地址是否在 udmabuf 内、")
             print("      以及 m_axi 读写是否被 HP0 接住（看 bit 2 error）")
     else:

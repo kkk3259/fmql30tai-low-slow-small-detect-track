@@ -49,7 +49,7 @@ try:
     mB = bench(B); cB = B()
     print("  [B] 复用 tensor + fwd + read : %6.2f ms   cls_max=%.4f" % (mB, cB))
     print("  ⇒ 提速 %.2f ms (%.0f%%)，结果一致性: %s"
-          % (mA-mB, (mA-mB)/mA*100, "✓ 一致" if abs(cA-cB)<1e-6 else "✗ 不一致(%.6f vs %.6f)"%(cA,cB)))
+          % (mA-mB, (mA-mB)/mA*100, " 一致" if abs(cA-cB)<1e-6 else " 不一致(%.6f vs %.6f)"%(cA,cB)))
 except Exception as e:
     print("  [B] 失败: %s" % str(e).split(chr(10))[-1][:150])
 

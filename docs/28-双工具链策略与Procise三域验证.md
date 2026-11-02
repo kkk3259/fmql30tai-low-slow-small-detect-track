@@ -11,24 +11,24 @@
 
 | 维度 | Vivado 2018.3 | Procise 2025.1.1 |
 |---|---|---|
-| 我们的 IP2 + PS 出位流 | ✅ **已出，板上跑了一周**；LUT 54,345 / 78,600（69.14%），FF 17,703（11.26%），BRAM 64/265，DSP 4/400，**WNS +1.744 ns**，实测 29 fps | ❓ 只验到 elaborate |
-| NPU（AI_Mate）支持 | ❌ 缺 `5.3.2.1_100AI_LV`，本机没有；替用方案是删 3907 个 AI 引脚 → NPU 通道断 | ✅ 装官方 `ip_patch` 后，带 AI 引脚的 PS7 **ELAB_OK** |
+| 我们的 IP2 + PS 出位流 | **已出，板上跑了一周**；LUT 54,345 / 78,600（69.14%），FF 17,703（11.26%），BRAM 64/265，DSP 4/400，**WNS +1.744 ns**，实测 29 fps | 只验到 elaborate |
+| NPU（AI_Mate）支持 | 缺 `5.3.2.1_100AI_LV`，本机没有；替用方案是删 3907 个 AI 引脚 → NPU 通道断 | 装官方 `ip_patch` 后，带 AI 引脚的 PS7 **ELAB_OK** |
 | 迭代一轮耗时 | 10~15 分钟 | 35~75 分钟（历史实测），且只能手点 GUI |
 | 报错可读性 | 好，`[Synth 8-448]` 精确到文件行号 | 差，多次出现"空错误"，`procise.log` 只有 4 行空壳 |
 | 源码兼容 | `.sv`、二维数组、for/generate、Xilinx IP 全吃 | `.sv` 不收（`IO-0121`）；SystemVerilog `interface` 静默失败；MIG/SDI 原语大概率不吃 |
-| 位流上板 | ✅ `.bin` 32 位字节交换 + `fpga_manager` 已验证 | 同走 `bitgen`，未验 |
+| 位流上板 | `.bin` 32 位字节交换 + `fpga_manager` 已验证 | 同走 `bitgen`，未验 |
 | 官方支持度 | 官方三域 demo 就是 Vivado 工程 | 芯片原厂工具 |
 
 ## 3. 分工
 
 ```
 主线（必须保住）：Vivado + 现有 ip2_ps4 位流
-    检测算法、候选表、网页、跟踪、演示，全部在这条线上迭代
-    产物：D:\firstharness\synth\vivado\ip2_ps4\ip2_ps.runs\impl_1\ip2_bd_wrapper.bit
+ 检测算法、候选表、网页、跟踪、演示，全部在这条线上迭代
+ 产物：D:\firstharness\synth\vivado\ip2_ps4\ip2_ps.runs\impl_1\ip2_bd_wrapper.bit
 
 支线（限时突破）：Procise 三域
-    只回答一个问题：PS + NPU + IP2 能否同板综合出位流
-    止损：2026-10-31 24:00 前出不了位流 → 冻结支线，按"IP2 单域交付"写报告
+ 只回答一个问题：PS + NPU + IP2 能否同板综合出位流
+ 止损：2026-10-31 24:00 前出不了位流 → 冻结支线，按"IP2 单域交付"写报告
 ```
 
 ## 4. 代码约束（这是双工具链能成立的前提）
@@ -49,7 +49,7 @@ IP2 全部 RTL 限定在 Verilog-2001 可综合子集：
 ```tcl
 set ::env(JFM_PATH) "D:/firstharness/JFM_Kits"
 create_project -name myproj -device JFMQL30TAI676H
-save_project                       ;# 必须先存，run.tcl 要读工程目录
+save_project ;# 必须先存，run.tcl 要读工程目录
 source D:/firstharness/JFM_Kits/ip_patch/run.tcl
 ```
 
@@ -68,7 +68,7 @@ source D:/firstharness/JFM_Kits/ip_patch/run.tcl
 | + `ps_ai_peripheral.v` | **ELAB_OK** |
 | + `AI_Mate_stub.v` | **ELAB_OK** ⇒ **PS + NPU 结构在 Procise 里立起来了** |
 | + `mna_itf.v` | **ELAB_FAIL**（静默）→ 该文件是 SystemVerilog `interface`（11 个 `interface` 块、118 处 `logic`），改名 `.v` 无效，且 `ps_ai_wrapper` 并不需要它 |
-| + 我们的 IP2 8 个文件 | ⏳ 待跑 `procise_scan2.tcl` |
+| + 我们的 IP2 8 个文件 | 待跑 `procise_scan2.tcl` |
 
 ## 7. Procise 已知的坑（都是实测踩出来的）
 

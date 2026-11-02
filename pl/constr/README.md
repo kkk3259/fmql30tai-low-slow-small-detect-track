@@ -1,6 +1,6 @@
 # pl/constr —— 引脚与时序约束（**已可用**，2026-10-23）
 
-> ✅ 本目录现在有可直接使用的 Procise 约束文件：`board_lite.fdc`。
+> 本目录现在有可直接使用的 Procise 约束文件：`board_lite.fdc`。
 > 之前"缺 PL 系统时钟引脚 / 不知道 Procise 用什么格式"的问题**已全部解决**（来源见下）。
 
 ## 目录内容
@@ -42,7 +42,7 @@ set_property PULLTYPE PULLUP [get_ports {rst_n}]
 ## 用法
 
 ```tcl
-add_design_file -file { .../pl/rtl/*.v  D:/firstharness/repo/pl/constr/board_lite.fdc }
+add_design_file -file { .../pl/rtl/*.v D:/firstharness/repo/pl/constr/board_lite.fdc }
 set_top -top ip2_board_top
 load_design -stage_elaborate -no_hier
 rtl_analyze

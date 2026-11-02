@@ -5,7 +5,7 @@
 //   S 的实测（tools/bench_cfar_tradeoff.py，100 张真实图）：真实目标是**暗点**，
 //   Black-Hat k=3.0 召回 86%/候选 47.5，优于 Top-Hat k=4.0 的 55%/34.7。
 //   硬件无需新增资源：两级 win5 的 IS_MAX/PAD 对调、减法方向反过来即可。
-// ✅ 已验证（SE=5）：内部逐像素与 cv2.morphologyEx(MORPH_TOPHAT, 5x5) 0 误差。
+// [OK] 已验证（SE=5）：内部逐像素与 cv2.morphologyEx(MORPH_TOPHAT, 5x5) 0 误差。
 // 【2026-10-28】SE 参数化，默认 21x21（SE=5 只能检 1~4px，SE=21 可检 <=20px）。
 // 结构：win5(第1级) → win5(第2级) → 原始延迟 TD 对齐。
 // TD = 2*(每级 win5 延迟) + 1，每级延迟 = (SE/2)*W + (SE/2) + 1。

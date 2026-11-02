@@ -10,24 +10,24 @@
 
 | 文件 | 大小 | 内容 | 状态 |
 |---|---|---|---|
-| **`fpai_demo_fpga.rar`** | 6.29 MB | **完整 Vivado 工程**（398 条目，解压 295 文件 / 152 MB）| ✅ 已解压到 `D:\Downloads\Wujing\FPGA_DEMO\` |
+| **`fpai_demo_fpga.rar`** | 6.29 MB | **完整 Vivado 工程**（398 条目，解压 295 文件 / 152 MB）| 已解压到 `D:\Downloads\Wujing\FPGA_DEMO\` |
 | **`BIT.rar`** | 6.18 MB | **位流**：`30tai_detpost` / `30tai_lite_detpost` 两套（.bit + BOOT.bin）| 待解压 |
 | **`BOOT_Gen.rar`** | 3.71 MB | **BOOT.bin 生成工具**：`7030ai_psin.bif` + 位流 + bl31.elf + FSBL + u-boot | 待解压 |
 | **`fpai_demo_app.rar`** | 193.22 MB | **PS 应用源码**（3222 条目，含 `deps/modelzoo_utils` 全套）| 待解压 |
 | **`JFM_Kits.zip`** | 1182.43 MB | **Vivado IP 补丁工具包**（3830 条目，含 30TAI 时序库）| 待解压 |
-| **`30TAI使用教程.pdf`** | 1.79 MB | **11 页：IP 补丁 → Vivado 工程 → BOOT 生成 → PS 程序 → 上板运行** 全流程 | ✅ 已提取文本 |
-| **`FPAI_DEMO说明.pdf`** | 0.29 MB | **8 页：工程结构、约束差异、数据流、custom op 接口、C API** | ✅ 已提取文本 |
+| **`30TAI使用教程.pdf`** | 1.79 MB | **11 页：IP 补丁 → Vivado 工程 → BOOT 生成 → PS 程序 → 上板运行** 全流程 | 已提取文本 |
+| **`FPAI_DEMO说明.pdf`** | 0.29 MB | **8 页：工程结构、约束差异、数据流、custom op 接口、C API** | 已提取文本 |
 | `FMSH_Procise_2025.1.1_temp_...rar` | 769.14 MB | Procise 安装包（已有）| 已有 |
 | `procise解压密码.txt` | — | 密码 `FMSH_FPGA_sw` | 已知 |
 
 ---
 
-## 二、⭐ 官方管脚约束（`constrs_1/impl_constraints.xdc`）
+## 二、 官方管脚约束（`constrs_1/impl_constraints.xdc`）
 
 ### 2.1 PL 系统时钟 —— P 之前一直找不到的
 
 ```tcl
-create_clock -period 5.000 [get_ports sys_clk_p]        # 5 ns = 200 MHz
+create_clock -period 5.000 [get_ports sys_clk_p] # 5 ns = 200 MHz
 set_property IOSTANDARD DIFF_SSTL15 [get_ports sys_clk_p]
 set_property IOSTANDARD DIFF_SSTL15 [get_ports sys_clk_n]
 set_property PACKAGE_PIN C8 [get_ports sys_clk_p]
@@ -51,20 +51,20 @@ set_property PACKAGE_PIN E7 [get_ports rx_gtx_full_reset]
 set_property IOSTANDARD LVCMOS15 [get_ports rx_gtx_full_reset]
 
 set_property IOSTANDARD LVCMOS15 [get_ports {led[0]}]
-set_property PACKAGE_PIN J1 [get_ports {led[0]}]      # LED1
+set_property PACKAGE_PIN J1 [get_ports {led[0]}] # LED1
 set_property IOSTANDARD LVCMOS15 [get_ports {led[1]}]
-set_property PACKAGE_PIN M6 [get_ports {led[1]}]      # LED2
+set_property PACKAGE_PIN M6 [get_ports {led[1]}] # LED2
 ```
 
-⚠️ BANK13 的 VCCO 是 1.5V（`LVCMOS15`） —— 这一点此前 `pin_map.md` 未记录。
+ BANK13 的 VCCO 是 1.5V（`LVCMOS15`） —— 这一点此前 `pin_map.md` 未记录。
 
 ### 2.3 HDMI 输出（完整）
 
 ```tcl
 set_property PACKAGE_PIN AC17 [get_ports HDMI_CLK_P]
 set_property PACKAGE_PIN AA15 [get_ports {HDMI_TX_P[0]}]
-set_property PACKAGE_PIN Y16  [get_ports {HDMI_TX_P[1]}]
-set_property PACKAGE_PIN W16  [get_ports {HDMI_TX_P[2]}]
+set_property PACKAGE_PIN Y16 [get_ports {HDMI_TX_P[1]}]
+set_property PACKAGE_PIN W16 [get_ports {HDMI_TX_P[2]}]
 set_property IOSTANDARD TMDS_33 [get_ports HDMI_CLK_P]
 set_property IOSTANDARD TMDS_33 [get_ports {HDMI_TX_P[*]}]
 ```
@@ -74,7 +74,7 @@ set_property IOSTANDARD TMDS_33 [get_ports {HDMI_TX_P[*]}]
 ```tcl
 set_property PACKAGE_PIN AB3 [get_ports FMC_HPC_DP0_M2C_N]
 set_property PACKAGE_PIN AB4 [get_ports FMC_HPC_DP0_M2C_P]
-create_clock -period 6.734 [get_ports FMC_HPC_GBTCLK0_M2C_C_P]   # 6.734 ns ≈ 148.5 MHz（1080p60）
+create_clock -period 6.734 [get_ports FMC_HPC_GBTCLK0_M2C_C_P] # 6.734 ns ≈ 148.5 MHz（1080p60）
 
 ## WUJING BOARD（完整版）
 ##set_property PACKAGE_PIN U6 [get_ports FMC_HPC_GBTCLK0_M2C_C_P]
@@ -120,78 +120,78 @@ create_clock -period 6.734 [get_pins rx_sdi_inst/SDI0/SDI/GTX_i/gtxe2_i/RXOUTCLK
 
 ---
 
-## 三、⭐ FPGA 工程结构（`fpai_demo_fpga.rar` 解压后）
+## 三、 FPGA 工程结构（`fpai_demo_fpga.rar` 解压后）
 
 ```
 fpai_demo_fpga/
 ├── constrs_1/
-│   ├── ai7030.xdc                      2.9 KB   时序/DRC 约束
-│   └── impl_constraints.xdc            2.5 KB   管脚约束（见上）
-├── PS_AI IP/                           44 文件 / 4.9 MB   PS IP（processing_system7_v5_5）
-├── fpai_demo_vivado.srcs/              35 文件 / 12.2 MB  Block Design
-├── fpai_demo_vivado.ip_user_files/     14 文件 / 7.1 MB   IP 静态文件
-└── rtl/                               166 文件 / 135.7 MB
-    ├── ai7030_edif_top.v               11.7 KB  顶层模块
-    ├── AI_Mate_stub.v                  22.8 KB  AI_Mate 的 wrapper（看接口用）
-    ├── ps_ai_peripheral.sv             89.6 KB
-    ├── ps_ai_wrapper.sv                55.9 KB
-    ├── edif/
-    │   ├── AI_Mate.edif                69.6 MB  NPU 网表（含 DetPost 硬算子）
-    │   └── AI_Mate_no_detpost.edif     46.2 MB  NPU 网表（不含 DetPost，省 PL 资源）
-    ├── adder_op/                                custom op 完整示例（P 照这个改）
-    │   ├── adder.v                      2.0 KB  运算逻辑
-    │   ├── adder_top.v                  7.5 KB  顶层（寄存器口 + DMA 口）
-    │   ├── dma.v                        3.1 KB  PL DDR 读写
-    │   ├── reg_ctrl.v                   9.5 KB  寄存器控制
-    │   ├── pulse_cross.v                1.8 KB  跨时钟域
-    │   └── AVR/avr_brs.v / avr_frs.v / avr_rs.v
-    ├── display/                                 HDMI 输出全套
-    │   ├── TMDSEncoder.vhd              6.8 KB  TMDS 编码
-    │   ├── vtc.v                        2.4 KB  视频时序控制器（无 SDI 时用它出测试图）
-    │   ├── color_bar.v                 10.5 KB  彩条发生器
-    │   ├── frame_ctrl.v                42.3 KB
-    │   ├── uihdmitx.v                   3.8 KB
-    │   └── ...
-    ├── sdi/                                     SDI 输入全套
-    │   ├── rx_sdi.v                    12.6 KB
-    │   ├── x7gtx_sdi_wrapper.v         27.3 KB
-    │   ├── YCbCr422_2_RGB888.v          4.2 KB
-    │   └── ...
-    ├── gp/                                      GP 口管理
-    │   ├── gp0_manager.sv / gp_io.sv / mna_gp2axi.sv / monitor_gp.v ...
-    └── utils/
-        ├── mna_itf.sv                  12.9 KB
-        ├── axi_to_mna.v                 7.9 KB
-        ├── demo_clkrst_wrapper.v        2.1 KB
-        └── async_to_sync_reset.v        0.8 KB
+│ ├── ai7030.xdc 2.9 KB 时序/DRC 约束
+│ └── impl_constraints.xdc 2.5 KB 管脚约束（见上）
+├── PS_AI IP/ 44 文件 / 4.9 MB PS IP（processing_system7_v5_5）
+├── fpai_demo_vivado.srcs/ 35 文件 / 12.2 MB Block Design
+├── fpai_demo_vivado.ip_user_files/ 14 文件 / 7.1 MB IP 静态文件
+└── rtl/ 166 文件 / 135.7 MB
+ ├── ai7030_edif_top.v 11.7 KB 顶层模块
+ ├── AI_Mate_stub.v 22.8 KB AI_Mate 的 wrapper（看接口用）
+ ├── ps_ai_peripheral.sv 89.6 KB
+ ├── ps_ai_wrapper.sv 55.9 KB
+ ├── edif/
+ │ ├── AI_Mate.edif 69.6 MB NPU 网表（含 DetPost 硬算子）
+ │ └── AI_Mate_no_detpost.edif 46.2 MB NPU 网表（不含 DetPost，省 PL 资源）
+ ├── adder_op/ custom op 完整示例（P 照这个改）
+ │ ├── adder.v 2.0 KB 运算逻辑
+ │ ├── adder_top.v 7.5 KB 顶层（寄存器口 + DMA 口）
+ │ ├── dma.v 3.1 KB PL DDR 读写
+ │ ├── reg_ctrl.v 9.5 KB 寄存器控制
+ │ ├── pulse_cross.v 1.8 KB 跨时钟域
+ │ └── AVR/avr_brs.v / avr_frs.v / avr_rs.v
+ ├── display/ HDMI 输出全套
+ │ ├── TMDSEncoder.vhd 6.8 KB TMDS 编码
+ │ ├── vtc.v 2.4 KB 视频时序控制器（无 SDI 时用它出测试图）
+ │ ├── color_bar.v 10.5 KB 彩条发生器
+ │ ├── frame_ctrl.v 42.3 KB
+ │ ├── uihdmitx.v 3.8 KB
+ │ └── ...
+ ├── sdi/ SDI 输入全套
+ │ ├── rx_sdi.v 12.6 KB
+ │ ├── x7gtx_sdi_wrapper.v 27.3 KB
+ │ ├── YCbCr422_2_RGB888.v 4.2 KB
+ │ └── ...
+ ├── gp/ GP 口管理
+ │ ├── gp0_manager.sv / gp_io.sv / mna_gp2axi.sv / monitor_gp.v ...
+ └── utils/
+ ├── mna_itf.sv 12.9 KB
+ ├── axi_to_mna.v 7.9 KB
+ ├── demo_clkrst_wrapper.v 2.1 KB
+ └── async_to_sync_reset.v 0.8 KB
 ```
 
-**⚠️ `rtl/edif/AI_Mate.edif` 69.6 MB —— 这就是 ZG330 NPU 的加密网表。PL 里例化它就有 NPU 了。**
+** `rtl/edif/AI_Mate.edif` 69.6 MB —— 这就是 ZG330 NPU 的加密网表。PL 里例化它就有 NPU 了。**
 
 ---
 
-## 四、⭐ 开发流程（`30TAI使用教程.pdf` 全文要点）
+## 四、 开发流程（`30TAI使用教程.pdf` 全文要点）
 
 ### 4.1 安装 Vivado IP 补丁（`JFM_Kits.zip`）
 
 ```text
 1.1 解压 JFM_Kits.zip 到一个英文路径（不要有中文、空格、特殊字符）
 1.2 关闭 Vivado，新建用户环境变量：
-      变量名：JFM_PATH
-      变量值：工具包解压位置（IP_PATCH 文件夹的上一级，如 E:\JFM_Kits）
-    验证：重启 Vivado，在 Tcl Console 执行 puts $::env(JFM_PATH)
+ 变量名：JFM_PATH
+ 变量值：工具包解压位置（IP_PATCH 文件夹的上一级，如 E:\JFM_Kits）
+ 验证：重启 Vivado，在 Tcl Console 执行 puts $::env(JFM_PATH)
 1.3 关闭 IP cache：
-      Project Settings → IP → IP Cache → Cache scope = Disabled
+ Project Settings → IP → IP Cache → Cache scope = Disabled
 1.4 综合所有 IP：
-      每个 IP 生成时把综合选项设为 Out of context per IP（而非 Global），点 Generate 而非 Skip
-      Design Runs 里每个 IP 应显示 Synth_design Complete!
+ 每个 IP 生成时把综合选项设为 Out of context per IP（而非 Global），点 Generate 而非 Skip
+ Design Runs 里每个 IP 应显示 Synth_design Complete!
 1.5 加载工具包（Tcl Console，注意用正斜杠）：
-      source E:/JFM_Kits/ip_patch/run.tcl
+ source E:/JFM_Kits/ip_patch/run.tcl
 1.6 加载脚本：
-      add_hook_tcl_to_prj
+ add_hook_tcl_to_prj
 1.7 加载 30TAI 时序库（首次使用必做）：
-      replace_7z030ai_file
-    注：切到非 30TAI 器件时，需 reset_database_to_default 恢复
+ replace_7z030ai_file
+ 注：切到非 30TAI 器件时，需 reset_database_to_default 恢复
 ```
 
 关键文件：`JFM_Kits\ip_patch\030ai\zynq.rtd`（21.3 MB，30TAI 时序库）
@@ -210,28 +210,28 @@ fpai_demo_fpga/
 （9）Tcl Console：add_hook_tcl_to_prj
 ```
 
-### 4.3 ⚠️ 生成位流（重要提示）
+### 4.3 生成位流（重要提示）
 
 ```text
 点击 Flow Navigator → PROGRAM AND DEBUG → Generate Bitstream
 
-⚠️ 按流程依次点 Run Synthesis → Run Implementation → Generate Bitstream 可能存在问题，
-   建议【跳过前两个步骤，直接点 Generate Bitstream】。
+ 按流程依次点 Run Synthesis → Run Implementation → Generate Bitstream 可能存在问题，
+ 建议【跳过前两个步骤，直接点 Generate Bitstream】。
 ```
 
 ### 4.4 生成 BOOT.bin（`BOOT_Gen.rar`）
 
 ```text
 3.1 解压 BOOT_Gen.zip，用文本编辑器打开 BOOT_Gen/7030ai_psin.bif
-    修改其中路径为解压目录（路径不要出现反斜杠，确保能找到各文件）
+ 修改其中路径为解压目录（路径不要出现反斜杠，确保能找到各文件）
 3.2 把 Vivado 生成的 .bit 拷到解压目录，文件名必须与 bif 中一致打开 Procise → Create Image → 生成 bin（输出在解压目录）
 3.3 替换 BOOT.bin 两种方式：
-    （1）读卡器：直接把 BOOT.bin 替换到 FAT 分区（⚠️ 不要格式化磁盘）
-    （2）SSH：
-         mount /dev/mmcblk0p1 /root/bits
-         替换 /root/bits/BOOT.bin
-         reboot
-     ⚠️ 必须真正挂载到 /root/bits 再替换；直接拷进去位流不会生效
+ （1）读卡器：直接把 BOOT.bin 替换到 FAT 分区（ 不要格式化磁盘）
+ （2）SSH：
+ mount /dev/mmcblk0p1 /root/bits
+ 替换 /root/bits/BOOT.bin
+ reboot
+ 必须真正挂载到 /root/bits 再替换；直接拷进去位流不会生效
 ```
 
 ### 4.5 编译与运行 PS 程序
@@ -239,37 +239,37 @@ fpai_demo_fpga/
 ```text
 4.1 交叉编译环境安装 Icraft_3.XX 及 CustomOp_3.XX
 4.2 把整个 fpai_demo_app 文件夹（含 deps）拷到交叉编译环境
-    ⚠️ 注意不要在 30TAI 板载系统上编译编译参考：fpai_demo_app/examples/1_single_input+ai/PLin+SingleNet+HDMI/README.md
+ 注意不要在 30TAI 板载系统上编译编译参考：fpai_demo_app/examples/1_single_input+ai/PLin+SingleNet+HDMI/README.md
 4.3 adder_demo：拷到板上，确保可执行权限后执行（验证 custom op 通路）
 4.4 sdicamera+yolov5+hdmi：需要以下文件/文件夹
-    configs/ZG/sdicamera+yolov5+hdmi.yaml
-    imodel/ZG/yolov5s_352x640_ZG.json  （文件名与 yaml 配置一致）
-    imodel/ZG/yolov5s_352x640_ZG.raw
-    names/coco.names
-    sdicamera+yolov5+hdmi               （可执行程序）
+ configs/ZG/sdicamera+yolov5+hdmi.yaml
+ imodel/ZG/yolov5s_352x640_ZG.json （文件名与 yaml 配置一致）
+ imodel/ZG/yolov5s_352x640_ZG.raw
+ names/coco.names
+ sdicamera+yolov5+hdmi （可执行程序）
 ```
 
-### 4.6 ⭐⭐⭐ 无 SDI 相机的做法（我们正需要）
+### 4.6 无 SDI 相机的做法（我们正需要）
 
 ```text
 【无 SDI】
-  修改 configs/ZG/sdicamera+yolov5+hdmi.yaml：
-      pipeline → camera → vtc = true
-  保存。
-  在【断电状态】下将 HDMI 接入开发板，上电启动。
-  确保 sdicamera+yolov5+hdmi 有执行权限，执行：
-      ./sdicamera+yolov5+hdmi ./configs/ZG/sdicamera+yolov5+hdmi.yaml
-  在 HDMI 显示器中查看【滚动的灰度图】。
+ 修改 configs/ZG/sdicamera+yolov5+hdmi.yaml：
+ pipeline → camera → vtc = true
+ 保存。
+ 在【断电状态】下将 HDMI 接入开发板，上电启动。
+ 确保 sdicamera+yolov5+hdmi 有执行权限，执行：
+ ./sdicamera+yolov5+hdmi ./configs/ZG/sdicamera+yolov5+hdmi.yaml
+ 在 HDMI 显示器中查看【滚动的灰度图】。
 
 【接入 SDI】
-  同上，但把 vtc 改为 false，并接 SDI 摄像头。
+ 同上，但把 vtc 改为 false，并接 SDI 摄像头。
 ```
 
 **⇒ `vtc: true` = 内部视频时序发生器，无外部视频源也能产生画面。这解决了我们"没有 SDI 相机"和"HDMI 黑屏"两个问题。**
 
 ---
 
-## 五、⭐ custom op 接口定义（`FPAI_DEMO说明.pdf`）
+## 五、 custom op 接口定义（`FPAI_DEMO说明.pdf`）
 
 ### 5.1 两路接口参考设计向 PL 端 custom op 提供两路接口：
 
@@ -313,17 +313,17 @@ fpai_demo_fpga/
 
 **握手机制**：标准 ready/valid —— master 发 data + valid，slave 发 ready，两者同时有效完成一次传输。
 
-### 5.4 ⭐ custom op 寄存器地址空间
+### 5.4 custom op 寄存器地址空间
 
 > custom op 的寄存器地址空间为 `0x400C'0000 ~ 0x400F'FFFF`
 
-⚠️⚠️ 2026-10-23 重要更正（原判断有误）
+ 2026-10-23 重要更正（原判断有误）
 
 **这句话说的是「**custom op**」的地址空间，**不是 AI_Mate（NPU）的寄存器地址。两者是两个不同的从设备：
 
 | 从设备 | 地址段 | 实测结果 |
 |---|---|---|
-| **AI_Mate（NPU）** | **`0x40000000 ~ 0x400000E3`**（约 224 B）| **✅ 实测有响应**：`0x4000001C = 0x25122301`（AI-Mate 版本号）|
+| **AI_Mate（NPU）** | **`0x40000000 ~ 0x400000E3`**（约 224 B）| ** 实测有响应**：`0x4000001C = 0x25122301`（AI-Mate 版本号）|
 | custom op | `0x400C0000 ~ 0x400FFFFF` | 读回全 `0xFFFFFFFF`（当前位流未挂 custom op）|
 | AI_Mate 的 DMA 视图 | `0x80000000` | 由 `libicraft` 内部管理，PS 直接 `/dev/mem` 读写不可用 |
 
@@ -339,7 +339,7 @@ fpai_demo_fpga/
 （3）PS 通过寄存器端口轮询结束标志，直至完成
 ```
 
-### 5.6 ⭐ PS 侧 C API
+### 5.6 PS 侧 C API
 
 ```c
 // 读寄存器（custom op 寄存器空间 0x400C0000 ~ 0x400FFFFF）
@@ -350,8 +350,8 @@ device.defaultRegRegion().write(uint32_t address, uint32_t value, bool relative 
 
 // 分配 PL DDR 空间（alignment 默认 64 字节）
 auto mem_chunk = device.defaultMemRegion().malloc(uint64_t byte_size,
-                                                 bool auto_free = false,
-                                                 uint64_t alignment = 64);
+ bool auto_free = false,
+ uint64_t alignment = 64);
 
 // 写 PL DDR
 mem_chunk.write(uint64_t dest_offset, char* src, uint64_t byte_size);
@@ -364,18 +364,18 @@ mem_chunk.read(char* dest, uint64_t src_offset, uint64_t byte_size);
 
 ```
 examples/1_single_input+ai/PLin+SingleNet+HDMI/src/
-  ├── adder_demo.cpp              加法器 demo 源码（custom op 最小验证）
-  └── sdicamera+yolov5+hdmi.cpp   参考设计源码
+ ├── adder_demo.cpp 加法器 demo 源码（custom op 最小验证）
+ └── sdicamera+yolov5+hdmi.cpp 参考设计源码
 ```
 
 ---
 
-## 六、⭐ 参考设计的数据流（官方原文）
+## 六、 参考设计的数据流（官方原文）
 
 ```text
 （1）SDI 摄像头输入视频流（1080p@60Hz）。PL 端 rx_sdi 模块解析为 RGB888 并复制成两路：
-     一路经预处理后存入 PL DDR，供 AI 使用；
-     另一路经预处理后存入 PS DDR，供 HDMI 显示使用。
+ 一路经预处理后存入 PL DDR，供 AI 使用；
+ 另一路经预处理后存入 PS DDR，供 HDMI 显示使用。
 （2）PS 启动 AI，AI 完成神经网络运算后，将输出结果写回 PL DDR。
 （3）PS 从 PL DDR 取回输出结果，完成后处理计算，将输出写回 PS DDR。
 （4）从 PS DDR 读取缓存视频数据，通过 HDMI 输出到显示器。
@@ -391,26 +391,26 @@ examples/1_single_input+ai/PLin+SingleNet+HDMI/src/
 
 | # | 材料 | 现状 |
 |---|---|---|
-| 1 | PLIN + HDMI/VPU 参考工程（含 runtimeapp）| ✅ **有**：`fpai_demo_app.rar`（193 MB）+ 大学计划网盘 `fpai_demo_package_2604070x.zip` |
-| 2 | `Icraft_3.36.1_onchip.deb` | ✅ 已有（已装到板上）|
-| 3 | `CustomOp_3.36.1_onchip.deb` | ✅ 已有（已装）|
-| 4 | `IcraftMdz_ThirdParty.deb` | ✅ 已有 |
-| 5 | **Vivado IP 补丁** | ✅ **有**：`JFM_Kits.zip`（1.18 GB），含 `ip_patch/run.tcl` + `030ai/zynq.rtd` |
-| 6 | **Procise Bit 补丁** | ✅ 已集成在 Procise 的 Tools 菜单 |
-| 7 | **悟净 Lite 的 PL 引脚 / xdc** | ✅ **有**：`impl_constraints.xdc`（时钟 C8/C7，复位 F8，HDMI AC17/AA15/Y16/W16，SDI R6/R5）|
-| 8 | **含 ZG330 的位流** | ✅ **有**：`BIT.rar` 的 `30tai_lite_detpost/`（+ PL 工程可自行重新生成）|
-| 9 | **FPGA 工程源码** | ✅ **有**：`fpai_demo_fpga.rar`（含 `AI_Mate.edif` 69.6 MB）|
-| 10 | **Procise License** | ❌ **仍缺**（唯一）|
+| 1 | PLIN + HDMI/VPU 参考工程（含 runtimeapp）| **有**：`fpai_demo_app.rar`（193 MB）+ 大学计划网盘 `fpai_demo_package_2604070x.zip` |
+| 2 | `Icraft_3.36.1_onchip.deb` | 已有（已装到板上）|
+| 3 | `CustomOp_3.36.1_onchip.deb` | 已有（已装）|
+| 4 | `IcraftMdz_ThirdParty.deb` | 已有 |
+| 5 | **Vivado IP 补丁** | **有**：`JFM_Kits.zip`（1.18 GB），含 `ip_patch/run.tcl` + `030ai/zynq.rtd` |
+| 6 | **Procise Bit 补丁** | 已集成在 Procise 的 Tools 菜单 |
+| 7 | **悟净 Lite 的 PL 引脚 / xdc** | **有**：`impl_constraints.xdc`（时钟 C8/C7，复位 F8，HDMI AC17/AA15/Y16/W16，SDI R6/R5）|
+| 8 | **含 ZG330 的位流** | **有**：`BIT.rar` 的 `30tai_lite_detpost/`（+ PL 工程可自行重新生成）|
+| 9 | **FPGA 工程源码** | **有**：`fpai_demo_fpga.rar`（含 `AI_Mate.edif` 69.6 MB）|
+| 10 | **Procise License** | **仍缺**（唯一）|
 
 ### 7.2 P 的卡点变化
 
 | P 之前的卡点 | 现在 |
 |---|---|
-| PL 系统时钟引脚找不到 | ✅ **C8 / C7，200 MHz，`DIFF_SSTL15`** |
-| xdc 全注释 | ✅ **可直接用官方 `impl_constraints.xdc` 改造** |
-| Vivado IP 补丁要申请 | ✅ **`JFM_Kits.zip` 里全有** |
-| 没有 PL 工程参考 | ✅ **完整 Vivado 工程 + custom op 示例（`adder_op/`）** |
-| Procise License 未申请 | ❌ **仍需解决**（MAC `ae:59:f4:2d:3a:99`）|
+| PL 系统时钟引脚找不到 | **C8 / C7，200 MHz，`DIFF_SSTL15`** |
+| xdc 全注释 | **可直接用官方 `impl_constraints.xdc` 改造** |
+| Vivado IP 补丁要申请 | **`JFM_Kits.zip` 里全有** |
+| 没有 PL 工程参考 | **完整 Vivado 工程 + custom op 示例（`adder_op/`）** |
+| Procise License 未申请 | **仍需解决**（MAC `ae:59:f4:2d:3a:99`）|
 
 ### 7.3 对自研 IP 的影响
 
@@ -438,20 +438,20 @@ examples/1_single_input+ai/PLin+SingleNet+HDMI/src/
 
 ---
 
-## 九、⭐ Icraft 版本配套与板端编译（2026-10-23 补）
+## 九、 Icraft 版本配套与板端编译（2026-10-23 补）
 
 > 本章是 NPU 打通当天新增。核心结论：官方 demo 程序的 Icraft 版本与它自带的模型版本不一致，必须配套才能跑。
 
-### 9.1 ⭐ Icraft 版本符号矩阵（踩坑根源）
+### 9.1 Icraft 版本符号矩阵（踩坑根源）
 
 **`icraft::xir::Network::lazyLoadParamsFromFile` 三个重载在各版本的存在情况（用二进制符号字符串实测）：**
 
 | 版本 | `midware::path` | `std::filesystem::path` | **`std::string`** |
 |---|---|---|---|
-| **3.33.1** | ✅ | ✅ | **✅ ← 官方预编译 demo 需要这个** |
-| 3.36.0 | ✗ | ✅ | **✗** |
-| 3.36.1 | ✗ | ✅ | **✗** |
-| 3.39.0 | ✗ | ✅ | **✗** |
+| **3.33.1** | | | ** ← 官方预编译 demo 需要这个** |
+| 3.36.0 | | | **** |
+| 3.36.1 | | | **** |
+| 3.39.0 | | | **** |
 
 ⇒ 3.36 之后 `std::string` 重载被删除，只保留 `std::filesystem::path`。
 
@@ -461,12 +461,12 @@ examples/1_single_input+ai/PLin+SingleNet+HDMI/src/
 symbol lookup error: undefined symbol: _ZN6icraft3xir7Network22lazyLoadParamsFromFileERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEb
 ```
 
-### 9.2 ⭐ 三个官方包的版本对应关系
+### 9.2 三个官方包的版本对应关系
 
 | 来源 | 预编译程序 | 附带 deb | 附带模型 | 配套？ |
 |---|---|---|---|---|
-| **微云 `fpai_demo_app.rar`**（2026-09-16）| **3.33.1**（2026-03-25）| 3.33.1 | **3.36.0**（2026-04-07）| ❌ **官方打包错位** |
-| **`fpai_demo_package_26040701`**（2026-04-07）| 无 | **3.36.0** | **3.36.0** | ✅ 配套，需自己编译 |
+| **微云 `fpai_demo_app.rar`**（2026-09-16）| **3.33.1**（2026-03-25）| 3.33.1 | **3.36.0**（2026-04-07）| **官方打包错位** |
+| **`fpai_demo_package_26040701`**（2026-04-07）| 无 | **3.36.0** | **3.36.0** | 配套，需自己编译 |
 | `30TAI_3.39.0`（2026-08-28）| 无 | 3.39.0 | — | 最新，但无配套 demo |
 
 ⇒ `fpai_demo_package_26040701` 的 README 写得很清楚：
@@ -474,42 +474,42 @@ symbol lookup error: undefined symbol: _ZN6icraft3xir7Network22lazyLoadParamsFro
 ```
 - 版本: 26040701
 - 平台: ZG
-- AI Mate 版本: 25122301        ← 与板上读到的 device: 25122301 一致
+- AI Mate 版本: 25122301 ← 与板上读到的 device: 25122301 一致
 - iCraft 版本: 3.36.0
 ```
 
-### 9.3 ⭐ 板端编译方案（官方假设交叉编译，需改）
+### 9.3 板端编译方案（官方假设交叉编译，需改）
 
 官方 `CMakeLists.txt` 的 UNIX 分支：
 
 ```cmake
 elseif(UNIX)
-    SET(CMAKE_SYSTEM_NAME Linux)
-    SET(CMAKE_SYSTEM_PROCESSOR aarch64)
-    SET(CMAKE_C_COMPILER /usr/bin/aarch64-linux-gnu-gcc)      ← 假设在 x86 上交叉编译
-    SET(CMAKE_CXX_COMPILER /usr/bin/aarch64-linux-gnu-g++)
-    link_directories(${DEPS_DIR}/thirdparty/a)                ← aarch64 静态库
-    link_libraries(avformat avdevice avfilter avcodec avutil swscale swresample
-                   opencv_imgcodecs opencv_imgproc opencv_core ...
-                   fmt pthread dl zlib yaml-cpp ssl crypto atomic)
-    find_package(Icraft-BuyiBackend REQUIRED)
-    find_package(Icraft-HostBackend REQUIRED)
-    find_package(icraft-zg330backend REQUIRED)
+ SET(CMAKE_SYSTEM_NAME Linux)
+ SET(CMAKE_SYSTEM_PROCESSOR aarch64)
+ SET(CMAKE_C_COMPILER /usr/bin/aarch64-linux-gnu-gcc) ← 假设在 x86 上交叉编译
+ SET(CMAKE_CXX_COMPILER /usr/bin/aarch64-linux-gnu-g++)
+ link_directories(${DEPS_DIR}/thirdparty/a) ← aarch64 静态库
+ link_libraries(avformat avdevice avfilter avcodec avutil swscale swresample
+ opencv_imgcodecs opencv_imgproc opencv_core ...
+ fmt pthread dl zlib yaml-cpp ssl crypto atomic)
+ find_package(Icraft-BuyiBackend REQUIRED)
+ find_package(Icraft-HostBackend REQUIRED)
+ find_package(icraft-zg330backend REQUIRED)
 ```
 
-**⚠️ 板子上是 native aarch64，没有 `aarch64-linux-gnu-gcc` → 必须注释掉那两行 `SET(CMAKE_C*_COMPILER ...)`。**
+** 板子上是 native aarch64，没有 `aarch64-linux-gnu-gcc` → 必须注释掉那两行 `SET(CMAKE_C*_COMPILER ...)`。**
 
 **端到端流程：**
 
 ```bash
 # 1) 板子编译环境（已确认）
-cmake 3.16.3 / g++ 9.4.0 / gcc / make      ← 齐备
+cmake 3.16.3 / g++ 9.4.0 / gcc / make ← 齐备
 # 系统库 yaml-cpp / opencv / ffmpeg / spdlog ← 全缺，但用官方静态库即可
 
 # 2) 从 fpai_demo_package_26040701_PLIN_pHDMI.zip 解压 deps/ + examples/
-#    deps/thirdparty/a/ 含 50+ 个 aarch64 静态库：
-#      libavcodec.a 193 MB / libavfilter.a 54 MB / libavformat.a 40 MB
-#      libopencv_core.a 9 MB / libopencv_imgproc.a 8 MB / libyaml-cpp.a 3.9 MB
+# deps/thirdparty/a/ 含 50+ 个 aarch64 静态库：
+# libavcodec.a 193 MB / libavfilter.a 54 MB / libavformat.a 40 MB
+# libopencv_core.a 9 MB / libopencv_imgproc.a 8 MB / libyaml-cpp.a 3.9 MB
 
 # 3) 装配套运行时
 dpkg -i --force-downgrade Icraft_3.36.0_onchip.deb CustomOp_3.36.0_onchip.deb
@@ -527,55 +527,55 @@ cmake --build build/ZG -j4
 
 ```cmake
 elseif(TARGET_CHIP_UPPER STREQUAL "ZG")
-    add_compile_definitions(USE_ZG330_BACKEND)     ← 编译期宏，决定走哪个后端分支
-    set(BACKEND_LIB_NAME "zg330backend")
+ add_compile_definitions(USE_ZG330_BACKEND) ← 编译期宏，决定走哪个后端分支
+ set(BACKEND_LIB_NAME "zg330backend")
 ```
 
-### 9.4 ⭐ 官方 yaml 的关键字段（我们之前没注意）
+### 9.4 官方 yaml 的关键字段（我们之前没注意）
 
 ```yaml
 sys:
-  Version: __3.31__
-  device: axi://zg330aiu?npu=0x40000000&dma=0x80000000
-  mmuMode: true
-  speedMode: false
-  compressFtmp: false
-  ocm_option: -1
-  run_backend: zg330          # 缺省是 "buyi"（demo 源码第 118 行），必须显式写！
+ Version: __3.31__
+ device: axi://zg330aiu?npu=0x40000000&dma=0x80000000
+ mmuMode: true
+ speedMode: false
+ compressFtmp: false
+ ocm_option: -1
+ run_backend: zg330 # 缺省是 "buyi"（demo 源码第 118 行），必须显式写！
 pipeline:
-  camera:
-    vtc: true                 # 改 true 可无 SDI 摄像头（内部测试图）
-    width: 1920
-    height: 1080
-  icore:
-    jsons: [./imodel/ZG/yolov5s_plin_352x640_ZG.json]
-    raws:  [./imodel/ZG/yolov5s_plin_352x640_ZG.raw]
-    view_except_op_ids: [0,671,663,692,605]    # 官方 5 个；A 的模型是 [0,275]
-    detpost: true
-    fpga_nms: false
+ camera:
+ vtc: true # 改 true 可无 SDI 摄像头（内部测试图）
+ width: 1920
+ height: 1080
+ icore:
+ jsons: [./imodel/ZG/yolov5s_plin_352x640_ZG.json]
+ raws: [./imodel/ZG/yolov5s_plin_352x640_ZG.raw]
+ view_except_op_ids: [0,671,663,692,605] # 官方 5 个；A 的模型是 [0,275]
+ detpost: true
+ fpga_nms: false
 ```
 
-⚠️ demo 程序的参数解析（源码第 92 行）：
+ demo 程序的参数解析（源码第 92 行）：
 
 ```cpp
 if (argc < 2) { std::cerr << "Usage: " << argv[0] << " <config yaml>"; return 1; }
-config = YAML::LoadFile(argv[1]);      ← 不接受 --config
+config = YAML::LoadFile(argv[1]); ← 不接受 --config
 ```
 
-### 9.5 ⭐ 官方 demo 的 NPU 初始化路径（源码原文）
+### 9.5 官方 demo 的 NPU 初始化路径（源码原文）
 
 ```cpp
 // sdicamera+yolov5+hdmi.cpp
 182 | auto device = Device::Open(fpai_cfg.device_url.c_str());
 183 | auto fpai_device = device.cast<FPAIDevice>();
-185 | fpai_device.mmuModeSwitch(fpai_cfg.mmu_mode);     // 仅 USE_BUYI_BACKEND 分支
+185 | fpai_device.mmuModeSwitch(fpai_cfg.mmu_mode); // 仅 USE_BUYI_BACKEND 分支
 446 | Device::Close(device);
 
 // yolov5_npu_actor.hpp（ZG330 分支）
 202 | auto net_viewed = network_groups_[cam_index].viewExcept(yolov5_cfg_.view_except_op_ids);
 207 | auto net_sess = initSession("zg330", net_viewed, this->device_,
-208 |                             fpai_cfg_.ocm_option, ..., fpai_cfg_.speed_mode, fpai_cfg_.compress_ftmp);
-211 | net_sess.apply();                                 // 部署到硬件，版本错位时崩在这里
+208 | fpai_cfg_.ocm_option, ..., fpai_cfg_.speed_mode, fpai_cfg_.compress_ftmp);
+211 | net_sess.apply(); // 部署到硬件，版本错位时崩在这里
 ```
 
 **⇒ 官方**不用 `icraft-run` 命令行**，而是 C++ `Device::Open()`。之前用 `icraft-run --backends "ZG330;Host"` 段错误，是因为 `Host` 后端在 aarch64 上走的是另一条初始化路径。**

@@ -293,7 +293,7 @@ def build_canvas(gray, cands):
 class PlBackend(object):
     """通过 /dev/mem 访问 0x43C00000 的寄存器组。
 
-    ⚠️ 当前 P 的 RTL 还没做双路检测和 64×64 网格，
+    [WARN] 当前 P 的 RTL 还没做双路检测和 64×64 网格，
        所以 --backend pl 会先检查 VERSION，不通就报错退出。
     """
 
@@ -415,7 +415,7 @@ class Track(object):
 class Tracker(object):
     """卡尔曼 + 贪心匹配 + N 帧确认
 
-    ⚠️ 实测结论（tools/bench_track_falsealarm.py）：
+    [WARN] 实测结论（tools/bench_track_falsealarm.py）：
        三帧确认对【静止纹理虚警】无效（63.01 → 62.59）。
        跟踪只负责航迹关联，去虚警靠 NPU 判别环节。
     """

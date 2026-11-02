@@ -29,11 +29,11 @@
 
 1. 确认 `D:\firstharness\JFM_Kits\ip_patch\run.tcl` 存在（已有）
 2. 设用户环境变量：`JFM_PATH = D:\firstharness\JFM_Kits`
-   - 图形界面：此电脑 → 属性 → 高级系统设置 → 环境变量 → 新建
-   - 或 PowerShell（管理员）：`[Environment]::SetEnvironmentVariable("JFM_PATH","D:\firstharness\JFM_Kits","User")`
+ - 图形界面：此电脑 → 属性 → 高级系统设置 → 环境变量 → 新建
+ - 或 PowerShell（管理员）：`[Environment]::SetEnvironmentVariable("JFM_PATH","D:\firstharness\JFM_Kits","User")`
 3. 重开 Vivado，Tcl 控制台验证：`puts $::env(JFM_PATH)` → 打印路径即成功
 
-> ⚠️ 路径必须**纯英文、无空格**。中文路径下 Vivado 打补丁会失败（我们踩过 7z 的同类坑）。
+> 路径必须**纯英文、无空格**。中文路径下 Vivado 打补丁会失败（我们踩过 7z 的同类坑）。
 
 ---
 
@@ -45,12 +45,12 @@
 2. Settings → IP → IP Cache → Cache scope = Disabled（官方要求，否则 IP 补丁不生效）
 3. 每个 IP（`clk_wiz_0`、`mig_7series_0`、各 afifo）右键 → Generate Output Products，选 Out-of-context per IP，Generate（不要 Skip）
 4. Tcl 控制台依次执行：
-   ```tcl
-   source $::env(JFM_PATH)/ip_patch/run.tcl
-   add_hook_tcl_to_prj
-   replace_7z030ai_file        ;# 首次必须，加载 30TAI 的时序库
-   ```
-   （之后如果要换回原厂时序库：`reset_database_to_default`）
+ ```tcl
+ source $::env(JFM_PATH)/ip_patch/run.tcl
+ add_hook_tcl_to_prj
+ replace_7z030ai_file ;# 首次必须，加载 30TAI 的时序库
+ ```
+ （之后如果要换回原厂时序库：`reset_database_to_default`）
 5. 器件确认是 `xc7z030ffg676-2`
 6. 直接点 Generate Bitstream（官方明确说：按顺序点 Run Synthesis → Run Implementation 反而会出问题）
 7. 跑完打开 Report Utilization，记下：
@@ -74,28 +74,21 @@
 后者内含 `IBUFDS + BUFG + ÷2`（板载 200 MHz 晶振分频），但在 BD 里时钟由 PS 的 `FCLK_CLK0` 提供，重复加时钟会冲突。
 
 1. **加设计文件**：`Add Sources → Add or create design sources`
-   把 `D:\firstharness\repo\pl\rtl\` 下这 11 个文件加进去：
-   ```
-   ip2_axi_top.v  ip2_axi_master_rd.v  ip2_axi_master_wr.v
-   ip2_top_stream.v  win5.v  tophat_5x5_stream.v
-   cfar_threshold_stream.v  candidate_extract_stream.v  ip2_pix_fifo.v
-   ```
-   （`ip2_board_top.v` / `ip2_frame_top.v` / `ip2_pattern_gen.v` 是**自测用**，不带 AXI，不要加）
+ 把 `D:\firstharness\repo\pl\rtl\` 下这 11 个文件加进去：
+ ```
+ ip2_axi_top.v ip2_axi_master_rd.v ip2_axi_master_wr.v
+ ip2_top_stream.v win5.v tophat_5x5_stream.v
+ cfar_threshold_stream.v candidate_extract_stream.v ip2_pix_fifo.v
+ ```
+ （`ip2_board_top.v` / `ip2_frame_top.v` / `ip2_pattern_gen.v` 是**自测用**，不带 AXI，不要加）
 
 2. **在 BD 里例化**：打开 `ps_ai.bd` → 右键空白处 → Add Module… → 选 `ip2_axi_top`
 3. **连线**：
 
-   | 我们的端口 | 连到 |
-   |---|---|
-   | `clk` | PS `FCLK_CLK0`（在 PS7 配置里设成 **100 MHz**；GP/HP 口最高 100 MHz） |
-   | `rst_n` | PS `FCLK_RESET0_N` |
-   | `led[3:0]` | 引出到外部端口（约束里已有 J1/M6/H7/J8） |
-   | `s_axi_*`（AXI4-Lite 32 bit） | PS `M_AXI_GP0`，中间经 **AXI Interconnect**（1 主 1 从） |
-   | `m_axi_*` 读口（64 bit） | PS `S_AXI_HP0`（**HP 口数据宽度设 64 bit**，与我们 `m_axi_rdata[63:0]` 对齐） |
-   | `m_axi_*` 写口（64 bit） | PS `S_AXI_HP1` |
+ | 我们的端口 | 连到 | |---|---| | `clk` | PS `FCLK_CLK0`（在 PS7 配置里设成 **100 MHz**；GP/HP 口最高 100 MHz） | | `rst_n` | PS `FCLK_RESET0_N` | | `led[3:0]` | 引出到外部端口（约束里已有 J1/M6/H7/J8） | | `s_axi_*`（AXI4-Lite 32 bit） | PS `M_AXI_GP0`，中间经 **AXI Interconnect**（1 主 1 从） | | `m_axi_*` 读口（64 bit） | PS `S_AXI_HP0`（**HP 口数据宽度设 64 bit**，与我们 `m_axi_rdata[63:0]` 对齐） | | `m_axi_*` 写口（64 bit） | PS `S_AXI_HP1` |
 
 4. Address Editor：给 `ip2_axi_top` 的 `s_axi` 分配 **4 KB** @ `0xA0000000`
-   （⚠️ 不要用 `0x40000000`——S 实测那是 `AI_Mate` 的寄存器窗口；`0x80000000` 是 AI_Mate 的 DMA 区）
+ （ 不要用 `0x40000000`——S 实测那是 `AI_Mate` 的寄存器窗口；`0x80000000` 是 AI_Mate 的 DMA 区）
 5. Validate Design（F6）→ 有错就按提示修，常见是时钟/复位没连
 
 ---
@@ -103,7 +96,7 @@
 ## 阶段 4：约束文件
 
 - 在 `constrs_1/impl_constraints.xdc` 里**保留**：
-  - `led[0..3]` → J1 / M6 / H7 / J8，`IOSTANDARD LVCMOS15`
+ - `led[0..3]` → J1 / M6 / H7 / J8，`IOSTANDARD LVCMOS15`
 - **删掉/注释**与本工程无关的端口约束（`sys_rst`、`sys_clk_p/n`、`HDMI_*`、`PJTAG_*`、`FMC_*`），否则会报 "port not found" warning
 - 时钟**不用**再 `create_clock`：PS 的 `FCLK_CLK0` 由 BD 自动生成时钟约束
 
@@ -114,13 +107,13 @@
 1. Generate Bitstream → 产出 `fpai_demo_vivado.runs/impl_1/xxx.bit`
 2. 加载方式（先 JTAG，验证通过后再固化）：
 
-   方式 A（快，掉电丢失）：
-   `Tools → Open Hardware Manager → Open Target → Auto Connect`（这里用的是 PS 的 `PS_JTAG(U18)`，不是 PL_JTAG！因为要连 JTAG 链上的 7030）
-   → 右键 `xc7z030_0` → `Program Device` → 选 `.bit`
+ 方式 A（快，掉电丢失）：
+ `Tools → Open Hardware Manager → Open Target → Auto Connect`（这里用的是 PS 的 `PS_JTAG(U18)`，不是 PL_JTAG！因为要连 JTAG 链上的 7030）
+ → 右键 `xc7z030_0` → `Program Device` → 选 `.bit`
 
-   方式 B（固化，掉电保留）：
-   `7030ai_psin.bif` 里把我们新位流的路径填进去 → `bootgen -image 7030ai_psin.bif -arch zynq -o BOOT.bin -w on`
-   （或用 Procise 的 Create Image 生成 BOOT.bin）→ 覆盖 SD 卡 FAT 分区里的 `BOOT.bin` → 重启
+ 方式 B（固化，掉电保留）：
+ `7030ai_psin.bif` 里把我们新位流的路径填进去 → `bootgen -image 7030ai_psin.bif -arch zynq -o BOOT.bin -w on`
+ （或用 Procise 的 Create Image 生成 BOOT.bin）→ 覆盖 SD 卡 FAT 分区里的 `BOOT.bin` → 重启
 
 ---
 
