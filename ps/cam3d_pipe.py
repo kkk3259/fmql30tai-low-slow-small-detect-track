@@ -46,7 +46,7 @@ POL_PREV = [None]         # 上一帧的另一极性结果 (帧号, 候选列表
 SHIFT = [0]               # 当前生效的列相位偏移（加在检测出的 x 上）
 SHIFT_CONF = [0.0]        # 最近一次校准的置信度
 CAL_HIST = []
-ROI_MAX = 8             # 送 NPU 的候选上限（封顶 mosaic 耗时）             # 最近几次校准结果（多数票）
+ROI_MAX = 5             # 送 NPU 的候选上限（封顶 mosaic 耗时）             # 最近几次校准结果（多数票）
 CAL_EVERY = 120           # 每 N 帧校准一次
 CAL_ON = True
 if os.environ.get("CAL") == "0":

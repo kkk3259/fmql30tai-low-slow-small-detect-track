@@ -73,20 +73,24 @@ class PL3D(object):
             time.sleep(0.001)
             self.reg.write(REG + R_CTRL, 1)
             t1 = time.time()
-            while time.time() - t1 < 0.15:
+            # 自适应等待：正常帧 ~5ms 完成；若 AR 完全没涨说明触发被吞，
+            # 2ms 就能判定并立刻重发，不必等固定超时
+            while time.time() - t1 < 0.050:
                 st = self.reg.read(REG + R_STATUS) & 0xFFFFFFFF
                 a1 = self.reg.read(REG + R_AR) & 0xFFFFFFFF
                 # 必须等 FSM 跑完（busy=0）再读候选表，否则读到写了一半的旧表
                 if (a1 - a0) > 3000 and not (st & 1):
                     break
+                if (a1 - a0) == 0 and (time.time() - t1) > 0.002:
+                    break          # 触发没生效，立即重试
                 time.sleep(0.0001)
             a1 = self.reg.read(REG + R_AR) & 0xFFFFFFFF
             st = self.reg.read(REG + R_STATUS) & 0xFFFFFFFF
             if (a1 - a0) > 3000 and not (st & 1):
                 break
         dt = (time.time() - t0) * 1000
-        # 第一遍窗口读常返回全 0（实测），读两遍取第二遍
-        for _pass in range(2):
+        # 单遍读取：FSM 已保证 busy=0 后才读，实测不需读两遍
+        for _pass in range(1):
             words = []
             for i in range(15):   # MAX_CAND=32 -> 1+32*7=225B -> 57 字
                 self.reg.write(REG + R_WIN, i)
