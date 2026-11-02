@@ -73,6 +73,8 @@ canvas.chart{width:100%;height:74px;display:block}
       <div class="ctl"><label>场景 <b id="l_scene">室内亮目标</b></label>
         <input type="range" id="s_scene" min="0" max="2" step="1" value="0"></div>
       <div class="btnrow"><button id="b_snap">截图保存</button></div>
+      <div class="ctl" style="margin-top:8px">
+        <label><input type="checkbox" id="c_pl" checked> 显示 PL 疑似目标（灰细框）</label></div>
       <div style="font-size:10.5px;color:#5a6f85;margin-top:8px;line-height:1.5">
         <b>绿框</b> = 已确认目标（连续 ≥2 帧都出现，稳定）　<b>红框</b> = 疑似目标（只出现 1 帧，可能是噪声，会自己消失）<br>滑条只影响网页显示，不改变板子里的 CFAR 门限。</div>
     </div>
@@ -88,7 +90,7 @@ canvas.chart{width:100%;height:74px;display:block}
   </div>
 </div>
 <script>
-var PK=0, MAXN=64, MINH=0, ALL=false, TRAIL=true;
+var PK=0, MAXN=64, MINH=0, ALL=false, TRAIL=true, PLBOX=true;
 var hist=[];
 function $(id){var e=document.getElementById(id);if(e)return e;return {value:'0',checked:false,textContent:'',innerHTML:'',style:{},addEventListener:function(){},appendChild:function(){}};}
 ['s_pk','s_n','s_h'].forEach(function(id){
@@ -98,6 +100,7 @@ function $(id){var e=document.getElementById(id);if(e)return e;return {value:'0'
   });
 });
 $('c_all').addEventListener('change',function(){ALL=this.checked;draw()});
+$('c_pl').addEventListener('change',function(){PLBOX=this.checked;draw()});
 $('c_tr').addEventListener('change',function(){TRAIL=this.checked;draw()});
 $('c_inv').addEventListener('change',function(){
   fetch('/set?invert='+(this.checked?1:0)).catch(function(){});
@@ -108,6 +111,7 @@ $('b_snap').addEventListener('click',function(){
 });
 var last=[];
 function filt(cs){
+  if(!PLBOX) cs=cs.filter(function(c){ return !(c.p===null||c.p===undefined); });
   var out=cs.filter(function(c){ return ALL || (c.peak||0)>=PK; });
   out=out.filter(function(c){ return (c.hits||0)>=MINH; });
   out.sort(function(a,b){return (b.peak||0)-(a.peak||0)});

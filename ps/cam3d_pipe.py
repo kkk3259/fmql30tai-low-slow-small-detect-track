@@ -55,7 +55,7 @@ except Exception:                                          # noqa: BLE001
     _cal = None
 LAST_BOXES = [None]       # 上次 yolo 的框（跳过帧复用）
 ROI_CONF = 0.45           # ROI 模式下 NPU 判为无人机的阈值
-ROI_KEEP_PL = 0           # 1 = NPU 没认出的 PL 候选也保留（显示为 p=0）
+ROI_KEEP_PL = 1           # 1 = NPU 没认出的 PL 候选也保留（网页可勾选显示/隐藏）
 
 
 W, H = 640, 360
