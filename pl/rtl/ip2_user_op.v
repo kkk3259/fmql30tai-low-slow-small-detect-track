@@ -332,6 +332,16 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
     end
 
     //=========================================================================
+    reg         plat_arvalid_q;
+    reg  [31:0] plat_araddr_q;
+    reg         req_pend;
+    reg         ret_busy;
+    reg  [31:0] adq [0:3];
+    reg  [1:0]  adq_wp, adq_rp;
+    reg  [2:0]  adq_cnt;
+    wire        adq_empty = (adq_cnt == 3'd0);
+    reg  [9:0]  pend_wd;
+
     // 4. 行流读取（学长 dma.v 的模型）—— core_clk 域发请求、clk 域取数
     //
     //   平台数据口：一行一个 AR（地址 = 帧基址 + 64×行号），回来就是 512 位 = 64 字节
@@ -410,6 +420,16 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                 lf_rp     <= 5'd0;
                 lf_cnt    <= 5'd0;
                 lbcnt     <= 6'd0;
+                // 【2026-11-02】帧起点一并清读通路：地址队列 + 跨域 toggle + 在途 AR。
+                // 这三处原来不清，上一帧残留会让本帧多读 1 个 64 字节 beat，
+                // 表现为整幅右移 64 像素、且残留量随进程而变。
+                lin_req_t      <= 1'b0;
+                adq_wp         <= 2'd0;
+                adq_rp         <= 2'd0;
+                adq_cnt        <= 3'd0;
+                plat_arvalid_q <= 1'b0;
+                req_pend       <= 1'b0;
+                pend_wd        <= 10'd0;
             end else if (start_dly != 7'd0) begin
                 start_dly <= start_dly - 7'd1;
                 if (start_dly == 7'd1) feed_on <= 1'b1;
@@ -430,7 +450,7 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                 lfifo[lf_wp] <= lin_data_c;
                 lf_wp        <= lf_wp + 5'd1;
                 lf_cnt       <= lf_cnt + 5'd1;
-                inflight     <= inflight - 4'd1;
+                if (inflight != 4'd0) inflight <= inflight - 4'd1;   // 防止帧起点清 AR 后响应晚到导致下溢
             end
 
             // ---- 推像素：1 字节/拍 ----
@@ -452,15 +472,6 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
     //=========================================================================
     // 5. 平台 512 位读（clk 域）：一行一个 AR
     //=========================================================================
-    reg         plat_arvalid_q;
-    reg  [31:0] plat_araddr_q;
-    reg         req_pend;
-    reg         ret_busy;
-    reg  [31:0] adq [0:3];
-    reg  [1:0]  adq_wp, adq_rp;
-    reg  [2:0]  adq_cnt;
-    wire        adq_empty = (adq_cnt == 3'd0);
-    reg  [9:0]  pend_wd;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -481,6 +492,13 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
     assign itf_awaddr  = 32'd0;
     assign itf_awdata  = 512'd0;
     assign itf_awvalid = 1'b0;
+
+    // 帧起点检测：feed_on 的上升沿 = 软件写 CTRL.start 后第 96 个核周期
+    reg  feed_on_d;
+    wire frame_kick = feed_on & ~feed_on_d;
+    always @(posedge clk or negedge rst_n)
+        if (!rst_n) feed_on_d <= 1'b0;
+        else        feed_on_d <= feed_on;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -536,8 +554,24 @@ reg  [7:0]  cap_dat_q;                 // 读地址（ra 域）
                     plat_arvalid_q <= 1'b0;
                 end
             end
+
+            // 【2026-11-02】帧起始清队列：放在最后，优先级最高。
+            // 根因：这一层没有"每帧清指针"的动作，上一帧尾部的请求可能残留在地址队列里，
+            // 导致下一帧整体偏移 N×64 像素（实测 62~64px，正好 1 个 AXI beat），
+            // 且残留量取决于启动后时序 → 换个进程就变成另一个值。
+            // feed_on 的上升沿就是软件写 CTRL.start 后的第 96 个核周期，即帧起点。
+            if (frame_kick) begin
+                adq_wp    <= 2'd0;
+                adq_rp    <= 2'd0;
+                adq_cnt   <= 3'd0;
+                pend_wd   <= 10'd0;
+                req_pend  <= 1'b0;
+            end
         end
     end
+
+    // 帧起点检测（frame_kick 在下面的 always 块前声明）
+
 
     //=========================================================================
     // 6. 像素捕获（诊断）：记录前 256 个真正送进检测器的字节

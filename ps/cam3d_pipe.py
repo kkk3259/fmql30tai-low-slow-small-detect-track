@@ -132,7 +132,12 @@ def find_cam(fallback=0):
                 m = re.search(r"/dev/video(\d+)", nxt)
                 if m:
                     return int(m.group(1))
-    return fallback
+    # 【2026-11-02】找不到 USB 相机时**不能**退回到板载 Linlon VPU
+    # （v4l2-ctl 里名字是 "Linlon Video device"）。它只有 H264/HEVC 输出，
+    # VideoCapture 打开后 poll 会打到 mvx 驱动里并触发内核 oops，
+    # 连带 USB 控制器一起掉线（实测 dmesg: mvx_v4l2_poll -> end trace）。
+    # 因此返回 -1，让上层报错停下，而不是打开编码器。
+    return -1
 
 
 # ---------------------------------------------------------------- 航迹跟踪
@@ -253,6 +258,18 @@ TRACKER = Tracker()
 def infer_loop(pl, net):
     """相机 -> PL -> 候选 -> (NPU) -> 画框 -> JPEG 缓冲。"""
     cam_idx = find_cam(0)
+    if cam_idx < 0:
+        # 没有 USB 相机：绝对不要退回板载 Linlon VPU（会触发内核 oops 并带掉 USB）
+        msg = "no USB Camera (板载 Linlon VPU 不能用作视频源)"
+        print("[cam] " + msg, flush=True)
+        STATE["err"] = msg
+        while True:                 # 保持 web 服务活着，等相机插回来
+            time.sleep(2)
+            cam_idx = find_cam(0)
+            if cam_idx >= 0:
+                print("[cam] USB Camera 回来了 -> /dev/video%d" % cam_idx, flush=True)
+                STATE["err"] = ""
+                break
     print("[cam] using /dev/video%d" % cam_idx, flush=True)
     cap = cv2.VideoCapture(cam_idx, cv2.CAP_V4L2)
     # 先设 FOURCC 再设分辨率：不少 UVC 相机只有在 MJPG 下才支持 640x480@30
@@ -308,7 +325,11 @@ def infer_loop(pl, net):
                             CAL_HIST.append(_s)
                             if len(CAL_HIST) > 5:
                                 CAL_HIST.pop(0)
-                            if len(CAL_HIST) >= 3:
+                            # 【2026-11-02】首次高置信度立即采用，不用等 3 次
+                            # （离线下实测 conf>=0.75 的单次结果就与多数票一致）
+                            if len(CAL_HIST) == 1 and _cf >= 0.75:
+                                SHIFT[0] = _s
+                            elif len(CAL_HIST) >= 3:
                                 _c = {}
                                 for _x in CAL_HIST:
                                     _c[_x] = _c.get(_x, 0) + 1
