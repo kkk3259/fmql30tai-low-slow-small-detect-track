@@ -106,8 +106,12 @@ class Yolo:
         buf = np.full((640, 640, 3), 114, np.uint8)
         buf[lb_y:lb_y + nh, lb_x:lb_x + nw] = body
         rgb = buf[None]
-        t = self.xrt.Tensor(np.ascontiguousarray(rgb.astype(np.uint8)), self.tt)
-        outs = self.sess.forward([t])
+        # 复用同一个输入 Tensor（新建会付一次 1.8ms 的设备拷贝构造）
+        if getattr(self, "_tin", None) is None:
+            self._tin = self.xrt.Tensor(np.ascontiguousarray(rgb.astype(np.uint8)), self.tt)
+        else:
+            self._tin.write(rgb.tobytes(), 0, rgb.size)
+        outs = self.sess.forward([self._tin])
         o0 = read_tensor(outs[0])[0]
         o1 = read_tensor(outs[1])[0, 0]
         # 先取 60 类里最大 logit，再只对这 8400 个值做 sigmoid。
