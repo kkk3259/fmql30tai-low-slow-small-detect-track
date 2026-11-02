@@ -204,6 +204,16 @@ class Yolo:
             return []
         # 画布本身就是 640×640，detect() 里的 letterbox 退化为恒等变换
         boxes = self.detect(canvas, conf=conf, iou=iou)
+        # 一个格子只保留分数最高的一个框（一个候选=一个目标）。
+        # 否则 16 格可能吐出 40+ 框，后面的 Python 后处理会吃掉 40ms。
+        if boxes:
+            _best = {}
+            for b in boxes:
+                _r, _c = int(((b[1] + b[3]) / 2.0) // cell), int(((b[0] + b[2]) / 2.0) // cell)
+                _k = _r * grid + _c
+                if _k not in _best or b[4] > _best[_k][4]:
+                    _best[_k] = b
+            boxes = list(_best.values())
         out = []
         for b in boxes:
             # 【关键】按「与各格真实贴图矩形的重叠面积最大」归属格子。

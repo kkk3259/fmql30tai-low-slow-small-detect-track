@@ -55,7 +55,10 @@ module cfar_threshold_stream #(
     //   10px 亮块 → mean≈24 σ≈59 → thr≈262 > 亮块值 232，直接漏检。
     // 实测（2026-10-29）改成 K=1 后 2~20px 都能出来，见 docs/13 §14。
     parameter K = 1,
-    parameter FLOOR = 3
+    parameter FLOOR = 3,
+    // 1 = rb1/rb2 用同步读（推断成 BRAM，省约 10,000 LUTRAM）
+    // 0 = 原组合读（推断成 LUTRAM）
+    parameter USE_BRAM = 0
 )(
     input  wire clk,
     input  wire rst_n,
@@ -122,14 +125,41 @@ module cfar_threshold_stream #(
     reg [PA-1:0] wpa, filla;
     reg [PB-1:0] wpb, fillb;
 
+    // ---- 环形延迟线的读地址 ----
+    // 组合读版本（USE_BRAM=0）：读 (wp+1) → 当拍拿到 DLY 拍前的数据
     wire [PA-1:0] rpa = (wpa == DEP_A[PA-1:0] - 1'b1) ? {PA{1'b0}} : (wpa + 1'b1);
     wire [PB-1:0] rpb = (wpb == DEP_B[PB-1:0] - 1'b1) ? {PB{1'b0}} : (wpb + 1'b1);
+    // 同步读版本（USE_BRAM=1）：地址再 +1（提前一拍取下一拍要的地址），
+    // 数据晚一拍出，正好还是同一拍对齐 —— 见文件头推导。
+    wire [PA-1:0] rpa2 = (wpa >= (DEP_A[PA-1:0] - 2'd2))
+                       ? (wpa + 2'd2 - DEP_A[PA-1:0]) : (wpa + 2'd2);
+    wire [PB-1:0] rpb2 = (wpb >= (DEP_B[PB-1:0] - 2'd2))
+                       ? (wpb + 2'd2 - DEP_B[PB-1:0]) : (wpb + 2'd2);
     wire full_a = (filla >= DLY[PA-1:0]);            // 延迟 DLY 有效
     wire full_b = (fillb >= CENTER_OFF[PB-1:0]);     // 延迟 CENTER_OFF 有效
 
-    wire [7:0]  d1_old = full_a ? rb1[rpa] : 8'd0;   // cur_px(t-DLY)，即 x(r-31, c)
+    wire [7:0]  d1_old;                              // cur_px(t-DLY)，即 x(r-31, c)
+    wire [7:0]  x_mid;                               // x(r-15, c-15) = 窗口中心
+    generate
+    if (USE_BRAM) begin : g_sync_read
+        reg [7:0] d1_q, xm_q;
+        always @(posedge clk) begin
+            if (!rst_n) begin
+                d1_q <= 8'd0;
+                xm_q <= 8'd0;
+            end else begin
+                d1_q <= rb1[rpa2];
+                xm_q <= rb2[rpb2];
+            end
+        end
+        assign d1_old = full_a ? d1_q : 8'd0;
+        assign x_mid  = full_b ? xm_q : 8'd0;
+    end else begin : g_comb_read
+        assign d1_old = full_a ? rb1[rpa] : 8'd0;
+        assign x_mid  = full_b ? rb2[rpb] : 8'd0;
+    end
+    endgenerate
     wire [15:0] d2_old = d1_old * d1_old;            // 同一像素的平方（等价于原 rb3 读出）
-    wire [7:0]  x_mid  = full_b ? rb2[rpb] : 8'd0;   // x(r-15, c-15) = 窗口中心
 
     // ---- 列和数组（1 写 1 读；不复位，row!=0 门控首次读为 0）----
     reg [CS1_W-1:0] cs1 [0:W15-1];
