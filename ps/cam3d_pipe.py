@@ -36,6 +36,7 @@ USE_ROI = False           # --mode roi：PL 粗筛 + NPU ROI 精判（真正的�
 DUAL = True               # 双极性：同一检测器跑两遍（原图 + 取反），零额外资源
 if os.environ.get("DUAL") == "0":
     DUAL = False
+STREAM_W, STREAM_H = 512, 288   # 推流分辨率（检测仍 640x360）
 YOLO_EVERY = 2            # 方案 A：每 N 帧才跑一次 yolo，中间帧复用上次结果
 YCNT = [0]                # yolo 帧计数
 DUAL_EVERY = 2            # 双极性第二遍（取反）每 N 帧跑一次，保证帧率
@@ -294,7 +295,7 @@ def infer_loop(pl, net):
             continue
         gray = cv2.cvtColor(frame[60:420, :], cv2.COLOR_BGR2GRAY)   # 裁上下 60 行
         if gray.shape[:2] != (H, W):
-            gray = cv2.resize(gray, (W, H), interpolation=cv2.INTER_AREA)
+            gray = cv2.resize(gray, (W, H), interpolation=cv2.INTER_LINEAR)
 
         t0 = time.time()
         try:
@@ -387,6 +388,49 @@ def infer_loop(pl, net):
                 ROI_SIDE = 96
                 ROI_CELL = 4          # 4×4 网格，每格 160×160（96→160 放大 1.67×）
                 ROI_N = ROI_CELL * ROI_CELL
+
+                # 【2026-11-02】EMA 平滑 + 丢帧保持：框不抖、短暂丢失不闪
+                class _Trk(object):
+                    R = 46.0      # 关联半径
+                    A = 0.35      # 新框权重
+                    MISS = 4      # 最多保持帧数
+
+                    def __init__(self):
+                        self.t = []
+
+                    def update(self, hits):
+                        out, used = [], set()
+                        for o in self.t:
+                            best, bd = -1, self.R
+                            for i, c in enumerate(hits):
+                                if i in used:
+                                    continue
+                                d = ((c["x"] - o["x"]) ** 2 + (c["y"] - o["y"]) ** 2) ** 0.5
+                                if d <= bd:
+                                    best, bd = i, d
+                            if best >= 0:
+                                c = hits[best]
+                                used.add(best)
+                                o["x"] = (1 - self.A) * o["x"] + self.A * c["x"]
+                                o["y"] = (1 - self.A) * o["y"] + self.A * c["y"]
+                                o["area"] = int(0.65 * o["area"] + 0.35 * c["area"])
+                                o["peak"] = max(o["peak"], c.get("peak", 0))
+                                o["p"] = (1 - self.A) * o["p"] + self.A * c["p"]
+                                o["miss"] = 0
+                                o["hits"] = o.get("hits", 0) + 1
+                            else:
+                                o["miss"] += 1
+                            if o["miss"] <= self.MISS:
+                                out.append(dict(o))
+                        for i, c in enumerate(hits):
+                            if i not in used:
+                                d = dict(c)
+                                d["miss"] = 0
+                                d["hits"] = 1
+                                out.append(d)
+                        self.t = out
+                        return [dict(d) for d in out]
+
                 # 【2026-11-02】按中心距聚类：同一目标碎片合成一个，免得占满格子
                 def _cluster(cs):
                     groups = []
@@ -460,7 +504,7 @@ def infer_loop(pl, net):
                                 continue
                             inter = iw * ih
                             smaller = min((ax2 - ax1) * (ay2 - ay1), (bx2 - bx1) * (by2 - by1))
-                            if smaller > 0 and inter / smaller >= 0.50:
+                            if smaller > 0 and inter / max(1.0, (ax2 - ax1) * (ay2 - ay1) + (bx2 - bx1) * (by2 - by1) - inter) > 0.25:
                                 m["x"] = (min(ax1, bx1) + max(ax2, bx2)) / 2
                                 m["y"] = (min(ay1, by1) + max(ay2, by2)) / 2
                                 m["area"] = int(max(m["area"], c["area"]))
@@ -469,7 +513,28 @@ def infer_loop(pl, net):
                                 break
                         if not hit_any:
                             merged.append(dict(c))
-                    keep = merged + [c for c in fused if (not c["roi"] and ROI_KEEP_PL)]
+                    _hits = merged + [c for c in fused if (not c["roi"] and ROI_KEEP_PL)]
+                    if "_TRK" not in globals():
+                        globals()["_TRK"] = _Trk()
+                    keep = globals()["_TRK"].update(_hits)
+                    # 保护区重检：高置信航迹丢失时，低阈值再判一次
+                    try:
+                        for o in keep:
+                            if o.get("miss", 0) > 0 and o.get("hits", 0) >= 6:
+                                sd = 128
+                                rx0 = int(min(max(o["x"] - sd / 2, 0), W - sd))
+                                ry0 = int(min(max(o["y"] - sd / 2, 0), H - sd))
+                                rs = YOLO.detect_mosaic([gray[ry0:ry0 + sd, rx0:rx0 + sd].copy()],
+                                                        grid=1, conf=0.20)
+                                if rs:
+                                    b = max(rs, key=lambda z: z[5])
+                                    o["x"] = rx0 + (b[1] + b[3]) / 2.0
+                                    o["y"] = ry0 + (b[2] + b[4]) / 2.0
+                                    o["p"] = float(b[5])
+                                    o["miss"] = 0
+                                    o["re"] = 1
+                    except Exception:
+                        pass
                 else:
                     keep = []
                 STATE["npu_ms"] = (time.time() - ty) * 1000.0
@@ -497,7 +562,7 @@ def infer_loop(pl, net):
         if COLOR_DISP:
             vis = frame[60:420, :].copy()                          # 彩色：观感跟独立版一致
             if vis.shape[:2] != (H, W):
-                vis = cv2.resize(vis, (W, H), interpolation=cv2.INTER_AREA)
+                vis = cv2.resize(vis, (W, H), interpolation=cv2.INTER_LINEAR)
         else:
             vis = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
         # ── 先画 PL 的全部候选（灰细框 + 面积标注）──
@@ -583,6 +648,8 @@ def enc_loop():
             continue
         last = VIS["seq"]
         img = VIS["img"]
+        # 推流 512x288：编码前缩一次省 8.8ms；框坐标前端按 naturalWidth 自适应
+        img = cv2.resize(img, (STREAM_W, STREAM_H), interpolation=cv2.INTER_LINEAR)
         _t = time.time()
         ok, jb = cv2.imencode(".jpg", img,
                               [int(cv2.IMWRITE_JPEG_QUALITY), INFER["quality"]])
