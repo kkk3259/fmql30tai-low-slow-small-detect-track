@@ -29,11 +29,58 @@ def run(text, bold=False):
             + esc(text) + '</w:t></w:r>')
 
 
+def run_mono(text, bold=False):
+    """代码/文件名用等宽字体（Consolas），中文仍走宋体"""
+    b = "<w:b/><w:bCs/>" if bold else ""
+    f = ('<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:eastAsia="宋体" '
+         'w:cs="Consolas" w:hint="eastAsia"/>')
+    return ('<w:r><w:rPr>' + f + b + '</w:rPr><w:t xml:space="preserve">'
+            + esc(text) + '</w:t></w:r>')
+
+
+INLINE_BOLD = re.compile(r'\*\*(.+?)\*\*', re.S)
+INLINE_CODE = re.compile(r'`([^`]+)`')
+
+
+def inline_runs(text, bold=False):
+    """把行内标记渲染成真正的 Word 格式：**粗体** -> 加粗，`code` -> 等宽。
+    避免 **、` 这类 Markdown 残留直接出现在报告正文里。"""
+    out = []
+    tokens = []
+    pos = 0
+    for m in INLINE_BOLD.finditer(text):
+        if m.start() > pos:
+            tokens.append((text[pos:m.start()], bold))
+        tokens.append((m.group(1), True))
+        pos = m.end()
+    if pos < len(text):
+        tokens.append((text[pos:], bold))
+    for seg, is_bold in tokens:
+        p2 = 0
+        for m in INLINE_CODE.finditer(seg):
+            if m.start() > p2:
+                out.append(run(seg[p2:m.start()], is_bold))
+            out.append(run_mono(m.group(1), is_bold))
+            p2 = m.end()
+        if p2 < len(seg):
+            out.append(run(seg[p2:], is_bold))
+    return ''.join(out)
+
+
 def para(text, bold=False, indent=True):
     """正文段落：完全沿用模板里正文段落的格式（样式 12 + 缩进 + 宋体）"""
     ind = '<w:ind w:left="420" w:firstLine="0" w:firstLineChars="0"/>' if indent else '<w:ind w:firstLine="0" w:firstLineChars="0"/>'
     return ('<w:p><w:pPr><w:pStyle w:val="12"/><w:spacing w:line="360" w:lineRule="auto"/>'
-            + ind + '<w:rPr>' + FONT + '</w:rPr></w:pPr>' + run(text, bold) + '</w:p>')
+            + ind + '<w:rPr>' + FONT + '</w:rPr></w:pPr>' + inline_runs(text, bold) + '</w:p>')
+
+
+def ref_para(text):
+    """参考文献条目：左对齐 + 悬挂缩进（编号顶格、续行缩进 2 字符）。
+    不用两端对齐，否则含 URL / 长英文的行会被拉伸成大片词间距；
+    不用 w:firstLineChars（它优先级高于 w:firstLine，会让悬挂失效）。"""
+    return ('<w:p><w:pPr><w:pStyle w:val="16"/><w:spacing w:line="360" w:lineRule="auto"/>'
+            '<w:ind w:left="420" w:hanging="420"/><w:jc w:val="left"/>'
+            '<w:rPr>' + FONT + '</w:rPr></w:pPr>' + inline_runs(text) + '</w:p>')
 
 
 def blank():
@@ -303,8 +350,8 @@ S31 = [
     "目前完成情况按“软件算法、硬件加速、系统集成”三个层次说明。",
     "已完成部分：（1）完整软件算法基线——v0（预处理与信噪比验证）、v1（CFAR 检测）、v2（多目标跟踪）三个版本全部跑通，指标可复现；（2）参数化能力边界实验——3×3 共 9 组（目标尺寸 × 对比度）扫描完成，产出检出率曲线，量化了算法能力边界；（3）PL 端核心模块——预处理模块与检测链路（Top-Hat + CFAR + 候选提取）均通过 Verilog 仿真并与 OpenCV 参考逐像素比对验证；（4）系统集成骨架——PS 端 7 环节 / 5 接口的完整框架，含 5 个硬件替换点，当前以纯软件方式端到端跑通，整体帧率 89.64 fps；（5）工程化工具链——数据生成、真值标注、指标评测、参数扫描、RTL 复核工具齐备。",
     "已完成部分：PL 模块的流式架构改造（行缓存 + 流水线 + AXI4-Stream，已在仿真中验证内部区域零误差）、YOLOv11n 模型的训练与 INT8 量化部署（DUT test mAP50 0.920）、以及板上全链路的实测闭环（合成 150 帧 + 真实 630 帧）。",
-    "已完成的硬件与系统闭环：（1）PL 位流板上验证通过——三域位流（PS7 + AI_Mate + 自研检测器）加载后 `state=operating`，检测单帧 4.19 ms、LUT 占用 61.9%（48,649/78,600）、WNS +0.041 ns @50 MHz；（2）USB 摄像头 V4L2 实时取流与网页 MJPEG 推流已跑通，端到端 16.6~24.3 fps；（3）NPU 判别级联接通——cls128 前向 0.68 ms、级联 0.90~1.94 ms/候选；（4）多目标航迹跟踪已接入，虚警残留由 76.6% 降至 0.8%。",
-    "尚待补充的是材料性工作：（1）整机演示视频的录制与剪辑；（2）心得体会由三名队员分别撰写（每人 250~350 字）。除这两项外，技术工作与文档配图已全部完成——全文 18 张图均已就位，无占位。",
+    "已完成的硬件与系统闭环：（1）PL 位流板上验证通过——三域位流（PS7 + AI_Mate + 自研检测器）加载后 `state=operating`，检测单帧 4.19 ms、LUT 占用 84.4%（66,339/78,600）、WNS +0.030 ns；（2）USB 摄像头 V4L2 实时取流与网页 MJPEG 推流已跑通，端到端 16.6~24.3 fps；（3）NPU 判别级联接通——cls128 前向 0.68 ms、级联 0.90~1.94 ms/候选；（4）多目标航迹跟踪已接入，虚警残留由 76.6% 降至 0.8%。",
+    "上述软件、硬件与系统三个层次的工作已形成闭环：软件基线指标可复现，PL 模块逐像素比对通过并已上板运行，三域位流与 NPU 判别均在板上实测。本节的量化结果见本节表格与第三部分。",
 ]
 
 S32 = [
@@ -611,17 +658,17 @@ S42 = [
 ]
 
 REFS = [
-    "[1] 复旦微电子. 悟净开发板 Lite（轻量版）硬件使用手册 V1.0[Z]. 复旦微电子集团, 2025.",
-    "[2] 全国大学生嵌入式芯片与系统设计竞赛组委会. 2026 FPGA 创新设计赛道选题指南（复旦微）[Z]. 2026.",
-    "[3] OpenCV. Image Filtering: morphologyEx / boxFilter[EB/OL]. https://docs.opencv.org/4.x/d4/d86/group__imgproc__filter.html",
-    "[4] Bradski G. The OpenCV Library[J]. Dr. Dobb's Journal of Software Tools, 2000, 25(11): 120-125.",
-    "[5] Gonzalez R C, Woods R E. Digital Image Processing[M]. 4th ed. New York: Pearson, 2018. ISBN 978-0-13-335672-4.",
-    "[6] Skolnik M I. Introduction to Radar Systems[M]. 3rd ed. New York: McGraw-Hill, 2001. ISBN 978-0-07-290980-7.",
-    "[7] Kalman R E. A New Approach to Linear Filtering and Prediction Problems[J]. Journal of Basic Engineering, 1960, 82(1): 35-45. DOI: 10.1115/1.3662552.",
-    "[8] Kuhn H W. The Hungarian Method for the Assignment Problem[J]. Naval Research Logistics Quarterly, 1955, 2(1-2): 83-97. DOI: 10.1002/nav.3800020109.",
-    "[9] Huang B, Li J, Chen J, et al. Anti-UAV410: A Thermal Infrared Benchmark and Customized Scheme for Tracking Drones in the Wild[J]. IEEE Transactions on Pattern Analysis and Machine Intelligence, 2024, 46(5): 2852-2865. DOI: 10.1109/TPAMI.2023.3335338.",
-    "[10] Williams S. Icarus Verilog[EB/OL]. http://iverilog.icarus.com/.",
-    "[11] 全国大学生嵌入式芯片与系统设计竞赛组委会. 关于邀请参加 2026 年全国大学生嵌入式芯片与系统设计竞赛——FPGA 创新设计赛道的通知（第一轮）[Z]. 2026.",
+    "[1] 深圳市创芯瑞天科技有限公司. 悟净开发板 Lite（轻量版）硬件使用手册: V1.0[Z]. 深圳: 深圳市创芯瑞天科技有限公司, 2026.",
+    "[2] 上海复旦微电子集团股份有限公司. 全国大学生嵌入式芯片与系统设计竞赛 2026 FPGA 创新设计赛道选题指南[Z]. 上海: 上海复旦微电子集团股份有限公司, 2026.",
+    "[3] OpenCV. Image Filtering[EB/OL]. [2026-11-02]. https://docs.opencv.org/4.x/d4/d86/group__imgproc__filter.html.",
+    "[4] BRADSKI G. The OpenCV Library[J]. Dr. Dobb's Journal of Software Tools, 2000, 25(11): 120-125.",
+    "[5] GONZALEZ R C, WOODS R E. Digital Image Processing[M]. 4th ed. New York: Pearson, 2018.",
+    "[6] SKOLNIK M I. Introduction to Radar Systems[M]. 3rd ed. New York: McGraw-Hill, 2001.",
+    "[7] KALMAN R E. A New Approach to Linear Filtering and Prediction Problems[J]. Journal of Basic Engineering, 1960, 82(1): 35-45. DOI: 10.1115/1.3662552.",
+    "[8] KUHN H W. The Hungarian Method for the Assignment Problem[J]. Naval Research Logistics Quarterly, 1955, 2(1-2): 83-97. DOI: 10.1002/nav.3800020109.",
+    "[9] HUANG B, LI J, CHEN J, et al. Anti-UAV410: A Thermal Infrared Benchmark and Customized Scheme for Tracking Drones in the Wild[J]. IEEE Transactions on Pattern Analysis and Machine Intelligence, 2024, 46(5): 2852-2865. DOI: 10.1109/TPAMI.2023.3335338.",
+    "[10] WILLIAMS S. Icarus Verilog[EB/OL]. [2026-11-02]. https://steveicarus.github.io/iverilog/.",
+    "[11] 中国电子教育学会. 关于邀请参加 2026 年全国大学生嵌入式芯片与系统设计竞赛——FPGA 创新设计赛道的通知（第一轮）[Z]. 2026.",
 ]
 
 # ============================================================ 填充映射
@@ -659,7 +706,7 @@ FILL = {
     ],
     "可扩展之处": [("A", S41)],
     "心得体会": [("A", S42)],
-    "第五部分  参考文献": [("A", REFS)],
+    "第五部分  参考文献": [("R", REFS)],
 }
 
 # 提示行：识别后删除
@@ -699,6 +746,9 @@ def main():
                 elif kind == "A":
                     for line in payload:
                         out.append(para(line))
+                elif kind == "R":
+                    for line in payload:
+                        out.append(ref_para(line))
                 elif kind == "T":
                     out.append(table(payload))
                 out.append(blank())
