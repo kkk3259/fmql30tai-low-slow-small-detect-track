@@ -68,10 +68,9 @@ canvas.chart{width:100%;height:74px;display:block}
       <h2>检测参数（三档）</h2>
       <div class="ctl"><label>灵敏度 <b id="l_sens">中</b></label>
         <input type="range" id="s_sens" min="0" max="2" step="1" value="1"></div>
-      <div class="ctl"><label>目标大小 <b id="l_size">自动</b></label>
-        <input type="range" id="s_size" min="0" max="2" step="1" value="1"></div>
+      
       <div class="ctl"><label>场景 <b id="l_scene">室内亮目标</b></label>
-        <input type="range" id="s_scene" min="0" max="2" step="1" value="0"></div>
+        <input type="range" id="s_scene" min="0" max="2" step="1" value="1"></div>
       <div class="btnrow"><button id="b_snap">截图保存</button></div>
       <div class="ctl" style="margin-top:8px">
         <label><input type="checkbox" id="c_pl" checked> 显示 PL 疑似目标（灰细框）</label></div>
@@ -111,11 +110,22 @@ $('b_snap').addEventListener('click',function(){
 });
 var last=[];
 function filt(cs){
-  if(!PLBOX) cs=cs.filter(function(c){ return !(c.p===null||c.p===undefined); });
+  if(!PLBOX) cs=cs.filter(function(c){ return !c.pl; });
   var out=cs.filter(function(c){ return ALL || (c.peak||0)>=PK; });
   out=out.filter(function(c){ return (c.hits||0)>=MINH; });
-  out.sort(function(a,b){return (b.peak||0)-(a.peak||0)});
-  return out.slice(0,MAXN);
+  // 同一目标多条航迹：按 p 降序，中心距过近的只留最强的那条
+  out.sort(function(a,b){return (b.p||0)-(a.p||0)});
+  var uni=[];
+  out.forEach(function(c){
+    var r=Math.max(26, 2.2*Math.sqrt(Math.max(c.area||4,4)));
+    var dup=uni.some(function(q){
+      var dx=c.x-q.x, dy=c.y-q.y;
+      return Math.sqrt(dx*dx+dy*dy) < r;
+    });
+    if(!dup) uni.push(c);
+  });
+  uni.sort(function(a,b){return (b.peak||0)-(a.peak||0)});
+  return uni.slice(0,MAXN);
 }
 var LASTJ=null;
 function draw(){
@@ -127,7 +137,8 @@ function draw(){
     g.save(); g.fillStyle='#ffe066'; g.font='bold 13px Consolas'; g.textBaseline='top';
     var pl=(Number(LASTJ.PL_ms)||0).toFixed(1);
     var np=(Number(LASTJ.npu_ms)||0).toFixed(1);
-    var hud='PL '+pl+'ms   npu '+np+'ms   cand '+(LASTJ.n||0)+'   '+Math.round(LASTJ.fps||0)+' fps';
+    var _f=Number(LASTJ.fps||0); var _fs=(_f>=2)?Math.round(_f):'--';
+  var hud='PL '+pl+'ms   npu '+np+'ms   cand '+(LASTJ.n||0)+'   '+_fs+' fps';
     g.fillText(hud, 6, 5);
     g.restore();
   }
@@ -138,7 +149,13 @@ function draw(){
     var x=c.x-d/2, y=c.y-d/2;
     var isTrk=(c.hits||0)>=2;               // seen >=2 frames
     var p=(c.p===null||c.p===undefined)?null:Number(c.p);
-    var col=(p!==null && p>=0.5)?'#22e06a':(isTrk?'#ff9a2e':'#ff5a4d');
+    if(c.pl||!c.p){                           // PL 候选（NPU 未判）：淡灰细线，不写字
+      g.lineWidth=1; g.strokeStyle='rgba(200,200,200,0.55)';
+      g.strokeRect(x,y,d,d);
+      return;
+    }
+    g.lineWidth=2;
+    var col=(p>=0.5)?'#22e06a':(isTrk?'#ff9a2e':'#ff5a4d');
     g.strokeStyle=col;                      // green=drone, orange=track not drone, red=1-frame
     g.strokeRect(x,y,d,d);
     if(isTrk){
@@ -197,10 +214,9 @@ setInterval(function(){
   var N1=["保守","中","激进"], N2=["只看小目标","自动","兼顾大目标"], N3=["室内亮目标","逆光暗目标","混合(拉伸)"];
   var a=document.getElementById('s_sens'), b=document.getElementById('s_size'), c=document.getElementById('s_scene');
   function lab(){ document.getElementById('l_sens').textContent=N1[+a.value];
-                   document.getElementById('l_size').textContent=N2[+b.value];
-                   document.getElementById('l_scene').textContent=N3[+c.value]; }
-  function push(){ lab(); fetch('/set?sens='+a.value+'&size='+b.value+'&scene='+c.value).catch(function(){}); }
-  [a,b,c].forEach(function(e){ e.addEventListener('input',lab); e.addEventListener('change',push); });
+                                      document.getElementById('l_scene').textContent=N3[+c.value]; }
+  function push(){ lab(); var u='/set?sens='+a.value+'&scene='+c.value; if(b){u+='&size='+b.value;} fetch(u).catch(function(){}); }
+  [a,b,c].forEach(function(e){ if(!e){return;} e.addEventListener('input',lab); e.addEventListener('change',push); });
   lab();
 })();
 </script>

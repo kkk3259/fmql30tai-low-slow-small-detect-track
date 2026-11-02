@@ -33,11 +33,11 @@ except Exception:                          # noqa: BLE001
 USE_YOLO = False          # 模块级：--yolo 1 时由 main() 置 True
 YOLO = None
 USE_ROI = False           # --mode roi：PL 粗筛 + NPU ROI 精判（真正的三域分工）
-DUAL = True               # 双极性：同一检测器跑两遍（原图 + 取反），零额外资源
+DUAL = False              # 双极性：同一检测器跑两遍（原图 + 取反），零额外资源
 if os.environ.get("DUAL") == "0":
     DUAL = False
 STREAM_W, STREAM_H = 512, 288   # 推流分辨率（检测仍 640x360）
-YOLO_EVERY = 2            # 方案 A：每 N 帧才跑一次 yolo，中间帧复用上次结果
+YOLO_EVERY = 3            # 方案 A：每 N 帧才跑一次 yolo，中间帧复用上次结果
 YCNT = [0]                # yolo 帧计数
 DUAL_EVERY = 2            # 双极性第二遍（取反）每 N 帧跑一次，保证帧率
 PCNT = [0]                # PL 帧计数
@@ -45,7 +45,8 @@ POL_PREV = [None]         # 上一帧的另一极性结果 (帧号, 候选列表
 # ---- 自适应列相位校准 ----
 SHIFT = [0]               # 当前生效的列相位偏移（加在检测出的 x 上）
 SHIFT_CONF = [0.0]        # 最近一次校准的置信度
-CAL_HIST = []             # 最近几次校准结果（多数票）
+CAL_HIST = []
+ROI_MAX = 5             # 送 NPU 的候选上限（封顶 mosaic 耗时）             # 最近几次校准结果（多数票）
 CAL_EVERY = 120           # 每 N 帧校准一次
 CAL_ON = True
 if os.environ.get("CAL") == "0":
@@ -54,7 +55,8 @@ try:
     import phase_cal3 as _cal
 except Exception:                                          # noqa: BLE001
     _cal = None
-LAST_BOXES = [None]       # 上次 yolo 的框（跳过帧复用）
+LAST_BOXES = [None]
+LAST_RES = [None]       # 上次 yolo 的框（跳过帧复用）
 ROI_CONF = 0.45           # ROI 模式下 NPU 判为无人机的阈值
 ROI_KEEP_PL = 1           # 1 = NPU 没认出的 PL 候选也保留（网页可勾选显示/隐藏）
 
@@ -76,7 +78,7 @@ STATE = {
 JPEG = {"buf": None, "seq": 0}
 VIS = {"img": None, "seq": 0}        # 采集线程写、编码线程读（最新帧覆盖，天然丢帧）
 ENC_EVENT = None                     # 占位，保持接口兼容
-INFER = {"npu": 1, "pmin": 0, "running": True, "quality": 65, "push_every": 1}
+INFER = {"npu": 1, "pmin": 0, "running": True, "quality": 80, "push_every": 1}
 # 显示与前处理（2026-11-01 新增：三域版之前直接推灰度原图，观感"一片灰"）
 COLOR_DISP = 1          # 1=画面用彩色（检测仍在灰度上做）；0=灰度
 GAMMA = 1.0             # 送 PL 前的 gamma（0.08 压缩动态范围、弱目标更容易过 CFAR 门限；1.0=不改）
@@ -455,7 +457,7 @@ def infer_loop(pl, net):
 
                 cl = _cluster(keep)
                 cl.sort(key=lambda g: -g["peak"])
-                cands_in = cl[:ROI_N]
+                cands_in = cl[:ROI_MAX]
                 if cands_in:
                     crops, meta = [], []
                     for c in cands_in:
@@ -466,7 +468,13 @@ def infer_loop(pl, net):
                         y0 = int(min(max(c["y"] - hx, 0), max(0, H - _sd)))
                         crops.append(gray[y0:y0 + _sd, x0:x0 + _sd].copy())
                         meta.append((x0, y0, _sd))
-                    res = YOLO.detect_mosaic(crops, grid=ROI_CELL)
+                    # ROI 模式隔帧：每 YOLO_EVERY 帧才真正跑一次 mosaic，中间帧复用上次结果
+                    YCNT[0] += 1          # ROI 模式也要计数，否则隔帧不生效
+                    if YOLO_EVERY > 1 and (YCNT[0] % YOLO_EVERY) != 1 and LAST_RES[0] is not None:
+                        res = [tuple(r) for r in LAST_RES[0]]
+                    else:
+                        res = YOLO.detect_mosaic(crops, grid=ROI_CELL)
+                        LAST_RES[0] = [tuple(r) for r in res]
                     # 每个 slot 取最高分，映射回整帧坐标
                     best = {}
                     for slot, x1, y1, x2, y2, sc in res:
@@ -486,7 +494,7 @@ def infer_loop(pl, net):
                                           "roi": 1})
                         else:                       # NPU 没认出的 PL 候选：保留但标记
                             fused.append({"x": c["x"], "y": c["y"], "area": c["area"],
-                                          "peak": c["peak"], "p": 0.0, "roi": 0})
+                                          "peak": c["peak"], "p": 0.0, "roi": 0, "pl": 1})
                     # 【2026-11-02】50% 包含度合并：同一目标只留一个框
                     hits = [c for c in fused if c["roi"] and c["p"] >= ROI_CONF]
                     hits.sort(key=lambda z: -z["p"])
@@ -514,9 +522,24 @@ def infer_loop(pl, net):
                         if not hit_any:
                             merged.append(dict(c))
                     _hits = merged + [c for c in fused if (not c["roi"] and ROI_KEEP_PL)]
+                    # 跟踪器输出再做一次去重（同一目标可能生成多条航迹）
+                    _dd = []
+                    for _c in sorted(_hits, key=lambda z: -z.get("p", 0.0)):
+                        if all((( _c["x"] - _q["x"]) ** 2 + (_c["y"] - _q["y"]) ** 2) ** 0.5
+                               > max(20.0, 1.2 * (_c["area"] ** 0.5) + 1.2 * (_q["area"] ** 0.5))
+                               for _q in _dd):
+                            _dd.append(_c)
+                    _hits = _dd
                     if "_TRK" not in globals():
                         globals()["_TRK"] = _Trk()
                     keep = globals()["_TRK"].update(_hits)
+                    # 跟踪器输出后强制按距离合并（同一目标只留最强一条航迹）
+                    _mg = []
+                    for _c in sorted(keep, key=lambda z: -z.get("p", 0.0)):
+                        if all(((_c["x"]-_q["x"])**2+(_c["y"]-_q["y"])**2)**0.5
+                               > max(30.0, (_c["area"]**0.5)+(_q["area"]**0.5)) for _q in _mg):
+                            _mg.append(_c)
+                    keep = _mg
                     # 保护区重检：高置信航迹丢失时，低阈值再判一次
                     try:
                         for o in keep:
@@ -539,7 +562,7 @@ def infer_loop(pl, net):
                     keep = []
                 STATE["npu_ms"] = (time.time() - ty) * 1000.0
             except Exception as e:                            # noqa: BLE001
-                STATE["err"] = "roi:%s" % e
+                STATE["err"] = "roi:%s" % str(e)[:120]
 
         # NPU re-check
         if (not USE_YOLO) and INFER["npu"] and net is not None and keep:
@@ -557,6 +580,14 @@ def infer_loop(pl, net):
         # 跟踪：把逐个候选关联成航迹（平滑坐标 + 稳定 ID + 速度 + 轨迹线）
         fps_now = STATE["fps"] if STATE["fps"] > 1.0 else 25.0
         trks = TRACKER.update(keep, fps_now)
+        # 老跟踪器也会给同一目标分出多条航迹——这里强制按距离合并，只留最强一条
+        if trks:
+            _t2 = []
+            for _t in sorted(trks, key=lambda z: -((z.get("p") if z.get("p") is not None else 0.0))):
+                if all(((_t["x"]-_u["x"])**2+(_t["y"]-_u["y"])**2)**0.5
+                       > max(34.0, (_t.get("area", 4)**0.5)+(_u.get("area", 4)**0.5)) for _u in _t2):
+                    _t2.append(_t)
+            trks = _t2
 
         # 画框（走航迹，而不是原始候选）
         if COLOR_DISP:
@@ -565,36 +596,7 @@ def infer_loop(pl, net):
                 vis = cv2.resize(vis, (W, H), interpolation=cv2.INTER_LINEAR)
         else:
             vis = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-        # ── 先画 PL 的全部候选（灰细框 + 面积标注）──
-        # 用户要求"把 PL 所有候选都显示出来"：这些是 keep 里的原始候选，
-        # 未经航迹确认，可能一闪而过。画在下面，被同位置的绿/橙航迹框覆盖。
-        for c in keep:
-            cx, cy = int(c["x"]), int(c["y"])
-            a = int(c["area"])
-            s = max(4, int((a ** 0.5) * 1.3))
-            cv2.rectangle(vis, (cx - s, cy - s), (cx + s, cy + s), (150, 150, 150), 1)
-            if a >= 4:                      # 太小的点不标字，避免糊成一团
-                cv2.putText(vis, "%d" % a, (cx + s + 1, cy + s + 2),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.28, (170, 170, 170), 1, cv2.LINE_AA)
-
-        # ── 再画确认航迹（绿=通过 / 橙=未通过）──
-        for t in trks:
-            tx, ty = int(t["x"]), int(t["y"])
-            s = max(6, int((t["area"] ** 0.5) * 1.6))
-            p = t.get("p")
-            col = (0, 255, 0) if (p is None or p >= 0.5) else (0, 165, 255)
-            # 轨迹线：两帧以上才画
-            tr = t.get("trail") or []
-            if len(tr) >= 2:
-                pts = np.array(tr, dtype=np.int32).reshape(-1, 1, 2)
-                cv2.polylines(vis, [pts], False, col, 1, cv2.LINE_AA)
-            cv2.rectangle(vis, (tx - s, ty - s), (tx + s, ty + s), col, 2)
-            tag = "#%d %dpx pk%d" % (t["id"], int(t["area"]), int(t["peak"]))
-            if p is not None and p >= 0:
-                tag += " d%.2f" % p
-            cv2.putText(vis, tag, (tx + s + 3, ty - s + 8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, col, 1, cv2.LINE_AA)
-
+        # 【2026-11-02】不再把框烧进 JPEG：页面 canvas 统一画，避免两套框重叠
         cnt += 1
         el = time.time() - t_last
         if el >= 1.0:
@@ -615,6 +617,7 @@ def infer_loop(pl, net):
             "area": int(t["area"]), "peak": int(t["peak"]),
             "p": (None if t.get("p") is None else round(float(t["p"]), 3)),
             "spd": int(t.get("spd", 0)), "hits": int(t.get("hits", 0)),
+            "pl": 1 if (t.get("p") is None or float(t.get("p") or 0.0) <= 0.0) else 0,
             "vx": round(float(t.get("vx", 0.0)), 2), "vy": round(float(t.get("vy", 0.0)), 2),
         } for t in trks]
         # ---- 独立版页面模板需要的派生字段（每帧刷新）----
@@ -649,7 +652,8 @@ def enc_loop():
         last = VIS["seq"]
         img = VIS["img"]
         # 推流 512x288：编码前缩一次省 8.8ms；框坐标前端按 naturalWidth 自适应
-        img = cv2.resize(img, (STREAM_W, STREAM_H), interpolation=cv2.INTER_LINEAR)
+        if img.shape[1] != STREAM_W or img.shape[0] != STREAM_H:
+            img = cv2.resize(img, (STREAM_W, STREAM_H), interpolation=cv2.INTER_LINEAR)
         _t = time.time()
         ok, jb = cv2.imencode(".jpg", img,
                               [int(cv2.IMWRITE_JPEG_QUALITY), INFER["quality"]])
@@ -721,6 +725,10 @@ class SrvHandler(BaseHTTPRequestHandler):
                     TRACKER.MIN_HITS = max(1, min(10, int(q["min_hits"])))
                 if "quality" in q:
                     INFER["quality"] = max(20, min(95, int(q["quality"])))
+                if "sens" in q:      # 0 保守 / 1 中 / 2 激进 -> gamma（<1 抬暗部、压动态范围）
+                    GAMMA = (1.0, 0.10, 0.04)[max(0, min(2, int(q["sens"])))]
+                if "scene" in q:     # 0 室内亮目标 / 1 逆光暗目标 / 2 夜间
+                    INVERT = 0 if int(q["scene"]) == 0 else 1
                 if "gamma" in q:
                     GAMMA = max(0.02, min(2.0, float(q["gamma"])))
                 if "invert" in q:
@@ -777,7 +785,7 @@ def main():
 
         if USE_YOLO:
             try:
-                YOLO = Yolo(dev=pl.dev)     # 复用 PL3D 的 Device，避免抢 DMA
+                YOLO = Yolo(dev=pl.dev)     # 复用 PL3D 的 Device（自建 Device 会把 PL 的 DMA 区域顶掉）
                 print("YOLO ok (shared dev)", flush=True)
             except Exception as e:                             # noqa: BLE001
                 print("YOLO unavailable: %s" % e, flush=True)

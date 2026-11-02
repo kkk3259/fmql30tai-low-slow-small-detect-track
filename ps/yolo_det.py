@@ -106,8 +106,11 @@ class Yolo:
         buf = np.full((640, 640, 3), 114, np.uint8)
         buf[lb_y:lb_y + nh, lb_x:lb_x + nw] = body
         rgb = buf[None]
-        t = self.xrt.Tensor(np.ascontiguousarray(rgb.astype(np.uint8)), self.tt)
-        outs = self.sess.forward([t])
+        # 每次新建 Tensor。复用 + .write() 在本 SDK 上会报
+        # "write(): incompatible function arguments"（399c4b9 引入的回归），
+        # 代价是每次多 1.8ms 设备拷贝，但换来 NPU 真正可用。
+        tin = self.xrt.Tensor(np.ascontiguousarray(rgb.astype(np.uint8)), self.tt)
+        outs = self.sess.forward([tin])
         o0 = read_tensor(outs[0])[0]
         o1 = read_tensor(outs[1])[0, 0]
         # 先取 60 类里最大 logit，再只对这 8400 个值做 sigmoid。

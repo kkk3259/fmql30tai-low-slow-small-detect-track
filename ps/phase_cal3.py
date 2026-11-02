@@ -11,7 +11,7 @@
 import cv2
 import numpy as np
 
-CANDS = (-192, -128, -64, 0, 64, 128, 192)
+CANDS = (-64, 0, 64)
 
 
 def _blob_score(gray, x, y, r):

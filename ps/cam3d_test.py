@@ -68,32 +68,38 @@ class PL3D(object):
         st = 0
         t0 = time.time()
         # 触发可能被吞（实测连续触发时约一半不启动），AR 不长就重发，最多 5 次
-        for _try in range(5):
+        for _try in range(3):
             self.reg.write(REG + R_CTRL, 0)
-            time.sleep(0.005)
+            time.sleep(0.001)
             self.reg.write(REG + R_CTRL, 1)
             t1 = time.time()
-            while time.time() - t1 < 0.15:
+            _last_ar = -1
+            # 自适应等待：正常帧 ~5ms 完成；若 AR 完全没涨说明触发被吞，
+            # 2ms 就能判定并立刻重发，不必等固定超时
+            while time.time() - t1 < 0.050:
                 st = self.reg.read(REG + R_STATUS) & 0xFFFFFFFF
                 a1 = self.reg.read(REG + R_AR) & 0xFFFFFFFF
                 # 必须等 FSM 跑完（busy=0）再读候选表，否则读到写了一半的旧表
                 if (a1 - a0) > 3000 and not (st & 1):
                     break
-                time.sleep(0.002)
+                if (a1 - a0) == 0 and (time.time() - t1) > 0.002:
+                    break          # AR 停止增长（触发被吞或卡住），立即重试
+                _last_ar = a1
+                time.sleep(0.0001)
             a1 = self.reg.read(REG + R_AR) & 0xFFFFFFFF
             st = self.reg.read(REG + R_STATUS) & 0xFFFFFFFF
             if (a1 - a0) > 3000 and not (st & 1):
                 break
         dt = (time.time() - t0) * 1000
-        # 第一遍窗口读常返回全 0（实测），读两遍取第二遍
-        for _pass in range(2):
+        # 单遍读取：FSM 已保证 busy=0 后才读，实测不需读两遍
+        for _pass in range(1):
             words = []
-            for i in range(57):   # MAX_CAND=32 -> 1+32*7=225B -> 57 字
+            for i in range(15):   # MAX_CAND=32 -> 1+32*7=225B -> 57 字
                 self.reg.write(REG + R_WIN, i)
                 self.reg.read(REG + R_WIN)
                 words.append(self.reg.read(REG + R_WIN) & 0xFFFFFFFF)
             if _pass == 0:
-                time.sleep(0.002)
+                time.sleep(0.0001)
         return unpack(words), st, dt
 
 
