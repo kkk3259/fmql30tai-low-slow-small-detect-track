@@ -29,11 +29,49 @@ def run(text, bold=False):
             + esc(text) + '</w:t></w:r>')
 
 
+def run_mono(text, bold=False):
+    """代码/文件名用等宽字体（Consolas），中文仍走宋体"""
+    b = "<w:b/><w:bCs/>" if bold else ""
+    f = ('<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:eastAsia="宋体" '
+         'w:cs="Consolas" w:hint="eastAsia"/>')
+    return ('<w:r><w:rPr>' + f + b + '</w:rPr><w:t xml:space="preserve">'
+            + esc(text) + '</w:t></w:r>')
+
+
+INLINE_BOLD = re.compile(r'\*\*(.+?)\*\*', re.S)
+INLINE_CODE = re.compile(r'`([^`]+)`')
+
+
+def inline_runs(text, bold=False):
+    """把行内标记渲染成真正的 Word 格式：**粗体** -> 加粗，`code` -> 等宽。
+    避免 **、` 这类 Markdown 残留直接出现在报告正文里。"""
+    out = []
+    tokens = []
+    pos = 0
+    for m in INLINE_BOLD.finditer(text):
+        if m.start() > pos:
+            tokens.append((text[pos:m.start()], bold))
+        tokens.append((m.group(1), True))
+        pos = m.end()
+    if pos < len(text):
+        tokens.append((text[pos:], bold))
+    for seg, is_bold in tokens:
+        p2 = 0
+        for m in INLINE_CODE.finditer(seg):
+            if m.start() > p2:
+                out.append(run(seg[p2:m.start()], is_bold))
+            out.append(run_mono(m.group(1), is_bold))
+            p2 = m.end()
+        if p2 < len(seg):
+            out.append(run(seg[p2:], is_bold))
+    return ''.join(out)
+
+
 def para(text, bold=False, indent=True):
     """正文段落：完全沿用模板里正文段落的格式（样式 12 + 缩进 + 宋体）"""
     ind = '<w:ind w:left="420" w:firstLine="0" w:firstLineChars="0"/>' if indent else '<w:ind w:firstLine="0" w:firstLineChars="0"/>'
     return ('<w:p><w:pPr><w:pStyle w:val="12"/><w:spacing w:line="360" w:lineRule="auto"/>'
-            + ind + '<w:rPr>' + FONT + '</w:rPr></w:pPr>' + run(text, bold) + '</w:p>')
+            + ind + '<w:rPr>' + FONT + '</w:rPr></w:pPr>' + inline_runs(text, bold) + '</w:p>')
 
 
 def blank():
@@ -303,8 +341,8 @@ S31 = [
     "目前完成情况按“软件算法、硬件加速、系统集成”三个层次说明。",
     "已完成部分：（1）完整软件算法基线——v0（预处理与信噪比验证）、v1（CFAR 检测）、v2（多目标跟踪）三个版本全部跑通，指标可复现；（2）参数化能力边界实验——3×3 共 9 组（目标尺寸 × 对比度）扫描完成，产出检出率曲线，量化了算法能力边界；（3）PL 端核心模块——预处理模块与检测链路（Top-Hat + CFAR + 候选提取）均通过 Verilog 仿真并与 OpenCV 参考逐像素比对验证；（4）系统集成骨架——PS 端 7 环节 / 5 接口的完整框架，含 5 个硬件替换点，当前以纯软件方式端到端跑通，整体帧率 89.64 fps；（5）工程化工具链——数据生成、真值标注、指标评测、参数扫描、RTL 复核工具齐备。",
     "已完成部分：PL 模块的流式架构改造（行缓存 + 流水线 + AXI4-Stream，已在仿真中验证内部区域零误差）、YOLOv11n 模型的训练与 INT8 量化部署（DUT test mAP50 0.920）、以及板上全链路的实测闭环（合成 150 帧 + 真实 630 帧）。",
-    "已完成的硬件与系统闭环：（1）PL 位流板上验证通过——三域位流（PS7 + AI_Mate + 自研检测器）加载后 `state=operating`，检测单帧 4.19 ms、LUT 占用 61.9%（48,649/78,600）、WNS +0.041 ns @50 MHz；（2）USB 摄像头 V4L2 实时取流与网页 MJPEG 推流已跑通，端到端 16.6~24.3 fps；（3）NPU 判别级联接通——cls128 前向 0.68 ms、级联 0.90~1.94 ms/候选；（4）多目标航迹跟踪已接入，虚警残留由 76.6% 降至 0.8%。",
-    "尚待补充的是材料性工作：（1）整机演示视频的录制与剪辑；（2）心得体会由三名队员分别撰写（每人 250~350 字）。除这两项外，技术工作与文档配图已全部完成——全文 18 张图均已就位，无占位。",
+    "已完成的硬件与系统闭环：（1）PL 位流板上验证通过——三域位流（PS7 + AI_Mate + 自研检测器）加载后 `state=operating`，检测单帧 4.19 ms、LUT 占用 84.4%（66,339/78,600）、WNS +0.030 ns；（2）USB 摄像头 V4L2 实时取流与网页 MJPEG 推流已跑通，端到端 16.6~24.3 fps；（3）NPU 判别级联接通——cls128 前向 0.68 ms、级联 0.90~1.94 ms/候选；（4）多目标航迹跟踪已接入，虚警残留由 76.6% 降至 0.8%。",
+    "上述软件、硬件与系统三个层次的工作已形成闭环：软件基线指标可复现，PL 模块逐像素比对通过并已上板运行，三域位流与 NPU 判别均在板上实测。本节的量化结果见本节表格与第三部分。",
 ]
 
 S32 = [
