@@ -85,11 +85,15 @@ class PL3D(object):
             if (a1 - a0) > 3000 and not (st & 1):
                 break
         dt = (time.time() - t0) * 1000
-        words = []
-        for i in range(16):
-            self.reg.write(REG + R_WIN, i)
-            self.reg.read(REG + R_WIN)
-            words.append(self.reg.read(REG + R_WIN) & 0xFFFFFFFF)
+        # 第一遍窗口读常返回全 0（实测），读两遍取第二遍
+        for _pass in range(2):
+            words = []
+            for i in range(57):   # MAX_CAND=32 -> 1+32*7=225B -> 57 字
+                self.reg.write(REG + R_WIN, i)
+                self.reg.read(REG + R_WIN)
+                words.append(self.reg.read(REG + R_WIN) & 0xFFFFFFFF)
+            if _pass == 0:
+                time.sleep(0.002)
         return unpack(words), st, dt
 
 
