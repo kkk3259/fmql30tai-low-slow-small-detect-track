@@ -649,17 +649,17 @@ S42 = [
 ]
 
 REFS = [
-    "[1] 复旦微电子. 悟净开发板 Lite（轻量版）硬件使用手册 V1.0[Z]. 复旦微电子集团, 2025.",
-    "[2] 全国大学生嵌入式芯片与系统设计竞赛组委会. 2026 FPGA 创新设计赛道选题指南（复旦微）[Z]. 2026.",
-    "[3] OpenCV. Image Filtering: morphologyEx / boxFilter[EB/OL]. https://docs.opencv.org/4.x/d4/d86/group__imgproc__filter.html",
-    "[4] Bradski G. The OpenCV Library[J]. Dr. Dobb's Journal of Software Tools, 2000, 25(11): 120-125.",
-    "[5] Gonzalez R C, Woods R E. Digital Image Processing[M]. 4th ed. New York: Pearson, 2018. ISBN 978-0-13-335672-4.",
-    "[6] Skolnik M I. Introduction to Radar Systems[M]. 3rd ed. New York: McGraw-Hill, 2001. ISBN 978-0-07-290980-7.",
-    "[7] Kalman R E. A New Approach to Linear Filtering and Prediction Problems[J]. Journal of Basic Engineering, 1960, 82(1): 35-45. DOI: 10.1115/1.3662552.",
-    "[8] Kuhn H W. The Hungarian Method for the Assignment Problem[J]. Naval Research Logistics Quarterly, 1955, 2(1-2): 83-97. DOI: 10.1002/nav.3800020109.",
-    "[9] Huang B, Li J, Chen J, et al. Anti-UAV410: A Thermal Infrared Benchmark and Customized Scheme for Tracking Drones in the Wild[J]. IEEE Transactions on Pattern Analysis and Machine Intelligence, 2024, 46(5): 2852-2865. DOI: 10.1109/TPAMI.2023.3335338.",
-    "[10] Williams S. Icarus Verilog[EB/OL]. http://iverilog.icarus.com/.",
-    "[11] 全国大学生嵌入式芯片与系统设计竞赛组委会. 关于邀请参加 2026 年全国大学生嵌入式芯片与系统设计竞赛——FPGA 创新设计赛道的通知（第一轮）[Z]. 2026.",
+    "[1] 深圳市创芯瑞天科技有限公司. 悟净开发板 Lite（轻量版）硬件使用手册: V1.0[Z]. 深圳: 深圳市创芯瑞天科技有限公司, 2026.",
+    "[2] 上海复旦微电子集团股份有限公司. 全国大学生嵌入式芯片与系统设计竞赛 2026 FPGA 创新设计赛道选题指南[Z]. 上海: 上海复旦微电子集团股份有限公司, 2026.",
+    "[3] OpenCV. Image Filtering[EB/OL]. [2026-11-02]. https://docs.opencv.org/4.x/d4/d86/group__imgproc__filter.html.",
+    "[4] BRADSKI G. The OpenCV Library[J]. Dr. Dobb's Journal of Software Tools, 2000, 25(11): 120-125.",
+    "[5] GONZALEZ R C, WOODS R E. Digital Image Processing[M]. 4th ed. New York: Pearson, 2018.",
+    "[6] SKOLNIK M I. Introduction to Radar Systems[M]. 3rd ed. New York: McGraw-Hill, 2001.",
+    "[7] KALMAN R E. A New Approach to Linear Filtering and Prediction Problems[J]. Journal of Basic Engineering, 1960, 82(1): 35-45. DOI: 10.1115/1.3662552.",
+    "[8] KUHN H W. The Hungarian Method for the Assignment Problem[J]. Naval Research Logistics Quarterly, 1955, 2(1-2): 83-97. DOI: 10.1002/nav.3800020109.",
+    "[9] HUANG B, LI J, CHEN J, et al. Anti-UAV410: A Thermal Infrared Benchmark and Customized Scheme for Tracking Drones in the Wild[J]. IEEE Transactions on Pattern Analysis and Machine Intelligence, 2024, 46(5): 2852-2865. DOI: 10.1109/TPAMI.2023.3335338.",
+    "[10] WILLIAMS S. Icarus Verilog[EB/OL]. [2026-11-02]. https://steveicarus.github.io/iverilog/.",
+    "[11] 中国电子教育学会. 关于邀请参加 2026 年全国大学生嵌入式芯片与系统设计竞赛——FPGA 创新设计赛道的通知（第一轮）[Z]. 2026.",
 ]
 
 # ============================================================ 填充映射
