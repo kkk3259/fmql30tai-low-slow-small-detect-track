@@ -74,6 +74,15 @@ def para(text, bold=False, indent=True):
             + ind + '<w:rPr>' + FONT + '</w:rPr></w:pPr>' + inline_runs(text, bold) + '</w:p>')
 
 
+def ref_para(text):
+    """参考文献条目：左对齐 + 悬挂缩进（编号顶格、续行缩进 2 字符）。
+    不用两端对齐，否则含 URL / 长英文的行会被拉伸成大片词间距；
+    不用 w:firstLineChars（它优先级高于 w:firstLine，会让悬挂失效）。"""
+    return ('<w:p><w:pPr><w:pStyle w:val="16"/><w:spacing w:line="360" w:lineRule="auto"/>'
+            '<w:ind w:left="420" w:hanging="420"/><w:jc w:val="left"/>'
+            '<w:rPr>' + FONT + '</w:rPr></w:pPr>' + inline_runs(text) + '</w:p>')
+
+
 def blank():
     return ('<w:p><w:pPr><w:pStyle w:val="12"/><w:spacing w:line="360" w:lineRule="auto"/>'
             '<w:ind w:left="420" w:firstLine="0" w:firstLineChars="0"/><w:rPr>' + FONT + '</w:rPr></w:pPr></w:p>')
@@ -697,7 +706,7 @@ FILL = {
     ],
     "可扩展之处": [("A", S41)],
     "心得体会": [("A", S42)],
-    "第五部分  参考文献": [("A", REFS)],
+    "第五部分  参考文献": [("R", REFS)],
 }
 
 # 提示行：识别后删除
@@ -737,6 +746,9 @@ def main():
                 elif kind == "A":
                     for line in payload:
                         out.append(para(line))
+                elif kind == "R":
+                    for line in payload:
+                        out.append(ref_para(line))
                 elif kind == "T":
                     out.append(table(payload))
                 out.append(blank())
