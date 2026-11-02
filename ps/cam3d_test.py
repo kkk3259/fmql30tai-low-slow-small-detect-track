@@ -70,7 +70,7 @@ class PL3D(object):
         # 触发可能被吞（实测连续触发时约一半不启动），AR 不长就重发，最多 5 次
         for _try in range(5):
             self.reg.write(REG + R_CTRL, 0)
-            time.sleep(0.005)
+            time.sleep(0.001)
             self.reg.write(REG + R_CTRL, 1)
             t1 = time.time()
             while time.time() - t1 < 0.15:
@@ -79,7 +79,7 @@ class PL3D(object):
                 # 必须等 FSM 跑完（busy=0）再读候选表，否则读到写了一半的旧表
                 if (a1 - a0) > 3000 and not (st & 1):
                     break
-                time.sleep(0.002)
+                time.sleep(0.0001)
             a1 = self.reg.read(REG + R_AR) & 0xFFFFFFFF
             st = self.reg.read(REG + R_STATUS) & 0xFFFFFFFF
             if (a1 - a0) > 3000 and not (st & 1):
@@ -88,12 +88,12 @@ class PL3D(object):
         # 第一遍窗口读常返回全 0（实测），读两遍取第二遍
         for _pass in range(2):
             words = []
-            for i in range(57):   # MAX_CAND=32 -> 1+32*7=225B -> 57 字
+            for i in range(15):   # MAX_CAND=32 -> 1+32*7=225B -> 57 字
                 self.reg.write(REG + R_WIN, i)
                 self.reg.read(REG + R_WIN)
                 words.append(self.reg.read(REG + R_WIN) & 0xFFFFFFFF)
             if _pass == 0:
-                time.sleep(0.002)
+                time.sleep(0.0001)
         return unpack(words), st, dt
 
 

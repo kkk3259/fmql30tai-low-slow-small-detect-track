@@ -33,7 +33,7 @@ except Exception:                          # noqa: BLE001
 USE_YOLO = False          # 模块级：--yolo 1 时由 main() 置 True
 YOLO = None
 USE_ROI = False           # --mode roi：PL 粗筛 + NPU ROI 精判（真正的三域分工）
-DUAL = True               # 双极性：同一检测器跑两遍（原图 + 取反），零额外资源
+DUAL = False              # 双极性：同一检测器跑两遍（原图 + 取反），零额外资源
 if os.environ.get("DUAL") == "0":
     DUAL = False
 STREAM_W, STREAM_H = 512, 288   # 推流分辨率（检测仍 640x360）
@@ -45,7 +45,8 @@ POL_PREV = [None]         # 上一帧的另一极性结果 (帧号, 候选列表
 # ---- 自适应列相位校准 ----
 SHIFT = [0]               # 当前生效的列相位偏移（加在检测出的 x 上）
 SHIFT_CONF = [0.0]        # 最近一次校准的置信度
-CAL_HIST = []             # 最近几次校准结果（多数票）
+CAL_HIST = []
+ROI_MAX = 8             # 送 NPU 的候选上限（封顶 mosaic 耗时）             # 最近几次校准结果（多数票）
 CAL_EVERY = 120           # 每 N 帧校准一次
 CAL_ON = True
 if os.environ.get("CAL") == "0":
@@ -77,7 +78,7 @@ STATE = {
 JPEG = {"buf": None, "seq": 0}
 VIS = {"img": None, "seq": 0}        # 采集线程写、编码线程读（最新帧覆盖，天然丢帧）
 ENC_EVENT = None                     # 占位，保持接口兼容
-INFER = {"npu": 1, "pmin": 0, "running": True, "quality": 65, "push_every": 1}
+INFER = {"npu": 1, "pmin": 0, "running": True, "quality": 80, "push_every": 1}
 # 显示与前处理（2026-11-01 新增：三域版之前直接推灰度原图，观感"一片灰"）
 COLOR_DISP = 1          # 1=画面用彩色（检测仍在灰度上做）；0=灰度
 GAMMA = 1.0             # 送 PL 前的 gamma（0.08 压缩动态范围、弱目标更容易过 CFAR 门限；1.0=不改）
@@ -456,7 +457,7 @@ def infer_loop(pl, net):
 
                 cl = _cluster(keep)
                 cl.sort(key=lambda g: -g["peak"])
-                cands_in = cl[:ROI_N]
+                cands_in = cl[:ROI_MAX]
                 if cands_in:
                     crops, meta = [], []
                     for c in cands_in:

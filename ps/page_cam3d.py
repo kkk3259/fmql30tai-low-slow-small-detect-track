@@ -70,7 +70,7 @@ canvas.chart{width:100%;height:74px;display:block}
         <input type="range" id="s_sens" min="0" max="2" step="1" value="1"></div>
       
       <div class="ctl"><label>场景 <b id="l_scene">室内亮目标</b></label>
-        <input type="range" id="s_scene" min="0" max="2" step="1" value="0"></div>
+        <input type="range" id="s_scene" min="0" max="2" step="1" value="1"></div>
       <div class="btnrow"><button id="b_snap">截图保存</button></div>
       <div class="ctl" style="margin-top:8px">
         <label><input type="checkbox" id="c_pl" checked> 显示 PL 疑似目标（灰细框）</label></div>
@@ -137,7 +137,8 @@ function draw(){
     g.save(); g.fillStyle='#ffe066'; g.font='bold 13px Consolas'; g.textBaseline='top';
     var pl=(Number(LASTJ.PL_ms)||0).toFixed(1);
     var np=(Number(LASTJ.npu_ms)||0).toFixed(1);
-    var hud='PL '+pl+'ms   npu '+np+'ms   cand '+(LASTJ.n||0)+'   '+Math.round(LASTJ.fps||0)+' fps';
+    var _f=Number(LASTJ.fps||0); var _fs=(_f>=2)?Math.round(_f):'--';
+  var hud='PL '+pl+'ms   npu '+np+'ms   cand '+(LASTJ.n||0)+'   '+_fs+' fps';
     g.fillText(hud, 6, 5);
     g.restore();
   }
@@ -214,8 +215,8 @@ setInterval(function(){
   var a=document.getElementById('s_sens'), b=document.getElementById('s_size'), c=document.getElementById('s_scene');
   function lab(){ document.getElementById('l_sens').textContent=N1[+a.value];
                                       document.getElementById('l_scene').textContent=N3[+c.value]; }
-  function push(){ lab(); fetch('/set?sens='+a.value+'&size='+b.value+'&scene='+c.value).catch(function(){}); }
-  [a,b,c].forEach(function(e){ e.addEventListener('input',lab); e.addEventListener('change',push); });
+  function push(){ lab(); var u='/set?sens='+a.value+'&scene='+c.value; if(b){u+='&size='+b.value;} fetch(u).catch(function(){}); }
+  [a,b,c].forEach(function(e){ if(!e){return;} e.addEventListener('input',lab); e.addEventListener('change',push); });
   lab();
 })();
 </script>
