@@ -50,7 +50,7 @@ def main():
     wp = st & 0xff
     print("LA 状态: frozen=%d trig=%d wp=%d" % (frozen, trig, wp))
     if frozen:
-        print("  ⚠ 已冻结（看门狗触发），下面是崩溃前后现场")
+        print("  [WARN] 已冻结（看门狗触发），下面是崩溃前后现场")
 
     wp = wp & (a.depth - 1)
     n = min(a.limit, wp if not frozen else a.depth)

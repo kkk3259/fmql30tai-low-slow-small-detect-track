@@ -20,7 +20,7 @@
 ip2_user_op #( .W(640), .H(360), .SE(5), .MAX_CAND(8) )
 ```
 
-⚠️ `SE(5)` 是历史遗留：当初 SE=21 时三域 LUT 114% 装不下，为压资源改成 5。
+ `SE(5)` 是历史遗留：当初 SE=21 时三域 LUT 114% 装不下，为压资源改成 5。
 后果是三域里检测窗口只有 2~4 px（独立版 `pl/rtl/ip2_axi_top.v` 默认 `SE=31`，窗口 6~28 px）。
 做正式演示前应改成 `SE(31), MAX_CAND(16)` 重编一版（约 90 分钟）。
 
@@ -28,11 +28,11 @@ ip2_user_op #( .W(640), .H(360), .SE(5), .MAX_CAND(8) )
 
 ```
 work/ours3d/ai7030_ours_top.v
-repo/pl/rtl/ip2_user_op.v          ← 平台 512 位口 ↔ 检测器 64 位主口的适配层
+repo/pl/rtl/ip2_user_op.v ← 平台 512 位口 ↔ 检测器 64 位主口的适配层
 repo/pl/rtl/ip2_axi_top.v
 repo/pl/rtl/ip2_top_stream.v
 repo/pl/rtl/ip2_axi_master_rd.v
-repo/pl/rtl/ip2_axi_master_wr.v    ← 候选表写 DDR，cand_bytes=0 已停用（F_WRITE 直接判完成）
+repo/pl/rtl/ip2_axi_master_wr.v ← 候选表写 DDR，cand_bytes=0 已停用（F_WRITE 直接判完成）
 repo/pl/rtl/candidate_extract_stream.v
 repo/pl/rtl/cfar_threshold_stream.v
 repo/pl/rtl/tophat_5x5_stream.v
@@ -52,12 +52,12 @@ repo/pl/rtl/ip2_pix_fifo.v
 ```tcl
 set ::env(JFM_PATH) D:/firstharness/JFM_Kits
 source D:/firstharness/JFM_Kits/ip_patch/run.tcl
-add_hook_tcl_to_prj          ;# 打印 Set BRAM/FIFO -bram_patch_check TRUE!
-replace_7z030ai_file          ;# 换 zynq.rtd 成 30AI 版，否则 INBB-3
-read_edif   .../ps_ai_wrap_demo.edf
+add_hook_tcl_to_prj ;# 打印 Set BRAM/FIFO -bram_patch_check TRUE!
+replace_7z030ai_file ;# 换 zynq.rtd 成 30AI 版，否则 INBB-3
+read_edif .../ps_ai_wrap_demo.edf
 read_verilog .../ps_ai_wrap_demo.v
 read_verilog {上面 RTL 清单}
-read_xdc    {两个 xdc}
+read_xdc {两个 xdc}
 synth_design -top ai7030_ours_top -part xc7z030ffg676-2 -flatten_hierarchy rebuilt
 opt_design ; place_design -directive Explore ; route_design -directive Explore
 write_bitstream -force -bin_file ...

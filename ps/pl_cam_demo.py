@@ -292,7 +292,7 @@ def main():
             print("[demo] PL 已连上，寄存器基址 0x%08X，VERSION=0x%08X"
                   % (REG_BASE, pl.version()))
         except Exception as e:
-            print("[demo] ⚠ PL 通路不可用（%s）→ 退化为只看相机" % e)
+            print("[demo] [WARN] PL 通路不可用（%s）→ 退化为只看相机" % e)
             pl = None
             mode = "camera only"
 
@@ -302,7 +302,7 @@ def main():
     if args.replay:
         frames = load_replay(args.replay)
         if not frames:
-            print("[demo] ✗ 目录里没有图片: %s" % args.replay)
+            print("[demo]  目录里没有图片: %s" % args.replay)
             return 2
         print("[demo] 回放 %d 张图: %s" % (len(frames), args.replay))
         mode = mode + "+replay"
@@ -311,7 +311,7 @@ def main():
             src = CameraSource(args.camera, args.width, args.height,
                                args.fourcc, args.fps)
         except Exception as e:
-            print("[demo] ✗ 打不开相机 %d：%s" % (args.camera, e))
+            print("[demo]  打不开相机 %d：%s" % (args.camera, e))
             return 2
 
     srv = start_server(args.port)
@@ -335,7 +335,7 @@ def main():
             else:
                 gray = src.read_gray()
                 if gray is None:
-                    print("[demo] ⚠ 读相机失败，重试")
+                    print("[demo] [WARN] 读相机失败，重试")
                     time.sleep(0.05)
                     continue
             bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)   # 只为画彩色框
@@ -350,7 +350,7 @@ def main():
                     cands = res if res else []
                     ms = (time.time() - t0) * 1000.0
                 except Exception as e:
-                    print("[demo] ⚠ PL 出帧失败: %s" % e)
+                    print("[demo] [WARN] PL 出帧失败: %s" % e)
                     pl = None
                     mode = "camera only (PL 掉线)"
                 k += 1

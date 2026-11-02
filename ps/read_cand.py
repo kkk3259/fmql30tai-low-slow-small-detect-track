@@ -99,7 +99,7 @@ def main():
         exp = sorted(expect)
         good = (n == len(expect)) and (got == exp)
         okc += 1 if good else 0
-        print("\n输入 %s → n=%d（STATUS 报 %d）%s" % (dots, n, (st >> 8) & 0xFF, "✓" if good else "✗"))
+        print("\n输入 %s → n=%d（STATUS 报 %d）%s" % (dots, n, (st >> 8) & 0xFF, "" if good else ""))
         for c in cands:
             print("    (%4d,%4d) area=%d peak=%d" % (c["x"], c["y"], c["area"], c["peak"]))
         print("    期望 %s" % (exp,))

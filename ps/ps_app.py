@@ -3,16 +3,16 @@
 低小慢目标检测跟踪系统 —— 系统集成骨架（ps_app.py）
 
 作用：把三个人的模块串成一条完整流水线。
-      现在全部是 Python 实现（在 PC 上跑），板卡到货后按下面标了"★替换点"的地方
+      现在全部是 Python 实现（在 PC 上跑），板卡到货后按下面标了"替换点"的地方
       逐段换成硬件模块，其它代码一行都不用改。
 
 流水线（7 个处理环节，对应 5 个数据接口 I1~I5；其中 5 个环节可替换）：
-  ① capture()   采集视频帧        -★- 将来: PS 的 V4L2(USB相机) / VPU(TF卡序列)
-  ② detect()    检测(粗筛)        -★- 将来: PL 的 IP1+IP2  -> 输出候选列表 I2
-  ③ crop_roi()  裁 128x128 图块   -★- 将来: PL 的 IP4      -> 输出 ROI 张量 I3
-  ④ RoIJudge()  判别(精判)        -★- 将来: NPU 推理        -> 输出置信度 I4
+  ① capture()   采集视频帧        -- 将来: PS 的 V4L2(USB相机) / VPU(TF卡序列)
+  ② detect()    检测(粗筛)        -- 将来: PL 的 IP1+IP2  -> 输出候选列表 I2
+  ③ crop_roi()  裁 128x128 图块   -- 将来: PL 的 IP4      -> 输出 ROI 张量 I3
+  ④ RoIJudge()  判别(精判)        -- 将来: NPU 推理        -> 输出置信度 I4
   ⑤ Tracker()   跟踪与航迹管理     --  一直放 CPU（本文件，不替换）
-  ⑥ render()    显示叠加          -★- 将来: HDMI 输出 / PL 的 OSD
+  ⑥ render()    显示叠加          -- 将来: HDMI 输出 / PL 的 OSD
   ⑦ report()    告警上报          --  串口 / UDP（JSON，本文件）
 
 用法：
@@ -47,7 +47,7 @@ CONF_TH = 0.60        # 判别通过阈值（I4 接口约定）
 
 # ================================================================ ① 采集
 def capture_init(source):
-    """★替换点1：板卡上换成 V4L2 取流（USB 相机）或 VPU 硬解（TF 卡序列）"""
+    """替换点1：板卡上换成 V4L2 取流（USB 相机）或 VPU 硬解（TF 卡序列）"""
     if source == "synth":
         source = os.path.join(_PROJ, "synth_sky.mp4")
         if not os.path.exists(source):
@@ -65,7 +65,7 @@ def capture_frame(cap):
 
 # ================================================================ ② 检测（粗筛）
 class Detector(object):
-    """★替换点2：板卡上换成"把帧通过 DMA 送给 PL，读回候选列表(I2)"
+    """替换点2：板卡上换成"把帧通过 DMA 送给 PL，读回候选列表(I2)"
 
     现在：Python 版本（= 软件基线 v1 的检测链），输出格式与 I2 一致
     输出候选字段：x, y（降采样图坐标）, area, peak, conf
@@ -77,7 +77,7 @@ class Detector(object):
         self.cfg = dict(down=down, gauss_k=gauss_k, tophat_se=tophat_se,
                         win=win, k=k, floor=floor,
                         min_area=min_area, max_area=max_area, topk=topk)
-        # 时域增强（★将来对应 PL 的"帧缓存 + 时域累加"模块）
+        # 时域增强（将来对应 PL 的"帧缓存 + 时域累加"模块）
         self.enh = None
         if temporal != "none":
             from detect_v3 import TemporalEnhancer
@@ -100,7 +100,7 @@ class Detector(object):
 
 # ================================================================ ③ 裁 ROI
 def crop_roi(gray, cx, cy, size=ROI_SIZE):
-    """★替换点3：板卡上换成 PL 的 roi_pack(IP4)
+    """替换点3：板卡上换成 PL 的 roi_pack(IP4)
 
     从降采样灰度图上裁 size×size 的图块（越界补 0），坐标是降采样图坐标。
     输出就对应接口 I3 的 roi_data（将来要改成 INT8 并加上量化参数）。
@@ -146,7 +146,7 @@ def detect_backend():
 
 # ================================================================ ④ 判别（精判）
 class RoIJudge(object):
-    """★替换点4：板卡上换成 NPU 推理（A 的 Icraft 模型）
+    """替换点4：板卡上换成 NPU 推理（A 的 Icraft 模型）
 
     现在：
       - 没有模型时是"占位实现"，直接返回 1.0（等于全部通过，不丢检测结果）
@@ -187,7 +187,7 @@ class RoIJudge(object):
             try:
                 if backend == "npu":
                     # 30TAI：Icraft 推理（拿到板后替换此处）
-                    return float(self._npu_infer(roi))            # ★替换点4 真实现
+                    return float(self._npu_infer(roi))            # 替换点4 真实现
                 elif backend in ("cpu", "onnx"):
                     # 无 NPU 时：CPU 推理（ONNX Runtime）
                     return float(self._cpu_infer(roi))
@@ -200,7 +200,7 @@ class RoIJudge(object):
             return 1.0                                   # placeholder：全部通过
 
     def _npu_infer(self, roi):
-        """30TAI：调用 Icraft 运行时（★ 拿到板后实现）"""
+        """30TAI：调用 Icraft 运行时（ 拿到板后实现）"""
         raise NotImplementedError("30TAI 上接入 Icraft；当前平台无 NPU")
 
     def _cpu_infer(self, roi):
@@ -263,7 +263,7 @@ class Tracker(object):
 
 # ================================================================ ⑥ 显示
 def render(frame, enhanced, cands, passed, tracks, gt, idx, down, stage_ms, mode):
-    """★替换点5：板卡上换成 HDMI 输出（叠加可由 PL 的 OSD 完成）"""
+    """替换点5：板卡上换成 HDMI 输出（叠加可由 PL 的 OSD 完成）"""
     w_in = frame.shape[1]
     h_in = frame.shape[0]
     hw, hh = w_in // 2, h_in // 2
@@ -319,7 +319,7 @@ def render(frame, enhanced, cands, passed, tracks, gt, idx, down, stage_ms, mode
 
 # ================================================================ ⑦ 上报
 def report(frame_id, ts, tracks, fps=None, lat_ms=None, level_th=(0.6, 0.85)):
-    """告警 JSON（每帧一行）。★将来走串口/USDUDP发给上位机"""
+    """告警 JSON（每帧一行）。将来走串口/USDUDP发给上位机"""
     if not tracks:
         return None
     t = tracks[0]
@@ -484,7 +484,7 @@ def main():
     print("输出视频        : {}".format(os.path.abspath(a.out)))
     print("逐帧数据        : {}".format(os.path.abspath(a.csv)))
     print("")
-    print("提示：7 个环节中 ①采集/②检测/③裁ROI/④判别/⑥显示 可替换（=★替换点1~5，是 P 和 A 的接入位置）；⑤跟踪/⑦上报 固定放 CPU。")
+    print("提示：7 个环节中 ①采集/②检测/③裁ROI/④判别/⑥显示 可替换（=替换点1~5，是 P 和 A 的接入位置）；⑤跟踪/⑦上报 固定放 CPU。")
 
 
 if __name__ == "__main__":

@@ -195,10 +195,10 @@ def main():
     a = ap.parse_args()
 
     if not os.path.exists(a.src):
-        print("  ✗ 找不到: %s" % a.src)
+        print("   找不到: %s" % a.src)
         return 1
     n = convert(a.src, a.dst, a.title)
-    print("  ✓ %s" % a.dst)
+    print("   %s" % a.dst)
     print("    %.0f KB ｜ %d 个表格" % (os.path.getsize(a.dst) / 1024, n))
     return 0
 

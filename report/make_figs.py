@@ -38,7 +38,7 @@ def save(fig, name, dpi=170):
     p = os.path.join(OUT, name)
     fig.savefig(p, dpi=dpi, bbox_inches="tight", facecolor="white")
     plt.close(fig)
-    print("  ✓ %-30s %7.0f KB" % (name, os.path.getsize(p) / 1024))
+    print("   %-30s %7.0f KB" % (name, os.path.getsize(p) / 1024))
 
 
 # ============================================================
@@ -78,9 +78,9 @@ def fig6():
         ax.text(x, 29.6, t, ha="center", va="bottom", fontsize=8.6, color="#B5651D", linespacing=1.4)
 
     notes = [
-        "★ 形态学方向经实测修正：真实场景目标是「暗点剪影」，单路 Top-Hat 召回仅 55.0%，改 Black-Hat 后 86.0%（同为 86% 召回时候选数 47.5 vs 175.5，相差 3.7 倍）。",
-        "★ CFAR 存在自抑制：目标越大 → 窗内 σ 越高 → 门限被自身抬高。实测 SE 由 5 增大到 61、MAX_AREA 由 200 放宽到 5000 均无效，故 15 px 以上改由软件多尺度覆盖。",
-        "★ 流式结构：各模块「行缓存 + 流水线」，仅缓存 3~5 行，存储由约 230 KB 降至约 2 KB；定点运算用移位实现，不占 DSP。",
+        " 形态学方向经实测修正：真实场景目标是「暗点剪影」，单路 Top-Hat 召回仅 55.0%，改 Black-Hat 后 86.0%（同为 86% 召回时候选数 47.5 vs 175.5，相差 3.7 倍）。",
+        " CFAR 存在自抑制：目标越大 → 窗内 σ 越高 → 门限被自身抬高。实测 SE 由 5 增大到 61、MAX_AREA 由 200 放宽到 5000 均无效，故 15 px 以上改由软件多尺度覆盖。",
+        " 流式结构：各模块「行缓存 + 流水线」，仅缓存 3~5 行，存储由约 230 KB 降至约 2 KB；定点运算用移位实现，不占 DSP。",
     ]
     y = 15.0
     for n in notes:
@@ -216,7 +216,7 @@ def fig13():
     ax.grid(axis="y", alpha=0.28, linestyle="--")
     ax.axhline(30, color=GRAY, linestyle=":", linewidth=1.2, alpha=0.7)
     ax.text(len(cfg) - 0.4, 30.9, "相机上限 30 fps", fontsize=8.6, color=GRAY, ha="right")
-    ax.text(0.5, 0.06, "★ 候选数放开到 47 后\n帧率跌至 7.9 fps", transform=ax.transAxes,
+    ax.text(0.5, 0.06, " 候选数放开到 47 后\n帧率跌至 7.9 fps", transform=ax.transAxes,
             fontsize=9.4, color=RED, ha="center",
             bbox=dict(boxstyle="round,pad=0.45", fc="#FDECEA", ec=RED, lw=1.1))
 
@@ -272,7 +272,7 @@ def fig14():
     ax.set_xlabel("耗时 (ms)", fontsize=11)
     ax.set_title("采集与编码占 73%，PL 只占 22%", fontsize=12, fontweight="bold", pad=12)
     ax.grid(axis="x", alpha=0.28, linestyle="--")
-    ax.text(0.55, 0.16, "★ 提帧率的杠杆在采集与编码，\n不在 PL —— PL 已从 57.87 ms 降到 13.8 ms",
+    ax.text(0.55, 0.16, " 提帧率的杠杆在采集与编码，\n不在 PL —— PL 已从 57.87 ms 降到 13.8 ms",
             transform=ax.transAxes, fontsize=9.4, color="#1B3A5C",
             bbox=dict(boxstyle="round,pad=0.45", fc="#EAF2FB", ec=BLUE, lw=1.1))
 

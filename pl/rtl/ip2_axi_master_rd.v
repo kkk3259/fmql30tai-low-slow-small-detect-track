@@ -12,7 +12,7 @@
 // 反压：出口 o_ready 直接来自 IP2 的 i_ready。CFAR 在虚拟光栅的 PAD 列会拉低 i_ready
 //       （每行 30 拍），FIFO 吸收这段停顿，不会丢像素。
 //
-// ⚠️ Verific 推断 RAM 的硬性要求：FIFO 存储器的写必须放在**独立 always 块**里，
+// [WARN] Verific 推断 RAM 的硬性要求：FIFO 存储器的写必须放在**独立 always 块**里，
 //    不能塞进状态机 case，否则 elaborate 报 ELAB-E-353 "Failed to dissolve the memory"。
 module ip2_axi_master_rd #(
     parameter FIFO_AW = 6,      // FIFO 深度 2^6 = 64 个 64bit 字 = 512 B

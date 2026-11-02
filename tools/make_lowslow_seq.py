@@ -18,7 +18,7 @@
 
 关于"目标变多小"的换算（重要）：
     目标在输出图里的像素 = 原图目标像素 × (输出宽 / 裁剪宽)
-    例如：原图目标 60px，裁剪宽 480，输出宽 1280  ->  60 × (1280/480) = 160px  ✗ 变大了
+    例如：原图目标 60px，裁剪宽 480，输出宽 1280  ->  60 × (1280/480) = 160px   变大了
     想要变小，要【裁剪小区域 + 输出尺寸不变】：裁剪宽 480、输出 640 -> 60 × (640/480) = 80px
     更彻底：先在预览里量出目标像素，再按公式反推需要的裁剪框。
     经验值：目标在【处理分辨率(640×360)】里 2~4 px 最合适。
@@ -99,7 +99,7 @@ def convert(src, out, crop, out_size, frames, fps_out):
     print("  限帧    : {}".format(frames if frames else "不限制"))
     print("")
     if scale_x < 1.0:
-        print("  说明：输出比裁剪区小 -> 目标会被【缩小】，适合做「低小慢」测试 ✓")
+        print("  说明：输出比裁剪区小 -> 目标会被【缩小】，适合做「低小慢」测试 ")
     elif scale_x > 1.0:
         print("  说明：输出比裁剪区大 -> 目标会被【放大】(警告：这是在放大细节，不利于模拟小目标)")
     print("")
@@ -123,7 +123,7 @@ def convert(src, out, crop, out_size, frames, fps_out):
     cap.release()
     vw.release()
 
-    print("  ✅ 已生成: {}  ({} 帧, {}x{})".format(out, i, ow, oh))
+    print("  [OK] 已生成: {}  ({} 帧, {}x{})".format(out, i, ow, oh))
     print("")
     print("  下一步：")
     print("    1) 标注真值：python tools\\mark_gt.py --src \"{}\" --step 15".format(out))

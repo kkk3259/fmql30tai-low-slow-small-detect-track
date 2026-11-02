@@ -2,7 +2,7 @@
 """
 板端 NPU 视频推理（npu_video_board.py）—— 在 FMQL30TAI 板子上跑的完整流水线
 
-⚠️ 本文件是**板端专用**脚本，依赖：
+[WARN] 本文件是**板端专用**脚本，依赖：
     · /root/pywork/modelzoo_utils/pyrtutils/     （官方 Python 工具包，需从 PC 传上去）
     · icraft 3.39.0（pip 的 aarch64 whl，必须与系统库 libicraft_*.so 版本一致）
     · OpenCV 4.6（板载镜像自带）、numpy 1.23
@@ -16,7 +16,7 @@
     检出 1.01 个/帧，30/630 帧无检出；输出视频 5.1 MB / 21 秒
     三帧抽检（f100/f300/f500）框位置全部正确
 
-★ 三个必须知道的坑（都是实测踩出来的，官方文档没写）：
+ 三个必须知道的坑（都是实测踩出来的，官方文档没写）：
 
   ① session.forward() 之后**必须**调 device.reset(1)
      · 不调 → 从第二次起返回第一次的缓存（连全黑图都给 0.9183 的"无人机置信度"）
@@ -43,7 +43,7 @@ import os
 import sys
 import time
 
-# ★ 板端 pyrtutils 路径（按实际上传位置改）
+#  板端 pyrtutils 路径（按实际上传位置改）
 PYRTUTILS_DIR = "/root/pywork"
 if PYRTUTILS_DIR not in sys.path:
     sys.path.insert(0, PYRTUTILS_DIR)
@@ -145,14 +145,14 @@ def main():
     ap.add_argument("--threads", type=int, default=4, help="cv2 线程数（影响 letterbox 速度）")
     a = ap.parse_args()
 
-    cv2.setNumThreads(a.threads)      # ★ 优化：1280×720 resize 从 12.84 → 9.61 ms
+    cv2.setNumThreads(a.threads)      #  优化：1280×720 resize 从 12.84 → 9.61 ms
 
     # ---- 初始化 ----
     network = loadNetwork(a.json, a.raw)
     netinfo = Netinfo(network)
     device = xrt.Device.Open(DEVICE_URL)
     session = initSession("zg330", network, device,
-                          ocm_option=4,                    # ★ 不能传 -1
+                          ocm_option=4,                    #  不能传 -1
                           mmuMode=bool(netinfo.mmu),       # 官方建议 netinfo.mmu or mmuMode
                           open_speedmode=False,
                           open_compressFtmp=False)
@@ -197,7 +197,7 @@ def main():
             out = session.forward([ten])
             t2 = time.perf_counter()
 
-            # ★ 坑②：必须 read()，不能 np.array()
+            #  坑②：必须 read()，不能 np.array()
             out[0].read(memoryview(buf_box), 0, BOX_BYTES)
             out[1].read(memoryview(buf_cls), 0, CLS_BYTES)
             t3 = time.perf_counter()
@@ -222,7 +222,7 @@ def main():
                     cv2.putText(frame, "drone", (x1, max(y1 - 5, 12)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
 
-            # ★ 坑①：每帧必须 reset，否则输出不刷新 / 崩溃
+            #  坑①：每帧必须 reset，否则输出不刷新 / 崩溃
             device.reset(1)
             t4 = time.perf_counter()
 

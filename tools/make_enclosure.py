@@ -5,7 +5,7 @@
 输出：docs/enclosure/切割图.svg（含尺寸标注，可直接给淘宝激光切割）
        docs/enclosure/测量清单.md
 
-⚠️ 重要：下面 PARAMS 里的尺寸**必须你自己拿卡尺量**，代码里的默认值只是
+[WARN] 重要：下面 PARAMS 里的尺寸**必须你自己拿卡尺量**，代码里的默认值只是
    占位示例，不是官方数据（仓库 docs/ 里没有任何一处记录板卡物理尺寸）。
    量完改数字，重跑本脚本即可。
 
@@ -18,7 +18,7 @@ import sys
 sys.stdout.reconfigure(encoding="utf-8")
 
 # ============================================================
-# ★★★ 全部尺寸待实测 — 按测量清单逐项填 ★★★
+#  全部尺寸待实测 — 按测量清单逐项填 
 # ============================================================
 P = {
     # ---------- 开发板（FMQL30TAI 悟净 Lite）----------
@@ -197,7 +197,7 @@ def emit_checklist(P, path):
         f"| 4 | **安装孔径** | 卡尺量孔内径 | {P['board_hole_d']:.1f} mm |",
         f"| 5 | **板底净高** | 板面 → 桌面（含风扇、铜柱、走线） | {P['board_standoff']:.1f} mm |",
         "",
-        "> ⚠️ 若板子**没有四角安装孔**（有些开发板只有两个），改成量「任意两个可用孔」的间距，",
+        "> [WARN] 若板子**没有四角安装孔**（有些开发板只有两个），改成量「任意两个可用孔」的间距，",
         "> 并在脚本里把用不到的孔删掉。",
         "",
         "## 二、摄像头 X001（必量）",
@@ -246,11 +246,11 @@ os.makedirs(OUT, exist_ok=True)
 
 svg = os.path.join(OUT, "切割图.svg")
 pw, ph, fw, fh = emit_svg(P, svg)
-print("  ✓ 切割图: %s" % svg)
+print("   切割图: %s" % svg)
 print("      底板 %.1f × %.1f mm ｜ 前面板 %.1f × %.1f mm" % (pw, ph, fw, fh))
 
 ck = os.path.join(OUT, "测量清单.md")
 emit_checklist(P, ck)
-print("  ✓ 测量清单: %s" % ck)
+print("   测量清单: %s" % ck)
 print()
-print("  ⚠️ 当前所有尺寸都是**占位示例**，必须实测后改 tools/make_enclosure.py 顶部的 P 字典。")
+print("  [WARN] 当前所有尺寸都是**占位示例**，必须实测后改 tools/make_enclosure.py 顶部的 P 字典。")

@@ -40,4 +40,4 @@ bad = [(i, i // W, i % W, ref[i], out[i], abs(ref[i] - out[i]))
        and abs(ref[i] - out[i]) > TOL]
 if bad:
     print("不通过的像素(前20):", bad[:20])
-print("结果:", "PASS ✅" if not bad else "FAIL ❌")
+print("结果:", "PASS [OK]" if not bad else "FAIL [FAIL]")

@@ -88,7 +88,7 @@ def main():
     data = np.fromfile(a.src, dtype=np.uint8)      # 避免中文路径问题
     img = cv2.imdecode(data, cv2.IMREAD_COLOR)
     if img is None:
-        print("  ✗ 读不到图片: %s" % a.src)
+        print("   读不到图片: %s" % a.src)
         return 1
     print("  输入 %dx%d" % (img.shape[1], img.shape[0]))
 
@@ -114,10 +114,10 @@ def main():
     else:
         ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, a.quality])
     if not ok:
-        print("  ✗ 编码失败")
+        print("   编码失败")
         return 1
     buf.tofile(a.dst)                              # 避免中文路径问题
-    print("  ✓ 写出 %s  (%.0f KB)" % (a.dst, os.path.getsize(a.dst) / 1024))
+    print("   写出 %s  (%.0f KB)" % (a.dst, os.path.getsize(a.dst) / 1024))
     return 0
 
 

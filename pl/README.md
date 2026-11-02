@@ -11,16 +11,16 @@ FPGA 可编程逻辑部分的 Verilog 源码、约束、仿真与综合脚本。
 
 | 项 | 状态 |
 |---|---|
-| IP2 三级（Top-Hat / CFAR / CCL）流式+行缓存重构 | ✅ 完成，与旧版**逐位一致**（共仿真 `VERDICT IDENTICAL`） |
-| 640×360 综合（Procise，JFMQL30TAI676H） | ✅ 通过：LUT 站点 43,292 + LUTRAM 12,480 = **55,772 / 78,600 = 71.0%**；FF 19,453（12.4%）；**CU48E1（DSP）5 / 400**；块 RAM 0（数据源 `docs/15` §2） |
-| 布局（Place） | 🟡 曾失败 `PLACE-0021 network simplex infeasible`（根因 LUTRAM 压满 SLICEM 列），减负 41% 后待重跑（见 `docs/15`） |
-| 时序（100 MHz 工作域） | ❌ **已发布位流里从未约束、没被分析**；仓库内 `board_lite.fdc` 仍只有 1 条 `create_clock`（见 `docs/14` §5/§6.1） |
-| 位流生成 | ✅ `blink_top.bit` 5.98 MB、`ip2_board_top.bit` 均可出；**板上 LED 候选数饱和到 7（仿真 4）** —— 功能层根因 `cand_buf` 被 `chain_rst_n` 误清零**已修复**，待上板复验 |
-| 板级自测顶层（不接 PS，自出图案 + LED 指示） | ✅ 写好并仿真通过；LED 丝印↔引脚映射见 `constr/board_leds.md`（实测） |
-| **PS↔PL 数据通路（AXI4）** | ✅ **已实现**：`ip2_axi_master_rd/wr.v` + `ip2_axi_top.v` + `ip2_pix_fifo.v`（片内帧缓冲 2^18 ≥ 640×360）；接口契约见 `docs/14` |
-| AXI 全链路仿真 | ✅ **`VERDICT AXI-TOP-OK`**，候选表 36 B 与 Python 参考完全一致（`tb_axi_top.v`） |
-| IP1 预处理 / IP3 NMS / IP4 ROI | ⚠️ 仍是"存全图"版本，**未参与本轮 640 综合、未流式化** |
-| 摄像头接入 | ❌ 未做（本项目不由摄像头直连 PL，图像经 PS 采集后写入 udmabuf，见 `docs/16` §8） |
+| IP2 三级（Top-Hat / CFAR / CCL）流式+行缓存重构 | 完成，与旧版**逐位一致**（共仿真 `VERDICT IDENTICAL`） |
+| 640×360 综合（Procise，JFMQL30TAI676H） | 通过：LUT 站点 43,292 + LUTRAM 12,480 = **55,772 / 78,600 = 71.0%**；FF 19,453（12.4%）；**CU48E1（DSP）5 / 400**；块 RAM 0（数据源 `docs/15` §2） |
+| 布局（Place） | 曾失败 `PLACE-0021 network simplex infeasible`（根因 LUTRAM 压满 SLICEM 列），减负 41% 后待重跑（见 `docs/15`） |
+| 时序（100 MHz 工作域） | **已发布位流里从未约束、没被分析**；仓库内 `board_lite.fdc` 仍只有 1 条 `create_clock`（见 `docs/14` §5/§6.1） |
+| 位流生成 | `blink_top.bit` 5.98 MB、`ip2_board_top.bit` 均可出；**板上 LED 候选数饱和到 7（仿真 4）** —— 功能层根因 `cand_buf` 被 `chain_rst_n` 误清零**已修复**，待上板复验 |
+| 板级自测顶层（不接 PS，自出图案 + LED 指示） | 写好并仿真通过；LED 丝印↔引脚映射见 `constr/board_leds.md`（实测） |
+| **PS↔PL 数据通路（AXI4）** | **已实现**：`ip2_axi_master_rd/wr.v` + `ip2_axi_top.v` + `ip2_pix_fifo.v`（片内帧缓冲 2^18 ≥ 640×360）；接口契约见 `docs/14` |
+| AXI 全链路仿真 | **`VERDICT AXI-TOP-OK`**，候选表 36 B 与 Python 参考完全一致（`tb_axi_top.v`） |
+| IP1 预处理 / IP3 NMS / IP4 ROI | 仍是"存全图"版本，**未参与本轮 640 综合、未流式化** |
+| 摄像头接入 | 未做（本项目不由摄像头直连 PL，图像经 PS 采集后写入 udmabuf，见 `docs/16` §8） |
 
 ---
 
@@ -51,8 +51,8 @@ FPGA 可编程逻辑部分的 Verilog 源码、约束、仿真与综合脚本。
 ### 2.3 参数（`ip2_top_stream` 例化处可覆盖）
 
 ```
-W=640, H=360, MAX_CAND=5         // 640×360 @ MAX_COMP=64
-CFAR: WIN=31, K=4, FLOOR=3         // 真实 std，平方比较判决（不开方）
+W=640, H=360, MAX_CAND=5 // 640×360 @ MAX_COMP=64
+CFAR: WIN=31, K=4, FLOOR=3 // 真实 std，平方比较判决（不开方）
 CCL : MAX_COMP=64, MIN_AREA=2, MAX_AREA=200
 ```
 
@@ -67,9 +67,9 @@ CCL : MAX_COMP=64, MIN_AREA=2, MAX_AREA=200
 1. 全链路只用 valid/ready 握手（自定义接口，不是 AXI4-Stream）。输出寄存器必须在 `o_ready` 时更新——否则背压停顿时数据与 valid 会错位（这是踩过的坑，`win5.v:134-140`）。
 2. CFAR 内部光栅是"扩展"的：`W30=W+30, H30=H+30`（每行左右各补 15 个虚拟 PAD 列）。所以 CFAR 在 PAD 位置拉低 `i_ready`，反压必须一路回到顶层，否则上游会丢像素。
 3. CFAR 的因果对齐（最难的一段，改之前务必看代码注释）：
-   - `diff(t) = |x(t−CENTER_OFF) − mean(t)|`，`CENTER_OFF = 15·W30+15`
-   - 两个盒子（S1 与 S2）共用同一个 31×31 窗口，所以只有一套裁剪面积 `area1`（按 `row−15` 裁剪）—— 相比早期 MAD 版少了一整套除数、延迟线和第二个裁剪器
-   - `x(C)` 从 dbuf1 的第三个读口取（延迟 `2·CENTER_OFF`），`mean(C)` 从 mbuf 取（延迟 `CENTER_OFF`）
+ - `diff(t) = |x(t−CENTER_OFF) − mean(t)|`，`CENTER_OFF = 15·W30+15`
+ - 两个盒子（S1 与 S2）共用同一个 31×31 窗口，所以只有一套裁剪面积 `area1`（按 `row−15` 裁剪）—— 相比早期 MAD 版少了一整套除数、延迟线和第二个裁剪器
+ - `x(C)` 从 dbuf1 的第三个读口取（延迟 `2·CENTER_OFF`），`mean(C)` 从 mbuf 取（延迟 `CENTER_OFF`）
 4. BRAM 用量为 0 是设计选择：本项目存储是 1 写 3 读 / 1 写 2 读，块 RAM 最多 2 口，映射不了 → 全部推断成 LUTRAM（DMEM128D1/DMEM256S1），代价 13,536 LUT 当量，好处是 9.3 Mbit 块 RAM 全空。
 
 ---
@@ -94,8 +94,8 @@ CCL : MAX_COMP=64, MIN_AREA=2, MAX_AREA=200
 
 ```powershell
 cd D:\firstharness\repo\pl\tools
-& "D:\firstharness\venv\Scripts\python.exe" run_sim.py           # 全部
-& "D:\firstharness\venv\Scripts\python.exe" run_sim.py cfar64    # 单跑一项
+& "D:\firstharness\venv\Scripts\python.exe" run_sim.py # 全部
+& "D:\firstharness\venv\Scripts\python.exe" run_sim.py cfar64 # 单跑一项
 ```
 
 当前回归基线（这四个数字是"已知且可接受"的，不要拿它们当 bug）：
@@ -141,15 +141,15 @@ Procise 没有可用批处理入口，必须由人在 GUI Shell 里执行：
 
 ```tcl
 clear_design
-source D:/firstharness/synth/test_ip2.tcl     ;# 只到 elaborate（资源摸底，约 1.6 分钟）
-synthesize                                    ;# 约 11 分钟
+source D:/firstharness/synth/test_ip2.tcl ;# 只到 elaborate（资源摸底，约 1.6 分钟）
+synthesize ;# 约 11 分钟
 ```
 
 或全流程（出位流）：
 
 ```tcl
 clear_design
-source D:/firstharness/synth/board_ip2.tcl    ;# rtl_analyze → synthesize → place → route → bitgen
+source D:/firstharness/synth/board_ip2.tcl ;# rtl_analyze → synthesize → place → route → bitgen
 ```
 
 - 脚本目录：`D:\firstharness\synth\`（`test_ip2.tcl` 640×360 elaborate、`board_ip2.tcl` 板级全流程、`test_ccl_only.tcl` CCL 单独探针）

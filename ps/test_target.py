@@ -107,10 +107,10 @@ def main():
                         best = c
             if best:
                 hit += 1
-                print("   ✓ %2dpx @(%3d,%3d) → (%3d,%3d) area=%2d peak=%3d" %
+                print("    %2dpx @(%3d,%3d) → (%3d,%3d) area=%2d peak=%3d" %
                       (g["size"], g["x"], g["y"], best["x"], best["y"], best["area"], best["peak"]))
             else:
-                print("   ✗ %2dpx @(%3d,%3d) 未检出" % (g["size"], g["x"], g["y"]))
+                print("    %2dpx @(%3d,%3d) 未检出" % (g["size"], g["x"], g["y"]))
         print("=== 检出率 %d/%d = %.1f%% ===" % (hit, len(gt["gt"]), 100.0 * hit / len(gt["gt"])))
 
 
