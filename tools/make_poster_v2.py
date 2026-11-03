@@ -5,7 +5,7 @@
 输出：docs/poster/作品海报_A2_v2.png / .pdf
 """
 import os
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(ROOT, "docs", "poster")
@@ -49,68 +49,47 @@ def wrap(d, text, f, maxw):
     return lines
 
 
-def tech_bg():
-    """科技感主题背景：深蓝渐变 + 工程网格 + 雷达环 + 检测框/航迹"""
-    img = Image.new("RGB", (W, H))
+def photo_bg():
+    """项目实拍背景：低空检测画面压暗做纹理 + 工程网格 + 雷达环"""
+    src = Image.open(os.path.join(FIG, "图9b_NPU检测效果.png")).convert("RGB")
+    # 取中间一帧（避开标题与帧标签）
+    frame = src.crop((580, 130, 1140, 450))
+    r = max(W / frame.width, H / frame.height)
+    frame = frame.resize((int(frame.width * r), int(frame.height * r)), Image.LANCZOS)
+    left = (frame.width - W) // 2
+    top = (frame.height - H) // 2
+    frame = frame.crop((left, top, left + W, top + H))
+    frame = frame.filter(ImageFilter.GaussianBlur(10))
+
+    overlay = Image.new("RGB", (W, H), (7, 19, 32))
+    img = Image.blend(frame, overlay, 0.86)
     d = ImageDraw.Draw(img)
-    for y in range(H):
-        t = y / H
-        d.line([(0, y), (W, y)],
-               fill=tuple(int(a + (b - a) * t) for a, b in zip(BG0, BG1)))
 
     # 工程网格
     for x in range(0, W, 80):
-        d.line([(x, 0), (x, H)], fill=(16, 38, 58), width=1)
+        d.line([(x, 0), (x, H)], fill=(16, 42, 62), width=1)
     for y in range(0, H, 80):
-        d.line([(0, y), (W, y)], fill=(16, 38, 58), width=1)
+        d.line([(0, y), (W, y)], fill=(16, 42, 62), width=1)
 
-    # 顶部光晕
-    glow = Image.new("RGB", (W, H), (0, 0, 0))
-    gd = ImageDraw.Draw(glow)
-    for r in range(1000, 0, -8):
-        a = int(30 * (1 - r / 1000))
-        gd.ellipse([W // 2 - r, -700 - r // 2, W // 2 + r, -700 + r // 2],
-                   fill=(a // 4, a, a + 10))
-    img = Image.blend(img, glow, 0.5)
-    d = ImageDraw.Draw(img)
-
-    # 右上：雷达同心环 + 扫描扇区
+    # 右上雷达环
     cx, cy = W - 280, 300
-    for r in range(140, 820, 110):
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(18, 62, 84), width=2)
-    d.line([(cx - 820, cy), (cx + 820, cy)], fill=(18, 62, 84), width=1)
-    d.line([(cx, cy - 820), (cx, cy + 820)], fill=(18, 62, 84), width=1)
+    for rr in range(160, 820, 120):
+        d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], outline=(20, 70, 92), width=2)
+    d.line([(cx - 820, cy), (cx + 820, cy)], fill=(20, 70, 92), width=1)
+    d.line([(cx, cy - 820), (cx, cy + 820)], fill=(20, 70, 92), width=1)
     d.arc([cx - 660, cy - 660, cx + 660, cy + 660], start=-70, end=12,
-          fill=(26, 120, 140), width=4)
-    d.arc([cx - 440, cy - 440, cx + 440, cy + 440], start=-40, end=35,
-          fill=(22, 96, 116), width=3)
+          fill=(28, 130, 150), width=4)
 
-    # 目标检测框 + 十字准星 + 航迹
-    targets = [(W - 640, 470, 96, 70), (W - 400, 650, 74, 54),
-               (250, H - 430, 86, 62), (W - 900, 980, 62, 46)]
-    for tx, ty, bw, bh in targets:
-        d.rectangle([tx, ty, tx + bw, ty + bh], outline=(32, 130, 150), width=2)
-        mx, my = tx + bw // 2, ty + bh // 2
-        d.line([(mx - 14, my), (mx + 14, my)], fill=(32, 130, 150), width=2)
-        d.line([(mx, my - 14), (mx, my + 14)], fill=(32, 130, 150), width=2)
-    track = [(W - 640, 470), (W - 560, 430), (W - 470, 445), (W - 400, 650)]
-    for i in range(len(track) - 1):
-        d.line([track[i], track[i + 1]], fill=(28, 108, 128), width=2)
-        d.ellipse([track[i][0] - 4, track[i][1] - 4, track[i][0] + 4, track[i][1] + 4],
-                  fill=(28, 108, 128))
-
-    # 左下：PCB 走线
-    pcb = [(0, H - 560), (180, H - 560), (260, H - 480), (260, H - 300),
-           (420, H - 300), (500, H - 380)]
-    for i in range(len(pcb) - 1):
-        d.line([pcb[i], pcb[i + 1]], fill=(18, 50, 76), width=3)
-    for px, py in pcb:
-        d.ellipse([px - 5, py - 5, px + 5, py + 5], fill=(20, 60, 88))
-
-    # 右下：淡青斜线（信号感）
-    for i in range(0, 8):
-        x0 = W - 520 + i * 26
-        d.line([(x0, H), (x0 + 260, H - 260)], fill=(16, 42, 64), width=2)
+    # 顶部与底部压暗，保证标题和页脚可读
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(layer)
+    for y in range(560):
+        a = int(200 * (1 - y / 560) ** 0.7)
+        ld.line([(0, y), (W, y)], fill=(5, 13, 24, a))
+    for y in range(H - 360, H):
+        a = int(190 * ((y - (H - 360)) / 360) ** 0.6)
+        ld.line([(0, y), (W, y)], fill=(5, 13, 24, a))
+    img = Image.alpha_composite(img.convert("RGBA"), layer).convert("RGB")
     return img
 
 
@@ -230,7 +209,7 @@ def coverage(d, x, y, w):
 
 
 def main():
-    img = tech_bg()
+    img = photo_bg()
     d = ImageDraw.Draw(img)
 
     # 顶部
