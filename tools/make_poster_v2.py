@@ -296,28 +296,24 @@ def main():
         d.text((rx, ty + 42), l, font=font(20, False), fill=INK2)
         ty += 76
 
-    # 对比
-    y = section(d, M, 2210, "与传统整图 CNN 的差异")
-    rows = [("检测方式", "整图一次推理", "PL 像素粗筛 + NPU 候选精判"),
-            ("小目标能力", "<8 px 召回 48.5%", "覆盖 2~80 px"),
-            ("算力开销", "与目标数量无关", "神经网络只算个位数候选"),
-            ("端到端帧率", "5.92 fps（软件基线）", "16.6 fps（三域同板）")]
-    rh = 60
-    col1, col2 = 470, 760
-    d.text((M, y), "维度", font=font(21), fill=INK3)
-    d.text((M + col1, y), "传统做法", font=font(21), fill=INK3)
-    d.text((M + col1 + col2, y), "本方案", font=font(21), fill=CYAN)
-    d.line([(M, y + 36), (W - M, y + 36)], fill=(150, 185, 205), width=2)
-    for i, (a, b, c) in enumerate(rows):
-        ry = y + 36 + i * rh
-        d.text((M, ry + 16), a, font=font(22, False), fill=INK)
-        d.text((M + col1, ry + 16), b, font=font(22, False), fill=INK2)
-        d.text((M + col1 + col2, ry + 16), c, font=font(22), fill=CYAN)
-        d.line([(M, ry + rh), (W - M, ry + rh)], fill=(196, 218, 230), width=1)
+    # 公开基准对比
+    y = section(d, M, 2210, "公开基准对比（DUT Anti-UAV test）")
+    pic_w = 1010
+    paste_pic(content, os.path.join(FIG, "baseline_comparison.png"),
+              [M, y, M + pic_w, y + 384])
+    rx = M + pic_w + 46
+    ty = y + 8
+    for v, desc, c in [("0.619", "mAP@[.5:.95]（COCO 协议）", CYAN),
+                       ("超过除 SSD 外", "的全部单阶段方法（SSD 0.632 / 33 fps）", ORANGE),
+                       ("−6.4 点 / FPS ×11.7", "相比两阶段最优 Cascade-RCNN，帧率高一个量级", GREEN)]:
+        d.text((rx, ty), v, font=font(30), fill=c)
+        for j, line in enumerate(wrap(d, desc, font(21, False), 600)):
+            d.text((rx, ty + 44 + j * 30), line, font=font(21, False), fill=INK2)
+        ty += 124
 
     # 能力边界
-    y = section(d, M, 2670, "能力边界：一份硬件覆盖 2~80 px")
-    coverage(d, M, 2750, W - M * 2)
+    y = section(d, M, 2780, "能力边界：一份硬件覆盖 2~80 px")
+    coverage(d, M, 2850, W - M * 2)
 
     # 页脚
     by = H - 74
@@ -327,7 +323,7 @@ def main():
 
     # 每个内容块加磨砂玻璃底
     blocks = [(390, 610), (630, 870), (900, 1270), (1290, 1690),
-              (1710, 2160), (2180, 2620), (2640, 2930)]
+              (1710, 2160), (2180, 2720), (2730, 3030)]
     bg_clear = tech_bg()
     blur_bg = bg_clear.filter(ImageFilter.GaussianBlur(16))
     img = bg_clear.convert("RGBA")
