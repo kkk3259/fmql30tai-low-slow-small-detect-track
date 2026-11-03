@@ -139,10 +139,13 @@ def tech_bg():
 
 
 def section(d, x, y, title, size=32):
+    """标题条居中"""
     f = font(size)
     w = tw(d, title, f)[0]
-    d.rounded_rectangle([x, y, x + w + 60, y + size + 26], radius=6, fill=BAR)
-    d.text((x + 30, y + 7), title, font=f, fill=WHITE)
+    bw = w + 64
+    bx = (W - bw) // 2
+    d.rounded_rectangle([bx, y, bx + bw, y + size + 26], radius=6, fill=BAR)
+    d.text((bx + 32, y + 7), title, font=f, fill=WHITE)
     return y + size + 26 + 28
 
 
@@ -232,108 +235,101 @@ def main():
     content = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(content)
 
-    # 标题区
+    # 标题区（居中）
     t1 = "2026 全国大学生嵌入式芯片与系统设计竞赛 · FPGA 创新设计赛道 · 复旦微方向"
-    d.text(((W - tw(d, t1, font(23, False))[0]) // 2, 92), t1, font=font(23, False), fill=INK2)
+    d.text((W // 2, 92), t1, font=font(23, False), fill=INK2, anchor="ma")
     t2 = "低小慢空间目标智能检测与跟踪系统"
-    d.text(((W - tw(d, t2, font(96))[0]) // 2, 136), t2, font=font(96), fill=INK)
+    d.text((W // 2, 136), t2, font=font(96), fill=INK, anchor="ma")
     t3 = "PL 像素粗筛   ·   NPU 候选精判   ·   PS 航迹管理"
-    d.text(((W - tw(d, t3, font(36))[0]) // 2, 260), t3, font=font(36), fill=CYAN)
+    d.text((W // 2, 260), t3, font=font(36), fill=CYAN, anchor="ma")
     t4 = "FMQL30TAI 悟净 Lite    ARM 4×A53 @1 GHz    ZG330 8 TOPS INT8    78000 LUT @50 MHz"
-    d.text(((W - tw(d, t4, font(23, False))[0]) // 2, 322), t4, font=font(23, False), fill=INK2)
+    d.text((W // 2, 322), t4, font=font(23, False), fill=INK2, anchor="ma")
 
-    # 关键数字
+    # 指标（4 列居中）
     y = 412
     col_w = (W - 2 * M) // 4
     cols = [("16.6", "fps", "三域端到端帧率", "相机 → PL → NPU → 跟踪 → 推流", CYAN),
             ("4.19", "ms", "PL 检测单帧", "512 位 PL-DDR", ORANGE),
             ("0.68", "ms", "NPU 候选判别", "cls128 · 121 算子", GREEN),
             ("2~80", "px", "目标尺寸覆盖", "全分辨率 + 三档降采样", PURPLE)]
-    for i, (v, u, l, s, c) in enumerate(cols):
+    for i, (v, u, l, sub, c) in enumerate(cols):
         cx = M + col_w * i + col_w // 2
-        metric(d, cx, y, v, u, l, s, c, center=True)
+        metric(d, cx, y, v, u, l, sub, c, center=True)
         if i:
             d.line([(M + col_w * i, y + 6), (M + col_w * i, y + 154)], fill=(180, 205, 220), width=1)
 
-    # 左栏：问题
-    y_top = 640
-    y = section(d, M, y_top, "问题")
+    # 问题（居中）
+    y = section(d, 0, 640, "问题")
     items = [("目标只有几像素", "整图 CNN 下采样后几乎拿不到特征，<8 px 召回率仅 48.5%。"),
              ("对比度低、背景杂波", "真实场景是暗剪影；单路 Top-Hat 召回 55%，Black-Hat 后 86%。"),
              ("算力与目标数无关", "整帧推理每帧跑满网络，边缘端跑不动。")]
     yy = y
     for head, body in items:
-        d.text((M, yy), "—", font=font(24, False), fill=ORANGE)
-        d.text((M + 32, yy), head, font=font(25), fill=INK)
-        for j, line in enumerate(wrap(d, body, font(22, False), 880)):
-            d.text((M + 32, yy + 40 + j * 30), line, font=font(22, False), fill=INK2)
-        yy += 122
+        d.text((W // 2, yy), head, font=font(26), fill=INK, anchor="ma")
+        sub = wrap(d, body, font(21, False), 1500)
+        for j, line in enumerate(sub):
+            d.text((W // 2, yy + 40 + j * 30), line, font=font(21, False), fill=INK2, anchor="ma")
+        yy += 46 + len(sub) * 30 + 18
 
-    # 右栏：创新点
-    rx = M + 1160
-    y2 = section(d, rx, y_top, "创新点")
-    inn = [("01", "暗剪影形态学", "单路 Black-Hat 召回 55%→86%，候选数比双路低 3.7 倍。"),
-           ("02", "三域异构级联", "NPU 只算个位数候选，端到端 16.6 fps。"),
-           ("03", "逐像素等价验证", "IP1 灰度化 0 误差，NPU 输出误差 0.002。"),
-           ("04", "平台约束下落地", "绕开未焊接接口，检测器接入 AI_Mate。")]
-    yy = y2
+    # 创新点（居中）
+    y = section(d, 0, 1060, "创新点")
+    inn = [("01", "暗剪影形态学", "把增强方向从亮斑改为暗斑：单路 Black-Hat 召回 55%→86%，候选数比双路低 3.7 倍。"),
+           ("02", "三域异构级联", "NPU 算力只作用在个位数候选上，端到端 16.6 fps。"),
+           ("03", "逐像素等价验证", "RTL 与 OpenCV 参考逐像素比对：IP1 灰度化 0 误差，NPU 输出误差 0.002。"),
+           ("04", "平台约束下落地", "绕开 Lite 未焊接接口，全部走 PS 侧通路；检测器作为自定义算子接入 AI_Mate。")]
+    yy = y
     for num, head, body in inn:
-        d.text((rx, yy + 4), num, font=font(19, mono=True), fill=INK3)
-        d.text((rx + 44, yy), head, font=font(26), fill=INK)
-        for j, line in enumerate(wrap(d, body, font(21, False), 980)):
-            d.text((rx + 44, yy + 38 + j * 30), line, font=font(21, False), fill=INK2)
-        yy += 112
+        d.text((W // 2, yy), f"{num}   {head}", font=font(25), fill=INK, anchor="ma")
+        sub = wrap(d, body, font(20, False), 1500)
+        for j, line in enumerate(sub):
+            d.text((W // 2, yy + 40 + j * 28), line, font=font(20, False), fill=INK2, anchor="ma")
+        yy += 46 + len(sub) * 28 + 16
 
-    # 方案（横向流程）
-    y = section(d, M, 1200, "方案：一条流水线跑完检测与跟踪")
-    flow(d, M, y, W - M * 2)
+    # 方案（居中流程）
+    y = section(d, 0, 1620, "方案：一条流水线跑完检测与跟踪")
+    flow(d, (W - 2196) // 2, y, 2196)
 
-    # 结果
-    y = section(d, M, 1540, "结果：系统整体与板上实测")
+    # 结果（全部居中）
+    y = section(d, 0, 1860, "结果：系统整体与板上实测")
+    pw = 460
     paste_pic(content, os.path.join(FIG, "系统整体实现.jpg"),
-              [M, y, M + 780, y + 585])
-    rx = M + 830
+              [(W - pw) // 2, y, (W + pw) // 2, y + 345])
+    dw = 560
     paste_pic(content, os.path.join(FIG, "图9b_NPU检测效果.png"),
-              [rx, y, rx + 760, y + 330], crop=(0, 128, 1724, 445))
-    ty = y + 360
-    stat_col = 380
-    for i, (v, l, c) in enumerate([("76.6% → 0.8%", "航迹确认后的虚警残留", ORANGE),
-                                   ("0.920", "mAP50（自研 YOLOv11n 单类）", GREEN),
-                                   ("13.1 s", "断电到服务就绪", CYAN),
-                                   ("84.4%", "三域位流 LUT（独立位流 61.9%）", PURPLE)]):
-        sx = rx + 190 + (i % 2) * stat_col
-        sy = ty + (i // 2) * 112
-        d.text((sx, sy), v, font=font(30, mono=True), fill=c, anchor="ma")
-        d.text((sx, sy + 38), l, font=font(19, False), fill=INK2, anchor="ma")
+              [(W - dw) // 2, y + 360, (W + dw) // 2, y + 550], crop=(0, 128, 1724, 445))
+    ty = y + 580
+    stats = [("76.6% → 0.8%", "航迹确认后的虚警残留", ORANGE),
+             ("0.920", "mAP50（自研 YOLOv11n 单类）", GREEN),
+             ("13.1 s", "断电到服务就绪", CYAN),
+             ("84.4%", "三域位流 LUT（独立位流 61.9%）", PURPLE)]
+    for i, (v, l, c) in enumerate(stats):
+        sx = W // 2 + (i - 1.5) * 500
+        d.text((sx, ty), v, font=font(28, mono=True), fill=c, anchor="ma")
+        d.text((sx, ty + 36), l, font=font(18, False), fill=INK2, anchor="ma")
 
-    # 公开基准对比
-    y = section(d, M, 2250, "公开基准对比（DUT Anti-UAV test）")
-    pic_w = 1010
+    # 公开基准（图 + 结论，居中）
+    y = section(d, 0, 2620, "公开基准对比（DUT Anti-UAV test）")
     paste_pic(content, os.path.join(FIG, "baseline_comparison.png"),
-              [M, y, M + pic_w, y + 384])
-    rx = M + pic_w + 46
-    ty = y + 8
-    for v, desc, c in [("0.619", "mAP@[.5:.95]（COCO 协议）", CYAN),
-                       ("超过除 SSD 外", "的全部单阶段方法（SSD 0.632 / 33 fps）", ORANGE),
-                       ("−6.4 点 / FPS ×11.7", "相比两阶段最优 Cascade-RCNN，帧率高一个量级", GREEN)]:
-        d.text((rx, ty), v, font=font(30), fill=c)
-        for j, line in enumerate(wrap(d, desc, font(21, False), 600)):
-            d.text((rx, ty + 44 + j * 30), line, font=font(21, False), fill=INK2)
-        ty += 124
+              [M + 160, y, W - M - 160, y + 230])
+    ty = y + 244
+    for v, c in [("0.619  mAP@[.5:.95]，超过除 SSD 外全部单阶段（SSD 0.632 / 33 fps）", ORANGE),
+                 ("−6.4 点 / FPS ×11.7：相比两阶段最优 Cascade-RCNN，帧率高一个量级", GREEN)]:
+        d.text((W // 2, ty), v, font=font(23), fill=c, anchor="ma")
+        ty += 40
 
-    # 能力边界
-    y = section(d, M, 2790, "能力边界：一份硬件覆盖 2~80 px")
-    coverage(d, M, 2860, W - M * 2)
+    # 能力边界（居中）
+    y = section(d, 0, 3050, "能力边界：一份硬件覆盖 2~80 px")
+    coverage(d, M + 60, y, W - 2 * M - 120)
 
     # 页脚
     by = H - 74
     d.rectangle([0, H - 110, W, H], fill=(8, 24, 40, 210))
-    d.text((M, by), "全部指标为板上实测 ｜ 代码与文档：gitee.com/kkk3259/fmql30tai-low-slow-small-detect-track",
-           font=font(21, False), fill=(214, 228, 240))
+    d.text((W // 2, by), "全部指标为板上实测 ｜ 代码与文档：gitee.com/kkk3259/fmql30tai-low-slow-small-detect-track",
+           font=font(21, False), fill=(214, 228, 240), anchor="ma")
 
     # 每个内容块加磨砂玻璃底
-    blocks = [(390, 610), (630, 1170), (1200, 1520), (1540, 2230),
-              (2250, 2770), (2790, 3090)]
+    blocks = [(390, 610), (620, 1030), (1050, 1520), (1530, 1830),
+              (1850, 2590), (2610, 3030), (3050, 3290)]
     bg_clear = tech_bg()
     blur_bg = bg_clear.filter(ImageFilter.GaussianBlur(16))
     img = bg_clear.convert("RGBA")
@@ -350,8 +346,7 @@ def main():
         bb = content.crop((0, a, W, b)).getbbox()
         if not bb:
             continue
-        boxes.append((max(0, bb[0] - 26), a + bb[1] - 18,
-                      min(W, bb[2] + 26), a + bb[3] + 18))
+        boxes.append((M, a + bb[1] - 18, W - M, a + bb[3] + 18))
 
     # 柔和投影
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
