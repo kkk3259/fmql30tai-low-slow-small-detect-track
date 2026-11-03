@@ -17,7 +17,7 @@
 
 ```powershell
 # 0) 准备：把本机路径按你的环境改好（见下方"路径说明"）
-$py = "D:\lowslow\venv\Scripts\python.exe" # 换成你自己的虚拟环境
+$py = "python" # 换成你自己的虚拟环境
 
 # 1) 填充内容（产出 out_report.docx）
 & $py report\fill_report.py

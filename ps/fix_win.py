@@ -15,7 +15,7 @@ RTL 真值（repo/pl/rtl/ip2_axi_top.v，6 位地址）：
 """
 import io, os
 
-PS = r"D:\firstharness\repo\ps"
+PS = r"./ps"
 files = ["cam_pipe.py", "cand_read.py", "probe64.py", "probe64b.py",
          "probe_one.py", "probe_sizes.py", "size_sweep.py"]
 

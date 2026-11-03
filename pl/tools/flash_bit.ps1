@@ -1,7 +1,7 @@
 # flash_bit.ps1 —— 把位流烧进 PL（fpga_manager 自加载，可远程执行）
 #
 # 用法：
-#   powershell -File flash_bit.ps1 -Bin D:\firstharness\synth\vivado\ip2_ps4\ip2_board_se21.bin
+#   powershell -File flash_bit.ps1 -Bin ./synth\vivado\ip2_ps4\ip2_board_se21.bin
 #
 # 要点（踩过的坑，别改）：
 #   1. 必须用 Vivado 的 `write_bitstream -bin_file` 直接生成的**无头 .bin**；
@@ -28,7 +28,7 @@ $item = Get-Item $Bin
 
 # 1) 字节交换（Vivado 已生成无头 .bin，这里只交换，不剥头）
 $swapped = [System.IO.Path]::Combine($item.DirectoryName, ($item.BaseName + "_swap.bin"))
-& $py "D:\firstharness\repo\tools\mk_swap_bin.py" $Bin $swapped | Out-Null
+& $py "./tools\mk_swap_bin.py" $Bin $swapped | Out-Null
 if (-not (Test-Path $swapped)) { "ERROR: 字节交换失败"; exit 1 }
 $head = [System.IO.File]::ReadAllBytes($swapped)[0..3]
 $headHex = ($head | ForEach-Object { $_.ToString("X2") }) -join " "

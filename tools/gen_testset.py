@@ -127,7 +127,7 @@ def make_scene(out_dir, idx, name, bg, dark, size, contrast, start, vel, nframes
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=r"D:\firstharness\dl\testset")
+    ap.add_argument("--out", default=r"./data/testset")
     ap.add_argument("--frames", type=int, default=90)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)

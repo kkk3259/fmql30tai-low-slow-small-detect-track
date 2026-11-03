@@ -69,7 +69,7 @@ RTL 是同一套（`pl/rtl/`），Procise 和 Vivado 都能综合，不需要写
 ## 4. 一键脚本
 
 ```powershell
-cd D:\firstharness\synth\vivado
+cd synth\vivado
 & "D:\Xilinx\Vivado\2018.2\bin\vivado.bat" -mode batch -source build_bd.tcl -nojournal
 ```
 

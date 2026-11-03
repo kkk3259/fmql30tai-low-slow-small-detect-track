@@ -1,10 +1,10 @@
 """天空小目标专用测试集：只做比赛场景（天空/云/夜空），目标 3~40px，明暗都有。
-输出 D:\firstharness\dl\skyset\<name>.mp4 + .json（逐帧真值）"""
+输出 ./data/skyset\<name>.mp4 + .json（逐帧真值）"""
 import os, json, math
 import numpy as np, cv2
 
 W, H, N = 640, 360, 120
-OUT = r"D:\firstharness\dl\skyset"
+OUT = r"./data/skyset"
 os.makedirs(OUT, exist_ok=True)
 rng = np.random.default_rng(2025)
 

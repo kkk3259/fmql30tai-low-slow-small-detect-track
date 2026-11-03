@@ -24,7 +24,7 @@
 ```
 主线（必须保住）：Vivado + 现有 ip2_ps4 位流
  检测算法、候选表、网页、跟踪、演示，全部在这条线上迭代
- 产物：D:\firstharness\synth\vivado\ip2_ps4\ip2_ps.runs\impl_1\ip2_bd_wrapper.bit
+ 产物：synth\vivado\ip2_ps4\...\ip2_bd_wrapper.bit
 
 支线（限时突破）：Procise 三域
  只回答一个问题：PS + NPU + IP2 能否同板综合出位流

@@ -1,10 +1,10 @@
 """丰富测试集：每帧 15+ 目标（无人机/鸟/飞机/气球/昆虫剪影），明暗混合，尺寸 3~40px。
-输出 D:\firstharness\dl\richset\{name}.mp4 / .json / {name}_gt.jpg（真值标注图）"""
+输出 ./data/richset\{name}.mp4 / .json / {name}_gt.jpg（真值标注图）"""
 import os, json, math
 import numpy as np, cv2
 
 W, H = 640, 360
-OUT = r"D:\firstharness\dl\richset"
+OUT = r"./data/richset"
 os.makedirs(OUT, exist_ok=True)
 rng = np.random.default_rng(7)
 

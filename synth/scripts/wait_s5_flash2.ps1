@@ -26,11 +26,11 @@ while ((Get-Date) -lt $deadline) {
 if (-not (Test-Path $bit)) { L "TIMEOUT no bit"; $log | Set-Content $out; exit 1 }
 L ("bit {0:N0} B {1}" -f (Get-Item $bit).Length, (Get-Item $bit).LastWriteTime.ToString("HH:mm:ss"))
 
-& $py "D:\firstharness\repo\tools\mk_bin.py" $bit $bin 2>&1 | ForEach-Object { L ("mk_bin " + $_) }
+& $py "./tools\mk_bin.py" $bit $bin 2>&1 | ForEach-Object { L ("mk_bin " + $_) }
 if (-not (Test-Path $bin)) { L "mk_bin FAILED"; $log | Set-Content $out; exit 1 }
 
 & $scp -i $k -o StrictHostKeyChecking=no $bin "${B}:/lib/firmware/" 2>&1 | Out-Null
-& $scp -i $k -o StrictHostKeyChecking=no "D:\firstharness\repo\ps\probe_ver.py" "${B}:/root/ip2/" 2>&1 | Out-Null
+& $scp -i $k -o StrictHostKeyChecking=no "./ps\probe_ver.py" "${B}:/root/ip2/" 2>&1 | Out-Null
 L "scp done"
 
 $r = & $ssh -i $k -o StrictHostKeyChecking=no $B "pkill -9 -f 'cam_pipe[.]py'; pkill -9 -f 'cam3d_[t]est'; sleep 3; echo ours3d_s5.bin > /sys/class/fpga_manager/fpga0/firmware; sleep 3; cat /sys/class/fpga_manager/fpga0/state" 2>&1

@@ -1,6 +1,6 @@
 # 悟净 Lite 板上 4 颗 PL LED 的丝印 ↔ FPGA 引脚对照（实测）
 
-> 数据来源：2026-10-23 用 `led_map_top.bit`（`D:\firstharness\synth\board\led_map_top.v`）实测。
+> 数据来源：2026-10-23 用 `led_map_top.bit`（`synth\board\led_map_top.v`）实测。
 > 该位流把 4 个引脚驱动成 4 种完全不同的行为，人眼一一对上号。
 
 ## 硬件事实（来自官方资料）

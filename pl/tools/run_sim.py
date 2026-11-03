@@ -12,9 +12,9 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 IVERILOG = r'C:\iverilog\bin\iverilog.exe'
 VVP = r'C:\iverilog\bin\vvp.exe'
-SIM = r'D:\firstharness\repo\pl\sim'
-TB = r'D:\firstharness\repo\pl\tb'
-RTL = r'D:\firstharness\repo\pl\rtl'
+SIM = r'./pl\sim'
+TB = r'./pl\tb'
+RTL = r'./pl\rtl'
 
 ALL_RTL = ['minmax_tree.v', 'win5.v', 'tophat_5x5_stream.v',
            'cfar_threshold_stream.v',

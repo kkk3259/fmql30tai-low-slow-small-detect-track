@@ -22,7 +22,7 @@ while ((Get-Date) -lt $deadline) {
 if (-not (Test-Path $bit)) { Say "超时未出流"; exit 1 }
 
 Say "转 bin..."
-& $py "D:\firstharness\repo\tools\mk_bin.py" $bit $bin 2>&1 | Select-Object -Last 2 | ForEach-Object { Say "  $_" }
+& $py "./tools\mk_bin.py" $bit $bin 2>&1 | Select-Object -Last 2 | ForEach-Object { Say "  $_" }
 if (-not (Test-Path $bin)) { Say "转 bin 失败"; exit 1 }
 
 Say "上传到板子..."

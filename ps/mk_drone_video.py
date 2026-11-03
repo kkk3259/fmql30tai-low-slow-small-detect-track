@@ -9,8 +9,8 @@ import cv2
 import numpy as np
 import subprocess
 
-SRC = r"D:\firstharness\dl\t4_fourdrones.png"
-DST = r"D:\firstharness\dl\drone_syn.mp4"
+SRC = r"./data/t4_fourdrones.png"
+DST = r"./data/drone_syn.mp4"
 W, H, NF = 960, 544, 240
 
 img = cv2.imread(SRC)
