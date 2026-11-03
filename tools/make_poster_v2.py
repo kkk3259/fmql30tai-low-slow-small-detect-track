@@ -325,21 +325,43 @@ def main():
     d.text((M, by), "全部指标为板上实测 ｜ 代码与文档：gitee.com/kkk3259/fmql30tai-low-slow-small-detect-track",
            font=font(21, False), fill=(214, 228, 240))
 
-    # 每个内容块加白底框
+    # 每个内容块加磨砂玻璃底
     blocks = [(390, 600), (620, 850), (870, 1230), (1250, 1670),
               (1690, 2140), (2160, 2570), (2680, 2940)]
-    img = tech_bg()
-    db = ImageDraw.Draw(img)
+    bg_clear = tech_bg()
+    blur_bg = bg_clear.filter(ImageFilter.GaussianBlur(16))
+    img = bg_clear.convert("RGBA")
+
+    boxes = []
     for a, b in blocks:
         bb = content.crop((0, a, W, b)).getbbox()
         if not bb:
             continue
-        x0 = max(0, bb[0] - 26)
-        y0 = a + bb[1] - 18
-        x1 = min(W, bb[2] + 26)
-        y1 = a + bb[3] + 18
-        db.rounded_rectangle([x0, y0, x1, y1], radius=14,
-                             fill=(255, 255, 255, 178), outline=(78, 148, 178), width=2)
+        boxes.append((max(0, bb[0] - 26), a + bb[1] - 18,
+                      min(W, bb[2] + 26), a + bb[3] + 18))
+
+    # 柔和投影
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow)
+    for (x0, y0, x1, y1) in boxes:
+        sd.rounded_rectangle([x0 + 4, y0 + 10, x1 + 4, y1 + 10], radius=16, fill=(8, 36, 56, 72))
+    img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(9)))
+
+    # 磨砂玻璃：模糊背景 + 白色蒙层
+    for (x0, y0, x1, y1) in boxes:
+        w_, h_ = x1 - x0, y1 - y0
+        if w_ <= 2 or h_ <= 2:
+            continue
+        region = blur_bg.crop((x0, y0, x1, y1))
+        white = Image.new("RGBA", region.size, (255, 255, 255, 255))
+        glass = Image.blend(region, white, 0.64)
+        mask = Image.new("L", region.size, 0)
+        ImageDraw.Draw(mask).rounded_rectangle([0, 0, w_ - 1, h_ - 1], radius=14, fill=255)
+        img.paste(glass, (x0, y0), mask)
+
+    db = ImageDraw.Draw(img)
+    for (x0, y0, x1, y1) in boxes:
+        db.rounded_rectangle([x0, y0, x1, y1], radius=14, outline=(126, 188, 210), width=2)
         db.line([(x0 + 16, y0 + 3), (x0 + 64, y0 + 3)], fill=(14, 112, 142), width=4)
     img = Image.alpha_composite(img, content)
 
