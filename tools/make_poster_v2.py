@@ -255,42 +255,41 @@ def main():
         if i:
             d.line([(M + col_w * i, y + 6), (M + col_w * i, y + 154)], fill=(180, 205, 220), width=1)
 
-    # 问题
-    y = section(d, M, 660, "问题")
+    # 左栏：问题
+    y_top = 640
+    y = section(d, M, y_top, "问题")
     items = [("目标只有几像素", "整图 CNN 下采样后几乎拿不到特征，<8 px 召回率仅 48.5%。"),
              ("对比度低、背景杂波", "真实场景是暗剪影；单路 Top-Hat 召回 55%，Black-Hat 后 86%。"),
-             ("算力与目标数无关", "整帧推理每帧跑满网络，边缘端跑不动，也浪费。")]
+             ("算力与目标数无关", "整帧推理每帧跑满网络，边缘端跑不动。")]
     yy = y
     for head, body in items:
-        d.text((M, yy), "—", font=font(25, False), fill=ORANGE)
-        d.text((M + 34, yy), head + "：", font=font(25), fill=INK)
-        hw = tw(d, head + "：", font(25))[0]
-        d.text((M + 34 + hw, yy), body, font=font(23, False), fill=INK2)
-        yy += 46
-    d.text((M + 1240, y - 4), "解法", font=font(21, False), fill=INK3)
-    d.text((M + 1240, y + 28), "PL 粗筛（毫秒级）\nNPU 只判个位数候选\nPS 管航迹与推流",
-           font=font(23, False), fill=INK, spacing=10)
+        d.text((M, yy), "—", font=font(24, False), fill=ORANGE)
+        d.text((M + 32, yy), head, font=font(25), fill=INK)
+        for j, line in enumerate(wrap(d, body, font(22, False), 880)):
+            d.text((M + 32, yy + 40 + j * 30), line, font=font(22, False), fill=INK2)
+        yy += 122
 
-    # 方案
-    y = section(d, M, 930, "方案：一条流水线跑完检测与跟踪")
+    # 右栏：创新点
+    rx = M + 1160
+    y2 = section(d, rx, y_top, "创新点")
+    inn = [("01", "暗剪影形态学", "单路 Black-Hat 召回 55%→86%，候选数比双路低 3.7 倍。"),
+           ("02", "三域异构级联", "NPU 只算个位数候选，端到端 16.6 fps。"),
+           ("03", "逐像素等价验证", "IP1 灰度化 0 误差，NPU 输出误差 0.002。"),
+           ("04", "平台约束下落地", "绕开未焊接接口，检测器接入 AI_Mate。")]
+    yy = y2
+    for num, head, body in inn:
+        d.text((rx, yy + 4), num, font=font(19, mono=True), fill=INK3)
+        d.text((rx + 44, yy), head, font=font(26), fill=INK)
+        for j, line in enumerate(wrap(d, body, font(21, False), 980)):
+            d.text((rx + 44, yy + 38 + j * 30), line, font=font(21, False), fill=INK2)
+        yy += 112
+
+    # 方案（横向流程）
+    y = section(d, M, 1200, "方案：一条流水线跑完检测与跟踪")
     flow(d, M, y, W - M * 2)
 
-    # 创新点
-    y = section(d, M, 1320, "创新点")
-    inn = [("01", "暗剪影形态学", "把增强方向从亮斑改为暗斑：单路 Black-Hat 召回 55%→86%，候选数比双路低 3.7 倍。"),
-           ("02", "三域异构级联", "NPU 算力只作用在个位数候选上，端到端 16.6 fps。"),
-           ("03", "逐像素等价验证", "RTL 与 OpenCV 参考逐像素比对：IP1 灰度化 0 误差，NPU 输出误差 0.002。"),
-           ("04", "平台约束下落地", "绕开 Lite 未焊接接口，全部走 PS 侧通路；检测器作为自定义算子接入 AI_Mate。")]
-    for i, (num, head, body) in enumerate(inn):
-        cx = M + (i % 2) * 1100
-        cy = y + (i // 2) * 150
-        d.text((cx, cy + 4), num, font=font(19, mono=True), fill=INK3)
-        d.text((cx + 46, cy), head, font=font(29), fill=INK)
-        for j, line in enumerate(wrap(d, body, font(23, False), 980)):
-            d.text((cx + 46, cy + 42 + j * 32), line, font=font(23, False), fill=INK2)
-
     # 结果
-    y = section(d, M, 1740, "结果：系统整体与板上实测")
+    y = section(d, M, 1540, "结果：系统整体与板上实测")
     paste_pic(content, os.path.join(FIG, "系统整体实现.jpg"),
               [M, y, M + 780, y + 585])
     rx = M + 830
@@ -308,7 +307,7 @@ def main():
         d.text((sx, sy + 38), l, font=font(19, False), fill=INK2, anchor="ma")
 
     # 公开基准对比
-    y = section(d, M, 2490, "公开基准对比（DUT Anti-UAV test）")
+    y = section(d, M, 2250, "公开基准对比（DUT Anti-UAV test）")
     pic_w = 1010
     paste_pic(content, os.path.join(FIG, "baseline_comparison.png"),
               [M, y, M + pic_w, y + 384])
@@ -323,8 +322,8 @@ def main():
         ty += 124
 
     # 能力边界
-    y = section(d, M, 3060, "能力边界：一份硬件覆盖 2~80 px")
-    coverage(d, M, 3130, W - M * 2)
+    y = section(d, M, 2790, "能力边界：一份硬件覆盖 2~80 px")
+    coverage(d, M, 2860, W - M * 2)
 
     # 页脚
     by = H - 74
@@ -333,8 +332,8 @@ def main():
            font=font(21, False), fill=(214, 228, 240))
 
     # 每个内容块加磨砂玻璃底
-    blocks = [(390, 610), (630, 870), (900, 1270), (1290, 1690),
-              (1710, 2430), (2460, 3020), (3040, 3310)]
+    blocks = [(390, 610), (630, 1170), (1200, 1520), (1540, 2230),
+              (2250, 2770), (2790, 3090)]
     bg_clear = tech_bg()
     blur_bg = bg_clear.filter(ImageFilter.GaussianBlur(16))
     img = bg_clear.convert("RGBA")
