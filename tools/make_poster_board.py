@@ -154,8 +154,8 @@ def main():
     y = 300
     bar(d, M, y, "01  问题与思路")
     px, py, pw, ph = M, y + 76, 1150, 300
-    d.rounded_rectangle([px - 10, py - 10, px + pw + 10, py + ph + 10], radius=10,
-                        fill=(255, 255, 255, 220), outline=(150, 195, 215), width=2)
+    d.rounded_rectangle([px - 10, py - 10, px + pw + 10, py + ph + 10], radius=12,
+                        fill=(255, 255, 255, 178), outline=(78, 148, 178), width=2)
     items = [("目标只有几像素", "整图 CNN 下采样后几乎拿不到特征，<8 px 召回率仅 48.5%。"),
              ("对比度低、背景杂波", "真实场景是暗剪影；单路 Top-Hat 召回 55%，Black-Hat 后 86%。"),
              ("算力与目标数无关", "整帧推理每帧跑满网络，边缘端跑不动。")]
@@ -198,8 +198,8 @@ def main():
     for i, (head, body, path) in enumerate(cards):
         cx = M + (i % 2) * (cw + 50)
         cy = y + 78 + (i // 2) * (ch + 40)
-        d.rounded_rectangle([cx, cy, cx + cw, cy + ch], radius=10,
-                            fill=(255, 255, 255, 226), outline=(150, 195, 215), width=2)
+        d.rounded_rectangle([cx, cy, cx + cw, cy + ch], radius=12,
+                            fill=(255, 255, 255, 178), outline=(78, 148, 178), width=2)
         d.text((cx + 22, cy + 16), head, font=font(27), fill=INK)
         d.text((cx + 22, cy + 56), body, font=font(20, False), fill=INK2)
         pic(img, path, [cx + 16, cy + 96, cx + cw - 16, cy + ch - 16])

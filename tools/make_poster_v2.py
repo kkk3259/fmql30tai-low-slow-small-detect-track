@@ -17,7 +17,7 @@ M = 120
 
 BG_TOP, BG_BOT = (64, 142, 172), (196, 224, 238)
 INK, INK2, INK3 = (16, 48, 72), (72, 104, 128), (120, 148, 168)
-BAR = (26, 88, 136)
+BAR = (18, 92, 118)
 CYAN, ORANGE, GREEN, PURPLE = (8, 122, 150), (190, 106, 6), (12, 118, 98), (96, 58, 186)
 WHITE = (255, 255, 255)
 
@@ -316,8 +316,8 @@ def main():
         d.line([(M, ry + rh), (W - M, ry + rh)], fill=(196, 218, 230), width=1)
 
     # 能力边界
-    y = section(d, M, 2750, "能力边界：一份硬件覆盖 2~80 px")
-    coverage(d, M, 2820, W - M * 2)
+    y = section(d, M, 2680, "能力边界：一份硬件覆盖 2~80 px")
+    coverage(d, M, 2750, W - M * 2)
 
     # 页脚
     by = H - 74
@@ -327,7 +327,7 @@ def main():
 
     # 每个内容块加白底框
     blocks = [(390, 600), (620, 850), (870, 1230), (1250, 1670),
-              (1690, 2140), (2160, 2570), (2750, 3010)]
+              (1690, 2140), (2160, 2570), (2680, 2940)]
     img = tech_bg()
     db = ImageDraw.Draw(img)
     for a, b in blocks:
@@ -338,8 +338,9 @@ def main():
         y0 = a + bb[1] - 18
         x1 = min(W, bb[2] + 26)
         y1 = a + bb[3] + 18
-        db.rounded_rectangle([x0, y0, x1, y1], radius=18,
-                             fill=(255, 255, 255, 212), outline=(150, 195, 215), width=2)
+        db.rounded_rectangle([x0, y0, x1, y1], radius=14,
+                             fill=(255, 255, 255, 178), outline=(78, 148, 178), width=2)
+        db.line([(x0 + 16, y0 + 3), (x0 + 64, y0 + 3)], fill=(14, 112, 142), width=4)
     img = Image.alpha_composite(img, content)
 
     os.makedirs(OUT_DIR, exist_ok=True)
