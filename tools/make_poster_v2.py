@@ -223,8 +223,8 @@ def coverage(d, x, y, w):
 
 
 def main():
-    img = tech_bg()
-    d = ImageDraw.Draw(img)
+    content = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(content)
 
     # 标题区
     d.text((M, 90), "2026 全国大学生嵌入式芯片与系统设计竞赛 · FPGA 创新设计赛道 · 复旦微方向",
@@ -236,7 +236,7 @@ def main():
            font=font(23, False), fill=INK2)
 
     # 关键数字
-    y = 400
+    y = 412
     cols = [(M, "16.6", "fps", "三域端到端帧率", "相机 → PL → NPU → 跟踪 → 推流", CYAN),
             (M + 560, "4.19", "ms", "PL 检测单帧", "512 位 PL-DDR", ORANGE),
             (M + 1120, "0.68", "ms", "NPU 候选判别", "cls128 · 121 算子", GREEN),
@@ -247,7 +247,7 @@ def main():
             d.line([(x - 26, y + 6), (x - 26, y + 154)], fill=(180, 205, 220), width=1)
 
     # 问题
-    y = section(d, M, 620, "问题")
+    y = section(d, M, 650, "问题")
     items = [("目标只有几像素", "整图 CNN 下采样后几乎拿不到特征，<8 px 召回率仅 48.5%。"),
              ("对比度低、背景杂波", "真实场景是暗剪影；单路 Top-Hat 召回 55%，Black-Hat 后 86%。"),
              ("算力与目标数无关", "整帧推理每帧跑满网络，边缘端跑不动，也浪费。")]
@@ -263,29 +263,28 @@ def main():
            font=font(23, False), fill=INK, spacing=10)
 
     # 方案
-    y = section(d, M, 980, "方案：一条流水线跑完检测与跟踪")
-    y = flow(d, M, y, W - M * 2)
+    y = section(d, M, 900, "方案：一条流水线跑完检测与跟踪")
+    flow(d, M, y, W - M * 2)
 
     # 创新点
-    y = section(d, M, y + 24, "创新点")
+    y = section(d, M, 1290, "创新点")
     inn = [("01", "暗剪影形态学", "把增强方向从亮斑改为暗斑：单路 Black-Hat 召回 55%→86%，候选数比双路低 3.7 倍。"),
            ("02", "三域异构级联", "NPU 算力只作用在个位数候选上，端到端 16.6 fps。"),
            ("03", "逐像素等价验证", "RTL 与 OpenCV 参考逐像素比对：IP1 灰度化 0 误差，NPU 输出误差 0.002。"),
            ("04", "平台约束下落地", "绕开 Lite 未焊接接口，全部走 PS 侧通路；检测器作为自定义算子接入 AI_Mate。")]
     for i, (num, head, body) in enumerate(inn):
         cx = M + (i % 2) * 1100
-        cy = y + (i // 2) * 168
+        cy = y + (i // 2) * 150
         d.text((cx, cy + 4), num, font=font(19, mono=True), fill=INK3)
         d.text((cx + 46, cy), head, font=font(29), fill=INK)
         for j, line in enumerate(wrap(d, body, font(23, False), 980)):
             d.text((cx + 46, cy + 42 + j * 32), line, font=font(23, False), fill=INK2)
-    y += 2 * 168 + 6
 
     # 结果
-    y = section(d, M, y + 26, "结果：板上实测")
+    y = section(d, M, 1730, "结果：板上实测")
     img_w = 1400
-    paste_pic(img, os.path.join(FIG, "图9b_NPU检测效果.png"),
-              [M, y, M + img_w, y + 380], crop=(0, 128, 1724, 445))
+    paste_pic(content, os.path.join(FIG, "图9b_NPU检测效果.png"),
+              [M, y, M + img_w, y + 290], crop=(0, 128, 1724, 445))
     rx = M + img_w + 70
     d.text((rx, y + 4), "NPU 整图检测 · 真实 720P 逐帧", font=font(21, False), fill=INK3)
     ty = y + 40
@@ -296,15 +295,14 @@ def main():
         d.text((rx, ty), v, font=font(34, mono=True), fill=c)
         d.text((rx, ty + 42), l, font=font(20, False), fill=INK2)
         ty += 76
-    y += 410
 
     # 对比
-    y = section(d, M, y + 12, "与传统整图 CNN 的差异")
+    y = section(d, M, 2190, "与传统整图 CNN 的差异")
     rows = [("检测方式", "整图一次推理", "PL 像素粗筛 + NPU 候选精判"),
             ("小目标能力", "<8 px 召回 48.5%", "覆盖 2~80 px"),
             ("算力开销", "与目标数量无关", "神经网络只算个位数候选"),
             ("端到端帧率", "5.92 fps（软件基线）", "16.6 fps（三域同板）")]
-    rh = 64
+    rh = 60
     col1, col2 = 470, 760
     d.text((M, y), "维度", font=font(21), fill=INK3)
     d.text((M + col1, y), "传统做法", font=font(21), fill=INK3)
@@ -312,17 +310,17 @@ def main():
     d.line([(M, y + 36), (W - M, y + 36)], fill=(150, 185, 205), width=2)
     for i, (a, b, c) in enumerate(rows):
         ry = y + 36 + i * rh
-        d.text((M, ry + 17), a, font=font(22, False), fill=INK)
-        d.text((M + col1, ry + 17), b, font=font(22, False), fill=INK2)
-        d.text((M + col1 + col2, ry + 17), c, font=font(22), fill=CYAN)
+        d.text((M, ry + 16), a, font=font(22, False), fill=INK)
+        d.text((M + col1, ry + 16), b, font=font(22, False), fill=INK2)
+        d.text((M + col1 + col2, ry + 16), c, font=font(22), fill=CYAN)
         d.line([(M, ry + rh), (W - M, ry + rh)], fill=(196, 218, 230), width=1)
 
     # 能力边界
-    y = section(d, M, y + 36 + len(rows) * rh + 46, "能力边界：一份硬件覆盖 2~80 px")
-    y2 = coverage(d, M, y, W - M * 2)
+    y = section(d, M, 2570, "能力边界：一份硬件覆盖 2~80 px")
+    coverage(d, M, 2640, W - M * 2)
 
     # 交付与复现
-    y3 = section(d, M, y2 + 56, "交付与复现")
+    y3 = section(d, M, 2860, "交付与复现")
     d.text((M, y3), "仓库包含 PL 源码与约束、PS 应用、模型与量化校准集、测试数据与完整报告。",
            font=font(22, False), fill=INK2)
     d.text((M, y3 + 40), "板上复现：加载 ours3d_s5.bin，启动 init.d 服务，浏览器打开 :8080。",
@@ -332,6 +330,23 @@ def main():
     by = H - 74
     d.text((M, by), "全部指标为板上实测 ｜ 代码与文档：gitee.com/kkk3259/fmql30tai-low-slow-small-detect-track",
            font=font(21, False), fill=INK3)
+
+    # 每个内容块加白底框
+    blocks = [(390, 600), (620, 850), (870, 1230), (1250, 1670),
+              (1690, 2140), (2160, 2570), (2590, 2850), (2870, 3020)]
+    img = tech_bg()
+    db = ImageDraw.Draw(img)
+    for a, b in blocks:
+        bb = content.crop((0, a, W, b)).getbbox()
+        if not bb:
+            continue
+        x0 = max(0, bb[0] - 26)
+        y0 = a + bb[1] - 18
+        x1 = min(W, bb[2] + 26)
+        y1 = a + bb[3] + 18
+        db.rounded_rectangle([x0, y0, x1, y1], radius=18,
+                             fill=(255, 255, 255, 212), outline=(150, 195, 215), width=2)
+    img = Image.alpha_composite(img, content)
 
     os.makedirs(OUT_DIR, exist_ok=True)
     img = img.convert("RGB")
