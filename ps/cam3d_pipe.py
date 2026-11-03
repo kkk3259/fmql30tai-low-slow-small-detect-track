@@ -79,6 +79,12 @@ JPEG = {"buf": None, "seq": 0}
 VIS = {"img": None, "seq": 0}        # 采集线程写、编码线程读（最新帧覆盖，天然丢帧）
 ENC_EVENT = None                     # 占位，保持接口兼容
 INFER = {"npu": 1, "pmin": 0, "running": True, "quality": 80, "push_every": 1}
+
+# ---- 候选过滤（2026-11-03）----
+AMIN = 4            # 面积下限：只砍 1~3 px 的孤立噪点（再大就伤真目标）
+H_MERGE = True      # 同 y 水平合并：消掉"目标左右两侧各一个框"
+H_DY = 10           # 合并的 y 容差
+H_DX = 160          # 合并的 x 最大跨度（目标宽 + 边带间距）
 # 显示与前处理（2026-11-01 新增：三域版之前直接推灰度原图，观感"一片灰"）
 COLOR_DISP = 1          # 1=画面用彩色（检测仍在灰度上做）；0=灰度
 GAMMA = 1.0             # 送 PL 前的 gamma（0.08 压缩动态范围、弱目标更容易过 CFAR 门限；1.0=不改）
@@ -358,7 +364,23 @@ def infer_loop(pl, net):
                 continue
             if c["peak"] < INFER["pmin"]:
                 continue
+            if c["area"] < AMIN:
+                continue
             keep.append({"x": x, "y": y, "area": c["area"], "peak": c["peak"], "p": None})
+
+        # 同 y 水平合并：目标远大于 SE 时 Top-Hat 只剩左右边带，
+        # 会成对出现；这里把同一水平带上的两个候选并成一个。
+        if H_MERGE and len(keep) > 1:
+            _m = []
+            for _c in sorted(keep, key=lambda z: -z["peak"]):
+                for _o in _m:
+                    if abs(_c["y"] - _o["y"]) <= H_DY and abs(_c["x"] - _o["x"]) <= H_DX:
+                        _o["area"] = max(_o["area"], _c["area"])
+                        _o["peak"] = max(_o["peak"], _c["peak"])
+                        break
+                else:
+                    _m.append(dict(_c))
+            keep = _m
 
         # --yolo 1 且非 ROI 模式：整帧 yolo 直接替换 PL 候选
         # 方案 A：隔 YOLO_EVERY 帧才推理一次，中间帧复用上次结果（省时又不掉框）
