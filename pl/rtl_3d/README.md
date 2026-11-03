@@ -8,7 +8,7 @@
 
 | 本目录文件 | 原件路径 | 作用 |
 |---|---|---|
-| `pl/rtl_3d/ai7030_ours_top.v` | `D:\firstharness\work\ours3d\ai7030_ours_top.v` | 三域顶层：例化 `ps_ai_wrap_demo`（学长 EDIF）+ `ip2_user_op`（我们的检测器适配层） |
+| `pl/rtl_3d/ai7030_ours_top.v` | 原工程路径 `work/ours3d/ai7030_ours_top.v` | 三域顶层：例化 `ps_ai_wrap_demo`（平台 EDIF）+ `ip2_user_op`（自研检测器适配层） |
 | `synth/vivado_3d/ours3d_s5.tcl` | `D:\firstharness\synth\vivado\ours3d_s5.tcl` | 三域综合+实现脚本（read_edif + 桩 + RTL + XDC + synth/opt/place/route/bitstream） |
 | `synth/vivado_3d/ours3d_fifo.tcl` | `D:\firstharness\synth\vivado\ours3d_fifo.tcl` | 上一版（16 行 FIFO + AR 队列），已验证 AR=RV=3609 |
 | `synth/scripts/wait_s5_flash2.ps1` | `D:\firstharness\dl\wait_s5_flash2.ps1` | 等位流→转 bin→烧板→探活→跑 seq_test 的流水线 |

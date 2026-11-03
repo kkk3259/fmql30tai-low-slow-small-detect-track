@@ -16,10 +16,11 @@ param(
     [switch]$SkipStop
 )
 $ErrorActionPreference = "Continue"
-$ssh = "C:\Users\xujia\Git\usr\bin\ssh.exe"
-$scp = "C:\Users\xujia\Git\usr\bin\scp.exe"
-$key = "D:\firstharness\dl\board_key"
-$py = "D:\firstharness\venv\Scripts\python.exe"
+# 依赖 PATH 中的 ssh / scp / python；板卡私钥路径由环境变量 BOARD_KEY 指定
+$ssh = "ssh.exe"
+$scp = "scp.exe"
+$key = $env:BOARD_KEY
+$py = "python.exe"
 
 if (-not (Test-Path $Bin)) { "ERROR: 找不到 $Bin"; exit 1 }
 $item = Get-Item $Bin

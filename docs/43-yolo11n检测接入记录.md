@@ -78,7 +78,7 @@ cp /root/ip2d3.bak /etc/init.d/ip2d3 # 或用 /root/enable_yolo.sh 前先备份
 
 1. **HUD 未补**：yolo 模式下页面顶部没有 `fps/n` 数字行
 2. **无时域平滑**：每帧独立检测，静止场景框会闪
-3. **阈值仍在调**：t4 完美，t5/t6 还有重复框
+3. **阈值仍在调**：t4 稳定，t5/t6 还有重复框
 
 ## 八、合并策略的两次失败尝试（2026-11-01 夜，已回滚）
 
@@ -222,7 +222,7 @@ buf[lb_y:lb_y+nh, lb_x:lb_x+nw] = cv2.cvtColor(cv2.resize(img, (nw, nh)), ...)
 640×480 画面），然后用 `cam3d_pipe.main()` 真正的服务代码起在 8099 端口，读 `/info`
 看 `n` 与 `cands`。
 
-这是唯一能证明"**网页上的框确实来自 yolo11n**"的方法——不依赖现场摆拍。
+这是能证明"**网页上的框确实来自 yolo11n**"的方法，不依赖现场演示。
 
 ```bash
 cd /root/ip2 && python3 test_page_yolo.py

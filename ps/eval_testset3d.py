@@ -3,7 +3,7 @@
 """eval_testset3d.py —— 在三域位流（平台寄存器口 + PL DDR）上跑合成测试集评估。
 
 与 eval_testset2.py 的区别：那条走的是我们自己的 ip2_bd_wrapper（PS DDR + 0x43C00000），
-这条走学长平台的 User_Reg（0x400C0000）+ User_Ddr（PL DDR），对应 ours3d_*.bin。
+这条走平台自定义算子的 User_Reg（0x400C0000）+ User_Ddr（PL DDR），对应 ours3d_*.bin。
 
 用法（板端）：
     python3 eval_testset3d.py /root/ts2 "*.mp4" --inv both --border 24 --pre gamma --gamma 0.08

@@ -11,10 +11,10 @@ import re
 import zipfile
 from PIL import Image
 
-ROOT = r"C:\Users\孔令浩1\Desktop\竞赛创新项目\嵌赛"
-SRC_DOCX = r"D:\lowslow\out_report.docx"          # fill_report.py 的输出（含表格、无图）
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC_DOCX = os.path.join(ROOT, "out_report.docx")   # fill_report.py 的输出（含表格、无图）
 IMG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "figs")
-OUT_DOCX = r"D:\lowslow\out_report_img.docx"
+OUT_DOCX = os.path.join(ROOT, "out_report_img.docx")
 
 FONT = '<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" w:cs="Times New Roman"/>'
 FONT_H = FONT[:-2] + ' w:hint="eastAsia"/>'

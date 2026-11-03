@@ -234,7 +234,7 @@ y += 4 * 152 + 6
 # ---------------- 左 ④ 实拍图 ----------------
 y = section(d, LX, y, LW, "04", "板上实拍 —— 实时运行中的检测界面")
 
-PHOTO = r"D:\lowslow\_roi_check\board_snap5.jpg"
+PHOTO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "report", "figs", "board_snap5.jpg")
 if os.path.exists(PHOTO):
     pim = Image.open(PHOTO).convert("RGB")
     pw = 940

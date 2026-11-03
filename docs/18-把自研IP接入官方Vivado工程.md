@@ -19,7 +19,7 @@
 | 版本 | **Vivado 2018.3**（官方文档明确；其他版本 `ip_patch` 可能不匹配） |
 | 安装选项 | 只勾 **7 Series / Zynq-7000** 器件支持 + Vivado 主程序（SDK 可选，生成 BOOT.bin 用 Procise 的 Create Image 就行） |
 | 磁盘 | 约 20~30 GB |
-| 来源 | Xilinx 官网（要账号）；或找 S / 学长要安装包（学校常有离线安装包） |
+| 来源 | Xilinx 官网（需账号）；或使用学校/实验室提供的离线安装包 |
 
 装完把 `vivado.bat` 加进 PATH，或者用开始菜单的 Vivado 2018.3 快捷方式。
 

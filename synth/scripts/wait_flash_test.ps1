@@ -1,12 +1,12 @@
 # 等 ours3d_s4.bit 出流 → 转 bin → 烧板 → 跑竖线图两帧测试
 $ErrorActionPreference = "Continue"
-$bit = "D:\firstharness\work\ours3d_s4\ours3d_s4.bit"
-$bin = "D:\firstharness\dl\ours3d_s4.bin"
-$py  = "D:\firstharness\venv\Scripts\python.exe"
-$scp = "C:\Users\xujia\Git\usr\bin\scp.exe"
-$ssh = "C:\Users\xujia\Git\usr\bin\ssh.exe"
-$key = "D:\firstharness\dl\board_key"
-$log = "D:\firstharness\dl\s4_test.txt"
+$bit = Join-Path $PSScriptRoot "..\..\ours3d_s4.bit"   # 按实际构建产物替换
+$bin = Join-Path $PSScriptRoot "ours3d_s4.bin"
+$py  = "python.exe"
+$scp = "scp.exe"
+$ssh = "ssh.exe"
+$key = $env:BOARD_KEY
+$log = Join-Path $PSScriptRoot "s4_test.txt"
 
 function Say($m) { $t = (Get-Date).ToString("HH:mm:ss"); "$t  $m" | Tee-Object -FilePath $log -Append }
 

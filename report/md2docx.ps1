@@ -1,6 +1,6 @@
 # md -> docx (pure PowerShell, ASCII source). Usage:
 #   $Docs = 'C:\path\to\docs'
-#   $code = [IO.File]::ReadAllText('D:\lowslow\md2docx.ps1',[Text.Encoding]::UTF8); Invoke-Expression $code
+#   $code = [IO.File]::ReadAllText('report\md2docx.ps1',[Text.Encoding]::UTF8); Invoke-Expression $code
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue

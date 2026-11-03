@@ -1,12 +1,12 @@
 $ErrorActionPreference = "Continue"
-$py  = "D:\firstharness\venv\Scripts\python.exe"
-$k   = "D:\firstharness\dl\board_key"
-$scp = "C:\Users\xujia\Git\usr\bin\scp.exe"
-$ssh = "C:\Users\xujia\Git\usr\bin\ssh.exe"
+$py  = "python.exe"
+$k   = $env:BOARD_KEY
+$scp = "scp.exe"
+$ssh = "ssh.exe"
 $B   = "root@169.254.67.100"
-$bit = "D:\firstharness\work\ours3d_s5\ours3d_s5.bit"
-$bin = "D:\firstharness\dl\ours3d_s5.bin"
-$out = "D:\firstharness\dl\s5_report.txt"
+$bit = Join-Path $PSScriptRoot "..\..\ours3d_s5.bit"   # 按实际构建产物替换
+$bin = Join-Path $PSScriptRoot "ours3d_s5.bin"
+$out = Join-Path $PSScriptRoot "s5_report.txt"
 $log = New-Object System.Collections.ArrayList
 
 function L($m) {
