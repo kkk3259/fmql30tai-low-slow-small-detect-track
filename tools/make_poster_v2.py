@@ -237,7 +237,7 @@ def coverage(d, x, y, w):
         d.line([(bx, ry + 18), (bx + bar_w, ry + 18)], fill=(200, 220, 232), width=7)
         d.line([(bx + a * scale, ry + 18), (bx + b * scale, ry + 18)], fill=c, width=7)
         d.text((bx + bar_w + 14, ry + 6), f"{a}~{b} px", font=font(19, mono=True), fill=INK2)
-    ry = y + 4 * rh + 8
+    ry = y + 4 * rh + 18
     d.text((x + label_w, ry), "四路合并后覆盖 2 ~ 80 px，中间无空档", font=font(22), fill=GREEN)
     return ry + 30
 
@@ -276,7 +276,7 @@ def main():
     rcx = M + colw + gap + colw // 2
 
     # 左栏：问题
-    y = section_at(d, lcx, 640, "问题")
+    y = section_at(d, lcx, 645, "问题")
     items = [("目标只有几像素", "整图 CNN 下采样后几乎拿不到特征，<8 px 召回率仅 48.5%。"),
              ("对比度低、背景杂波", "真实场景是暗剪影；单路 Top-Hat 召回 55%，Black-Hat 后 86%。"),
              ("算力与目标数无关", "整帧推理每帧跑满网络，边缘端跑不动。")]
@@ -289,7 +289,7 @@ def main():
         yy += 44 + len(sub) * 28 + 20
 
     # 右栏：创新点
-    y2 = section_at(d, rcx, 640, "创新点")
+    y2 = section_at(d, rcx, 645, "创新点")
     inn = [("01", "暗剪影形态学", "单路 Black-Hat 召回 55%→86%，候选数比双路低 3.7 倍。"),
            ("02", "三域异构级联", "NPU 只算个位数候选，端到端 16.6 fps。"),
            ("03", "逐像素等价验证", "IP1 灰度化 0 误差，NPU 输出误差 0.002。"),
@@ -303,42 +303,42 @@ def main():
         yy += 42 + len(sub) * 27 + 16
 
     # 方案（全宽居中）
-    y = section_at(d, W // 2, 1140, "方案：一条流水线跑完检测与跟踪")
+    y = section_at(d, W // 2, 1215, "方案：一条流水线跑完检测与跟踪")
     flow(d, (W - 2196) // 2, y, 2196)
 
     # 左栏：结果
-    y = section_at(d, lcx, 1420, "结果：系统整体与板上实测")
-    pw = 470
+    y = section_at(d, lcx, 1535, "结果：系统整体与板上实测")
+    pw = 560
     paste_pic(content, os.path.join(FIG, "系统整体实现.jpg"),
-              [lcx - pw // 2, y, lcx + pw // 2, y + 352])
-    dw = 500
+              [lcx - pw // 2, y, lcx + pw // 2, y + 420])
+    dw = 540
     paste_pic(content, os.path.join(FIG, "图9b_NPU检测效果.png"),
-              [lcx - dw // 2, y + 364, lcx + dw // 2, y + 532], crop=(0, 128, 1724, 445))
-    ty = y + 560
+              [lcx - dw // 2, y + 436, lcx + dw // 2, y + 666], crop=(0, 128, 1724, 445))
+    ty = y + 700
     stats = [("76.6% → 0.8%", "航迹确认后的虚警残留", ORANGE),
              ("0.920", "mAP50（YOLOv11n 单类）", GREEN),
              ("13.1 s", "断电到服务就绪", CYAN),
              ("84.4%", "三域位流 LUT", PURPLE)]
     for i, (v, l, c) in enumerate(stats):
         sx = lcx + (i % 2 - 0.5) * 500
-        sy = ty + (i // 2) * 96
+        sy = ty + (i // 2) * 110
         d.text((sx, sy), v, font=font(26, mono=True), fill=c, anchor="ma")
         d.text((sx, sy + 34), l, font=font(17, False), fill=INK2, anchor="ma")
 
     # 右栏：公开基准
-    y2 = section_at(d, rcx, 1420, "公开基准对比（DUT Anti-UAV test）")
+    y2 = section_at(d, rcx, 1535, "公开基准对比（DUT Anti-UAV test）")
     paste_pic(content, os.path.join(FIG, "baseline_comparison.png"),
-              [rcx - colw // 2 + 20, y2, rcx + colw // 2 - 20, y2 + 400])
-    ty2 = y2 + 420
+              [rcx - colw // 2 + 20, y2, rcx + colw // 2 - 20, y2 + 470])
+    ty2 = y2 + 492
     for v, c in [("0.619  mAP@[.5:.95]（COCO 协议）", CYAN),
                  ("超过除 SSD 外全部单阶段（SSD 0.632 / 33 fps）", ORANGE),
                  ("−6.4 点 / FPS ×11.7，相比两阶段最优 Cascade-RCNN", GREEN),
                  ("精度略低，帧率高一个量级", GREEN)]:
         d.text((rcx, ty2), v, font=font(20), fill=c, anchor="ma")
-        ty2 += 34
+        ty2 += 40
 
     # 能力边界（全宽）
-    y = section_at(d, W // 2, 2340, "能力边界：一份硬件覆盖 2~80 px")
+    y = section_at(d, W // 2, 2800, "能力边界：一份硬件覆盖 2~80 px")
     coverage(d, M + 60, y, W - 2 * M - 120)
 
     # 页脚
@@ -349,10 +349,10 @@ def main():
 
     # 每个内容块加磨砂玻璃底
     blocks = [(M, W - M, 390, 610),
-              (M, M + colw, 620, 1140), (M + colw + gap, W - M, 620, 1140),
-              (M, W - M, 1140, 1420),
-              (M, M + colw, 1420, 2320), (M + colw + gap, W - M, 1420, 2320),
-              (M, W - M, 2340, 2700)]
+              (M, M + colw, 620, 1110), (M + colw + gap, W - M, 620, 1110),
+              (M, W - M, 1190, 1430),
+              (M, M + colw, 1510, 2610), (M + colw + gap, W - M, 1510, 2610),
+              (M, W - M, 2775, 3025)]
     bg_clear = tech_bg()
     blur_bg = bg_clear.filter(ImageFilter.GaussianBlur(16))
     img = bg_clear.convert("RGBA")
@@ -366,10 +366,7 @@ def main():
 
     boxes = []
     for bx0, bx1, a, b in blocks:
-        bb = content.crop((bx0, a, bx1, b)).getbbox()
-        if not bb:
-            continue
-        boxes.append((bx0, a + bb[1] - 18, bx1, a + bb[3] + 18))
+        boxes.append((bx0, a, bx1, b))
 
     # 柔和投影
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
