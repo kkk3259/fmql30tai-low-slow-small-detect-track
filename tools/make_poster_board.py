@@ -217,30 +217,29 @@ def main():
         d.text((rx, y + 80 + i * 82), v, font=font(34, mono=True), fill=c)
         d.text((rx, y + 122 + i * 82), l, font=font(20, False), fill=INK2)
 
-    # 05 对比
-    y = 2470
-    bar(d, M, y, "05  与传统整图 CNN 的差异")
-    rows = [("检测方式", "整图一次推理", "PL 像素粗筛 + NPU 候选精判"),
-            ("小目标能力", "<8 px 召回 48.5%", "覆盖 2~80 px"),
-            ("算力开销", "与目标数量无关", "神经网络只算个位数候选"),
-            ("端到端帧率", "5.92 fps（软件基线）", "16.6 fps（三域同板）")]
-    rh, col1, col2 = 58, 460, 740
-    ty = y + 78
-    d.text((M, ty), "维度", font=font(20), fill=INK3)
-    d.text((M + col1, ty), "传统做法", font=font(20), fill=INK3)
-    d.text((M + col1 + col2, ty), "本方案", font=font(20), fill=CYAN)
-    d.line([(M, ty + 34), (W - M, ty + 34)], fill=(150, 185, 205), width=2)
-    for i, (a, b, c) in enumerate(rows):
-        ry = ty + 34 + i * rh
-        d.text((M, ry + 14), a, font=font(21, False), fill=INK)
-        d.text((M + col1, ry + 14), b, font=font(21, False), fill=INK2)
-        d.text((M + col1 + col2, ry + 14), c, font=font(21), fill=CYAN)
-        d.line([(M, ry + rh), (W - M, ry + rh)], fill=(196, 218, 230), width=1)
+    # 05 公开基准对比
+    y = 2440
+    bar(d, M, y, "05  公开基准对比（DUT Anti-UAV test）")
+    pic(img, os.path.join(FIG, "baseline_comparison.png"), [M, y + 76, M + 980, y + 76 + 330])
+    rx = M + 1020
+    ty = y + 88
+    for v, l, c in [("0.619", "mAP@[.5:.95]（COCO 协议）", CYAN),
+                    ("超过除 SSD 外", "的全部单阶段方法（SSD 0.632 / 33 fps）", ORANGE),
+                    ("−6.4 点 / FPS ×11.7", "与两阶段最优 Cascade-RCNN 相比，精度略低，帧率高一个量级", GREEN)]:
+        d.text((rx, ty), v, font=font(28), fill=c)
+        for j, line in enumerate(wrap(d, l, font(20, False), 700)):
+            d.text((rx, ty + 40 + j * 28), line, font=font(20, False), fill=INK2)
+        ty += 116
 
-    # 06 能力边界
-    y = 2840
-    bar(d, M, y, "06  能力边界：一份硬件覆盖 2~80 px")
-    coverage(d, M, y + 78, W - M * 2)
+    # 06 跨数据集泛化
+    y = 2860
+    bar(d, M, y, "06  跨数据集泛化（Halmstad，零样本）")
+    pic(img, os.path.join(FIG, "halmstad_detection_grid.png"), [M, y + 76, M + 980, y + 76 + 300])
+    rx = M + 1020
+    d.text((rx, y + 84), "90.6%", font=font(62, mono=True), fill=GREEN)
+    d.text((rx, y + 166), "64 帧检出 58 帧", font=font(22, False), fill=INK2)
+    d.text((rx, y + 204), "置信度 median 0.76", font=font(22, False), fill=INK2)
+    d.text((rx, y + 242), "DUT 训练，未微调直接推理", font=font(22, False), fill=INK2)
 
     # 底部深蓝条
     d.rectangle([0, H - 170, W, H], fill=NAVY)
