@@ -307,7 +307,7 @@ def main():
     flow(d, (W - 2196) // 2, y, 2196)
 
     # 左栏：结果
-    y = section_at(d, lcx, 1535, "结果：系统整体与板上实测")
+    y = section_at(d, lcx, 1575, "结果：系统整体与板上实测")
     pw = 560
     paste_pic(content, os.path.join(FIG, "系统整体实现.jpg"),
               [lcx - pw // 2, y, lcx + pw // 2, y + 420])
@@ -326,7 +326,7 @@ def main():
         d.text((sx, sy + 34), l, font=font(17, False), fill=INK2, anchor="ma")
 
     # 右栏：公开基准
-    y2 = section_at(d, rcx, 1535, "公开基准对比（DUT Anti-UAV test）")
+    y2 = section_at(d, rcx, 1575, "公开基准对比（DUT Anti-UAV test）")
     paste_pic(content, os.path.join(FIG, "baseline_comparison.png"),
               [rcx - colw // 2 + 20, y2, rcx + colw // 2 - 20, y2 + 470])
     ty2 = y2 + 492
@@ -338,7 +338,7 @@ def main():
         ty2 += 40
 
     # 能力边界（全宽）
-    y = section_at(d, W // 2, 2800, "能力边界：一份硬件覆盖 2~80 px")
+    y = section_at(d, W // 2, 2725, "能力边界：一份硬件覆盖 2~80 px")
     coverage(d, M + 60, y, W - 2 * M - 120)
 
     # 页脚
@@ -350,9 +350,9 @@ def main():
     # 每个内容块加磨砂玻璃底
     blocks = [(M, W - M, 390, 610),
               (M, M + colw, 620, 1110), (M + colw + gap, W - M, 620, 1110),
-              (M, W - M, 1190, 1430),
-              (M, M + colw, 1510, 2610), (M + colw + gap, W - M, 1510, 2610),
-              (M, W - M, 2775, 3025)]
+              (M, W - M, 1190, 1510),
+              (M, M + colw, 1550, 2650), (M + colw + gap, W - M, 1550, 2650),
+              (M, W - M, 2700, 3010)]
     bg_clear = tech_bg()
     blur_bg = bg_clear.filter(ImageFilter.GaussianBlur(16))
     img = bg_clear.convert("RGBA")
