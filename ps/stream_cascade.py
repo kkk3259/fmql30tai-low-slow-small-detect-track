@@ -349,7 +349,7 @@ class PlBackend(object):
     def run(self, frame_id):
         """触发一次处理，等 done，返回 (cands, canvas)
 
-        TODO(等 P 的 RTL)：这里要填实
+        TODO（接入 RTL 候选表）：这里要填实
           - 从 RESULT_BASE 读候选表（1 + 64×7 = 449 B）
           - 从 ROI_BASE 读 512×512 灰度网格
         """

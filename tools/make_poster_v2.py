@@ -249,18 +249,19 @@ def main():
     # 04
     y = section(d, M, y + 16, "04", "板上实测：看得见的效果", CYAN)
     img_w = 1430
-    paste_card(img, os.path.join(FIG, "图9_检测与跟踪效果.png"),
-               [M, y, M + img_w, y + 400], crop=(0, 420, 1650, 862))
+    paste_card(img, os.path.join(FIG, "图9b_NPU检测效果.png"),
+               [M, y, M + img_w, y + 400], crop=(0, 128, 1724, 470))
     rx, rw = M + img_w + 32, W - M - (M + img_w + 32)
-    card(d, [rx, y, W - M, y + 392], fill=CARD, outline=LINE)
-    ty = y + 24
+    card(d, [rx, y, W - M, y + 400], fill=CARD, outline=LINE)
+    d.text((rx + 28, y + 18), "NPU 整图检测 · 真实 720P 逐帧", font=font(24), fill=GREY)
+    ty = y + 58
     for v, l, c in [("76.6% → 0.8%", "航迹确认后的虚警残留", ORANGE),
                     ("0.920", "mAP50（自研 YOLOv11n 单类）", GREEN),
                     ("13.1 s", "断电到服务就绪", CYAN),
                     ("84.4%", "三域位流 LUT（独立位流 61.9%）", PURPLE)]:
-        d.text((rx + 28, ty), v, font=font(40, mono=True), fill=c)
-        d.text((rx + 28, ty + 52), l, font=font(22, False), fill=GREY)
-        ty += 92
+        d.text((rx + 28, ty), v, font=font(38, mono=True), fill=c)
+        d.text((rx + 28, ty + 48), l, font=font(22, False), fill=GREY)
+        ty += 82
     y += 430
 
     # 05
