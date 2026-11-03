@@ -50,17 +50,9 @@ def wrap(d, text, f, maxw):
 
 
 def gradient_bg():
-    img = Image.new("RGB", (W, H), BG0)
-    d = ImageDraw.Draw(img)
-    for y in range(H):
-        t = y / H
-        d.line([(0, y), (W, y)], fill=tuple(int(BG0[i] + (BG1[i] - BG0[i]) * t) for i in range(3)))
-    glow = Image.new("RGB", (W, H), (0, 0, 0))
-    gd = ImageDraw.Draw(glow)
-    for r in range(900, 0, -6):
-        a = int(26 * (1 - r / 900))
-        gd.ellipse([W // 2 - r, -640 - r // 2, W // 2 + r, -640 + r // 2], fill=(a // 3, a, a + 8))
-    return Image.blend(img, glow, 0.55)
+    # 纯黑背景：留 5,6,8 而不是 0,0,0，避免 A2 打印时死黑发灰、出现条纹
+    img = Image.new("RGB", (W, H), (5, 6, 8))
+    return img
 
 
 def card(d, box, fill=CARD, outline=LINE, radius=22, width=2):
