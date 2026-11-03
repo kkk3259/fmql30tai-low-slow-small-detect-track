@@ -247,7 +247,7 @@ def main():
             d.line([(x - 26, y + 6), (x - 26, y + 154)], fill=(180, 205, 220), width=1)
 
     # 问题
-    y = section(d, M, 650, "问题")
+    y = section(d, M, 660, "问题")
     items = [("目标只有几像素", "整图 CNN 下采样后几乎拿不到特征，<8 px 召回率仅 48.5%。"),
              ("对比度低、背景杂波", "真实场景是暗剪影；单路 Top-Hat 召回 55%，Black-Hat 后 86%。"),
              ("算力与目标数无关", "整帧推理每帧跑满网络，边缘端跑不动，也浪费。")]
@@ -263,11 +263,11 @@ def main():
            font=font(23, False), fill=INK, spacing=10)
 
     # 方案
-    y = section(d, M, 900, "方案：一条流水线跑完检测与跟踪")
+    y = section(d, M, 930, "方案：一条流水线跑完检测与跟踪")
     flow(d, M, y, W - M * 2)
 
     # 创新点
-    y = section(d, M, 1290, "创新点")
+    y = section(d, M, 1320, "创新点")
     inn = [("01", "暗剪影形态学", "把增强方向从亮斑改为暗斑：单路 Black-Hat 召回 55%→86%，候选数比双路低 3.7 倍。"),
            ("02", "三域异构级联", "NPU 算力只作用在个位数候选上，端到端 16.6 fps。"),
            ("03", "逐像素等价验证", "RTL 与 OpenCV 参考逐像素比对：IP1 灰度化 0 误差，NPU 输出误差 0.002。"),
@@ -281,7 +281,7 @@ def main():
             d.text((cx + 46, cy + 42 + j * 32), line, font=font(23, False), fill=INK2)
 
     # 结果
-    y = section(d, M, 1730, "结果：板上实测")
+    y = section(d, M, 1740, "结果：板上实测")
     img_w = 1400
     paste_pic(content, os.path.join(FIG, "图9b_NPU检测效果.png"),
               [M, y, M + img_w, y + 290], crop=(0, 128, 1724, 445))
@@ -297,7 +297,7 @@ def main():
         ty += 76
 
     # 对比
-    y = section(d, M, 2190, "与传统整图 CNN 的差异")
+    y = section(d, M, 2210, "与传统整图 CNN 的差异")
     rows = [("检测方式", "整图一次推理", "PL 像素粗筛 + NPU 候选精判"),
             ("小目标能力", "<8 px 召回 48.5%", "覆盖 2~80 px"),
             ("算力开销", "与目标数量无关", "神经网络只算个位数候选"),
@@ -316,7 +316,7 @@ def main():
         d.line([(M, ry + rh), (W - M, ry + rh)], fill=(196, 218, 230), width=1)
 
     # 能力边界
-    y = section(d, M, 2680, "能力边界：一份硬件覆盖 2~80 px")
+    y = section(d, M, 2670, "能力边界：一份硬件覆盖 2~80 px")
     coverage(d, M, 2750, W - M * 2)
 
     # 页脚
@@ -326,8 +326,8 @@ def main():
            font=font(21, False), fill=(214, 228, 240))
 
     # 每个内容块加磨砂玻璃底
-    blocks = [(390, 600), (620, 850), (870, 1230), (1250, 1670),
-              (1690, 2140), (2160, 2570), (2680, 2940)]
+    blocks = [(390, 610), (630, 870), (900, 1270), (1290, 1690),
+              (1710, 2160), (2180, 2620), (2640, 2930)]
     bg_clear = tech_bg()
     blur_bg = bg_clear.filter(ImageFilter.GaussianBlur(16))
     img = bg_clear.convert("RGBA")
