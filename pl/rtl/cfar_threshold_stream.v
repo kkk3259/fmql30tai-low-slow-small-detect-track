@@ -1,51 +1,22 @@
-// cfar_threshold_stream.v —— 流式 CFAR 自适应阈值（单趟、真实标准差）
-// 判决：thr = mean + K×std + FLOOR，img > thr 判目标(255)。
+// cfar_threshold_stream.v —— 流式 CFAR 自适应阈值
 //
-// 【为什么从 MAD 改成 std（2026-10-23）】
-//   PS 侧基线 detect_v1.py 用的是真实标准差：
-//       mu  = boxFilter(img,  (31,31))
-//       mu2 = boxFilter(img², (31,31))
-//       sd  = sqrt(mu2 - mu²)
-//       thr = mu + k·sd + floor,  k = 4.0,  floor = 3.0
-//   早期硬件用 MAD 近似（thr = mean + 5·MAD + 3），与 Python 差一个 1.4826 常数，
-//   候选表永远对不上 → 现按真实 std 重写。
+// 判决：thr = mean + K*sd + FLOOR，像素 > thr 判为目标(255)。
 //
-// 【不开方器的等价判决（关键，改这里前先看懂）】
-//   记 A = 裁剪后窗口面积、S1 = Σx、S2 = Σx²：
-//       mu = S1/A,   sd = sqrt(A·S2 - S1²)/A
-//       x > mu + k·sd + floor
-//     ⟺  L > k·sqrt(A·S2 - S1²),       其中 L = x·A - S1 - floor·A
-//     ⟺  (L > 0) 且 L² > k²·(A·S2 - S1²)     ← 两边都非负才能平方
-//   位宽：L ≤ 255×961 = 245,055（18 bit）；L² ≤ 6.01e10（36 bit）；
-//        A·S2 - S1² ≤ 961×62,489,025 ≈ 6.01e10（36 bit）；×k²=16 ≤ 9.6e11（40 bit）。
-//   所以硬件上只需要 4 个真乘法器（8×8 平方、8×11、11×26、18×18），
-//   不需要除法/开方；k²=16 与 WMAX 都是 2 的幂，综合成移位。
+// 记 A = 裁剪后窗口面积、S1 = Σx、S2 = Σx²：
+//     mu = S1/A,   sd = sqrt(A·S2 - S1²)/A
+//     x > mu + k·sd + floor
+//   ⟺  L > k·sqrt(A·S2 - S1²),      其中 L = x·A - S1 - floor·A
+//   ⟺  (L > 0) 且 L² > k²·(A·S2 - S1²)
+// 由此只需乘法与比较，不需要除法和开方。
 //
-// 【因果对齐（单趟，两个盒共用同一个窗口）】
-//   虚拟光栅 W15×H15：图像占 row<H、col<W，其余位置是 PAD（补 0）。
-//     - 盒1 输入 cur_px、盒2 输入 cur_px²，共用同一套列和与环形延迟线，
-//       因此同一拍得到的 S1、S2 描述的是**同一个** 31×31 窗口；
-//     - 虚拟位置 t 的窗口 = 行 [r-30,r] × 列 [c-30,c]，中心 u = (r-15, c-15)；
-//     - 中心像素 x(u) 由 rb2 取回（延迟 CENTER_OFF = 15 行 + 15 列 = 15·W15+15）；
-//     - 窗口面积 A 按 u 裁剪：crow = row-15、ccol = col-15，
-//       与 PS 侧 max/min 裁剪完全一致（上/下/左/右都对齐，无 1 列偏移）。
-//   输出行 row∈[15,H+15)、列 col∈[15,W+15) 恰好 N=H×W 个；之后 state→S_DONE。
+// 虚拟光栅 W15×H15：图像占 row<H、col<W，其余位置补 0。
+//   · 同一拍得到的 S1、S2 描述同一个 WIN×WIN 窗口；
+//   · 中心像素 x(u) 由 rb2 取回，延迟 CENTER_OFF = HALF·W15 + HALF；
+//   · 窗口面积按中心 u = (row-HALF, col-HALF) 裁剪。
 //
-// 【存储（640×360 → W15=655, H15=375, DLY=20,305, CENTER_OFF=9,840）】
-//     rb1 20,306×8（延迟 DLY，供两个盒的移出值）
-//     rb2  9,841×8（延迟 CENTER_OFF，供中心像素 x(u)）
-//     cs1   655×13、cs2 655×21
-//   合计 ≈ 241 Kbit（原两趟全帧方案 7.5 Mbit，折合 16 万 LUT，装不进器件）。
-//
-// 【2026-10-23 布局失败后减负】原设计还有 rb3 = 20,306×16（平方流延迟线），
-//   但 (x(t-DLY))² 恒等于 x²(t-DLY)，另存一条 16 bit 平方流是冗余的 →
-//   删 rb3，读出 rb1 后现算平方。LUTRAM 799 Kbit → 474 Kbit（−41%），仿真逐位一致。
-//   背景：640×360 版 Place 报 PLACE-0021 "place error: Global Placement failed"
-//   （legalize 阶段 network simplex infeasible），根因是 LUTRAM 占用过高压满 SLICEM 列。
-//
-// 【RAM 写法约束（Verific）】写必须在独立 always 块里、不能写进状态机 case 分支，
-//   否则报 ELAB-E-353 "Failed to dissolve the memory into bits ... too large"。
-//   环形线统一“写 wp、读 (wp+1) mod DEPTH” → 延迟 = DEPTH-1，全数组都是 1 写 1 读。
+// 存储：rb1 = WIN 行延迟线，rb2 = 中心像素延迟线，cs1/cs2 = 列和。
+//   USE_BRAM=1 时 rb1/rb2 用同步读（可推断为块 RAM），读地址提前一拍；
+//   USE_BRAM=0 时为组合读（分布式 RAM）。
 module cfar_threshold_stream #(
     parameter W = 64,
     parameter H = 64,
@@ -53,7 +24,6 @@ module cfar_threshold_stream #(
     // 门限：thr = mean + K*sd + FLOOR
     // K=4（比赛早期的保守值）在 31×31 窗口里会把“比结构元小的亮块”自己抑制掉：
     //   10px 亮块 → mean≈24 σ≈59 → thr≈262 > 亮块值 232，直接漏检。
-    // 实测（2026-10-29）改成 K=1 后 2~20px 都能出来，见 docs/13 §14。
     parameter K = 1,
     parameter FLOOR = 3,
     // 1 = rb1/rb2 用同步读（推断成 BRAM，省约 10,000 LUTRAM）
@@ -92,12 +62,10 @@ module cfar_threshold_stream #(
     localparam WS1_W = (((WIN * WIN * 255)<=2)?1:((WIN * WIN * 255)<=4)?2:((WIN * WIN * 255)<=8)?3:((WIN * WIN * 255)<=16)?4:((WIN * WIN * 255)<=32)?5:((WIN * WIN * 255)<=64)?6:((WIN * WIN * 255)<=128)?7:((WIN * WIN * 255)<=256)?8:((WIN * WIN * 255)<=512)?9:((WIN * WIN * 255)<=1024)?10:((WIN * WIN * 255)<=2048)?11:((WIN * WIN * 255)<=4096)?12:((WIN * WIN * 255)<=8192)?13:((WIN * WIN * 255)<=16384)?14:((WIN * WIN * 255)<=32768)?15:((WIN * WIN * 255)<=65536)?16:((WIN * WIN * 255)<=131072)?17:((WIN * WIN * 255)<=262144)?18:((WIN * WIN * 255)<=524288)?19:((WIN * WIN * 255)<=1048576)?20:((WIN * WIN * 255)<=2097152)?21:((WIN * WIN * 255)<=4194304)?22:((WIN * WIN * 255)<=8388608)?23:((WIN * WIN * 255)<=16777216)?24:((WIN * WIN * 255)<=33554432)?25:((WIN * WIN * 255)<=67108864)?26:((WIN * WIN * 255)<=134217728)?27:((WIN * WIN * 255)<=268435456)?28:((WIN * WIN * 255)<=536870912)?29:((WIN * WIN * 255)<=1073741824)?30:((WIN * WIN * 255)<=2147483648)?31:32) + 1;         // 18  窗口和（灰阶）
     localparam CS2_W = (((WIN * 255 * 255)<=2)?1:((WIN * 255 * 255)<=4)?2:((WIN * 255 * 255)<=8)?3:((WIN * 255 * 255)<=16)?4:((WIN * 255 * 255)<=32)?5:((WIN * 255 * 255)<=64)?6:((WIN * 255 * 255)<=128)?7:((WIN * 255 * 255)<=256)?8:((WIN * 255 * 255)<=512)?9:((WIN * 255 * 255)<=1024)?10:((WIN * 255 * 255)<=2048)?11:((WIN * 255 * 255)<=4096)?12:((WIN * 255 * 255)<=8192)?13:((WIN * 255 * 255)<=16384)?14:((WIN * 255 * 255)<=32768)?15:((WIN * 255 * 255)<=65536)?16:((WIN * 255 * 255)<=131072)?17:((WIN * 255 * 255)<=262144)?18:((WIN * 255 * 255)<=524288)?19:((WIN * 255 * 255)<=1048576)?20:((WIN * 255 * 255)<=2097152)?21:((WIN * 255 * 255)<=4194304)?22:((WIN * 255 * 255)<=8388608)?23:((WIN * 255 * 255)<=16777216)?24:((WIN * 255 * 255)<=33554432)?25:((WIN * 255 * 255)<=67108864)?26:((WIN * 255 * 255)<=134217728)?27:((WIN * 255 * 255)<=268435456)?28:((WIN * 255 * 255)<=536870912)?29:((WIN * 255 * 255)<=1073741824)?30:((WIN * 255 * 255)<=2147483648)?31:32) + 1;         // 21  列和（平方）
     localparam WS2_W = (((WIN * WIN * 255 * 255)<=2)?1:((WIN * WIN * 255 * 255)<=4)?2:((WIN * WIN * 255 * 255)<=8)?3:((WIN * WIN * 255 * 255)<=16)?4:((WIN * WIN * 255 * 255)<=32)?5:((WIN * WIN * 255 * 255)<=64)?6:((WIN * WIN * 255 * 255)<=128)?7:((WIN * WIN * 255 * 255)<=256)?8:((WIN * WIN * 255 * 255)<=512)?9:((WIN * WIN * 255 * 255)<=1024)?10:((WIN * WIN * 255 * 255)<=2048)?11:((WIN * WIN * 255 * 255)<=4096)?12:((WIN * WIN * 255 * 255)<=8192)?13:((WIN * WIN * 255 * 255)<=16384)?14:((WIN * WIN * 255 * 255)<=32768)?15:((WIN * WIN * 255 * 255)<=65536)?16:((WIN * WIN * 255 * 255)<=131072)?17:((WIN * WIN * 255 * 255)<=262144)?18:((WIN * WIN * 255 * 255)<=524288)?19:((WIN * WIN * 255 * 255)<=1048576)?20:((WIN * WIN * 255 * 255)<=2097152)?21:((WIN * WIN * 255 * 255)<=4194304)?22:((WIN * WIN * 255 * 255)<=8388608)?23:((WIN * WIN * 255 * 255)<=16777216)?24:((WIN * WIN * 255 * 255)<=33554432)?25:((WIN * WIN * 255 * 255)<=67108864)?26:((WIN * WIN * 255 * 255)<=134217728)?27:((WIN * WIN * 255 * 255)<=268435456)?28:((WIN * WIN * 255 * 255)<=536870912)?29:((WIN * WIN * 255 * 255)<=1073741824)?30:((WIN * WIN * 255 * 255)<=2147483648)?31:32) + 1;   // 26  窗口和（平方）
-    // 【2026-11-02】支持任意 k：判据改为  L²·K2_DEN > K2_NUM·var
     //   k² = K2_NUM/K2_DEN。K2_NUM 非 2 的幂时综合器会用 DSP 做常数乘法
     //   （例如 k=4.47 → K2_NUM=20, K2_DEN=1；k=3.0 → 9/1；k=4.5 → 81/4）
     parameter K2_NUM = K * K;
     parameter K2_DEN = 1;
-    localparam KSQ   = K * K;
 
     reg [CW-1:0] col;
     reg [CH-1:0] row;
@@ -171,8 +139,9 @@ module cfar_threshold_stream #(
     wire [CS2_W-1:0] ncs2 = cs2_rd + {5'd0, sq_px}   - {5'd0, d2_old};
 
     // ---- 水平 31 项（每项是一列的竖直和）----
-    reg [CS1_W-1:0] f1 [0:WIN-1];
-    reg [CS2_W-1:0] f2 [0:WIN-1];
+    // 窗口 WIN 项 = 当前列和 ncs1 + 前 WIN-1 拍的历史，故只需 WIN-1 深
+    reg [CS1_W-1:0] f1 [0:WIN-2];
+    reg [CS2_W-1:0] f2 [0:WIN-2];
 
     wire [WS1_W-1:0] ws1 = ncs1
         + f1[0]  + f1[1]  + f1[2]  + f1[3]  + f1[4]  + f1[5]  + f1[6]  + f1[7]
@@ -185,13 +154,16 @@ module cfar_threshold_stream #(
         + f2[16] + f2[17] + f2[18] + f2[19] + f2[20] + f2[21] + f2[22] + f2[23]
         + f2[24] + f2[25] + f2[26] + f2[27] + f2[28] + f2[29];
 
-    // ---- 裁剪面积 A（按中心 u = (row-15, col-15) 裁剪，与 PS 侧 max/min 一致）----
-    wire [CH-1:0] cr = row - HALF;
-    wire [CW-1:0] cc = col - HALF;
-    wire [5:0] cnt_r = (cr < HALF) ? (cr + HALF + 1)
-                     : ((cr >= H - HALF) ? (H + HALF - cr) : WIN_V);
-    wire [5:0] cnt_c = (cc < HALF) ? (cc + HALF + 1)
-                     : ((cc >= W - HALF) ? (W + HALF - cc) : WIN_V);
+    // ---- 裁剪面积 A：窗口 [u-HALF, u+HALF] 与图像 [0,H-1] 求交后的行/列数 ----
+    //   row <= 2*HALF  ：只压上边界 → row+1
+    //   row >= H-1     ：只压下边界 → H+2*HALF-row
+    //   其余           ：完整窗口 WIN
+    localparam H_EXT = H + 2 * HALF;
+    localparam W_EXT = W + 2 * HALF;
+    wire [5:0] cnt_r = (row <= 2 * HALF) ? ({6'd0, row} + 6'd1)
+                     : ((row >= H - 1)   ? (H_EXT - row) : WIN_V);
+    wire [5:0] cnt_c = (col <= 2 * HALF) ? ({6'd0, col} + 6'd1)
+                     : ((col >= W - 1)   ? (W_EXT - col) : WIN_V);
     wire [11:0] area_raw = cnt_r * cnt_c;
     wire [A_W-1:0] area_c = (area_raw == 12'd0) ? 11'd1 : area_raw[A_W-1:0];
 
@@ -306,7 +278,6 @@ module cfar_threshold_stream #(
     end
 
     // ---- 环形线写块（独立 always，供综合器推断 RAM）----
-    // 【Vivado 兼容】三个 RAM 写块都改成**同步复位**（always @(posedge clk)）：
     //   Vivado 报 [Synth 8-3391] "RAM is sensitive to asynchronous reset signal"
     //   会拒绝推断 RAM（Procise/Verific 两种都接受）。rst_n 由上层同步产生。
     always @(posedge clk) begin
@@ -341,16 +312,16 @@ module cfar_threshold_stream #(
     // ---- 状态机：fifo 移位、坐标推进、输出寄存 ----
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (i = 0; i < WIN; i = i + 1) begin f1[i] <= 0; f2[i] <= 0; end
+            for (i = 0; i < WIN-1; i = i + 1) begin f1[i] <= 0; f2[i] <= 0; end
             col <= 0; row <= 0; cnt <= 0; state <= S_RUN;
         end else begin
             if (adv) begin
                 f1[0] <= ncs1;
                 f2[0] <= ncs2;
                 if (col == 0) begin
-                    for (i = 1; i < WIN; i = i + 1) begin f1[i] <= 0; f2[i] <= 0; end
+                    for (i = 1; i < WIN-1; i = i + 1) begin f1[i] <= 0; f2[i] <= 0; end
                 end else begin
-                    for (i = 1; i < WIN; i = i + 1) begin f1[i] <= f1[i-1]; f2[i] <= f2[i-1]; end
+                    for (i = 1; i < WIN-1; i = i + 1) begin f1[i] <= f1[i-1]; f2[i] <= f2[i-1]; end
                 end
 
                 if (cnt == N_EXT - 1) state <= S_DONE;

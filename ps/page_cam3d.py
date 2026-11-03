@@ -71,7 +71,7 @@ canvas.chart{width:100%;height:74px;display:block}
       
       <div class="ctl"><label>场景 <b id="l_scene">室内亮目标</b></label>
         <input type="range" id="s_scene" min="0" max="2" step="1" value="1"></div>
-      <div class="btnrow"><button id="b_snap">截图保存</button></div>
+<div class="btnrow"><button id="b_imp">导入图片/视频</button><button id="b_save">保存当前帧</button><button id="b_cam">回到摄像头</button></div><input type="file" id="f_imp" accept="image/*,video/*" style="display:none"><div id="src_name" style="font-size:11.5px;color:#7f9ab5;padding:5px 2px 0">来源：摄像头（可直接把文件拖到画面上）</div>
       <div class="ctl" style="margin-top:8px">
         <label><input type="checkbox" id="c_pl" checked> 显示 PL 疑似目标（灰细框）</label></div>
       <div style="font-size:10.5px;color:#5a6f85;margin-top:8px;line-height:1.5">
@@ -91,22 +91,58 @@ canvas.chart{width:100%;height:74px;display:block}
 <script>
 var PK=0, MAXN=64, MINH=0, ALL=false, TRAIL=true, PLBOX=true;
 var hist=[];
-function $(id){var e=document.getElementById(id);if(e)return e;return {value:'0',checked:false,textContent:'',innerHTML:'',style:{},addEventListener:function(){},appendChild:function(){}};}
+function $(x){var e=document.getElementById(x);return e||{addEventListener:function(){},appendChild:function(){},textContent:'',innerText:'',style:{},checked:false,value:'0',classList:{add:function(){},remove:function(){}}};}
 ['s_pk','s_n','s_h'].forEach(function(id){
   $(id).addEventListener('input',function(){
     PK=+0; MAXN=+64; MINH=+0;
           draw();
   });
 });
-$('c_all').addEventListener('change',function(){ALL=this.checked;draw()});
 $('c_pl').addEventListener('change',function(){PLBOX=this.checked;draw()});
-$('c_tr').addEventListener('change',function(){TRAIL=this.checked;draw()});
-$('c_inv').addEventListener('change',function(){
-  fetch('/set?invert='+(this.checked?1:0)).catch(function(){});
+function doUpload(file){
+  var fd=new FormData(); fd.append('f',file,file.name);
+  $('src_name').textContent='来源：正在导入 '+file.name+' …';
+  fetch('/upload',{method:'POST',body:fd}).then(function(r){return r.json()}).then(function(j){
+    if(j&&j.ok){ $('src_name').textContent='来源：'+j.name+' ('+j.kind+', '+j.frames+' 帧)'; }
+    else { $('src_name').textContent='导入失败'; }
+  }).catch(function(){ $('src_name').textContent='导入失败'; });
+}
+$('b_imp').addEventListener('click',function(){ $('f_imp').click(); });
+$('f_imp').addEventListener('change',function(){
+  var f=this.files[0]; if(f){ doUpload(f); }
 });
-$('b_snap').addEventListener('click',function(){
-  var a=document.createElement('a'); a.href='/snap?q=95';
-  a.download='snap_'+Date.now()+'.jpg'; a.click();
+(function(){
+  var box=$('vs');
+  if(!box){ return; }
+  function stop(e){ e.preventDefault(); e.stopPropagation(); }
+  box.addEventListener('dragover',function(e){ stop(e); box.style.outline='2px dashed #22e06a'; });
+  box.addEventListener('dragleave',function(e){ stop(e); box.style.outline=''; });
+  box.addEventListener('drop',function(e){
+    stop(e); box.style.outline='';
+    var f=e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if(f){ doUpload(f); }
+  });
+})();
+
+$('b_imp').addEventListener('click',function(){ $('f_imp').click(); });
+$('f_imp').addEventListener('change',function(){
+  var f=this.files[0]; if(!f) return;
+  var fd=new FormData(); fd.append('f',f,f.name);
+  $('src_name').textContent='来源：上传中…';
+  fetch('/upload',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(j){
+    if(j.ok){ $('src_name').textContent='来源：'+j.name+'（'+j.kind+'，'+j.frames+' 帧）'; }
+    else { $('src_name').textContent='上传失败'; }
+  }).catch(function(){ $('src_name').textContent='上传失败'; });
+});
+$('b_save').addEventListener('click',function(){
+  fetch('/save').then(function(r){return r.json();}).then(function(j){
+    $('src_name').textContent='已保存：'+j.file;
+  }).catch(function(){ $('src_name').textContent='保存失败'; });
+});
+$('b_cam').addEventListener('click',function(){
+  fetch('/src?off=1').then(function(r){return r.json();}).then(function(){
+    $('src_name').textContent='来源：摄像头';
+  });
 });
 var last=[];
 function filt(cs){

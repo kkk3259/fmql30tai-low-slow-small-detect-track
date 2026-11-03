@@ -64,6 +64,7 @@ class PL3D(object):
 
     def run(self, gray):
         self.ch.write(0, gray.tobytes(), NPIX)
+        time.sleep(0.0015)   # 等 DMA 落定再触发：实测偶发整幅偏移 128 像素
         a0 = self.reg.read(REG + R_AR) & 0xFFFFFFFF
         st = 0
         t0 = time.time()
@@ -91,16 +92,28 @@ class PL3D(object):
             if (a1 - a0) > 3000 and not (st & 1):
                 break
         dt = (time.time() - t0) * 1000
-        # 单遍读取：FSM 已保证 busy=0 后才读，实测不需读两遍
-        for _pass in range(1):
-            words = []
-            for i in range(15):   # MAX_CAND=32 -> 1+32*7=225B -> 57 字
-                self.reg.write(REG + R_WIN, i)
-                self.reg.read(REG + R_WIN)
-                words.append(self.reg.read(REG + R_WIN) & 0xFFFFFFFF)
-            if _pass == 0:
-                time.sleep(0.0001)
+        # 读候选表：先读第 0 字拿 n_cand，按需读够字数；连读两遍一致才采用
+        words = []
+        for _try2 in range(4):
+            head = self._win(0)
+            ncand = head & 0xFF
+            nbytes = 1 + ncand * 7
+            nwords = 1 + (nbytes + 3) // 4
+            if nwords > 57:            # MAX_CAND=32 上限
+                nwords = 57
+            w1 = [head] + [self._win(i) for i in range(1, nwords)]
+            w2 = [self._win(0)] + [self._win(i) for i in range(1, nwords)]
+            if w1 == w2:
+                words = w1
+                break
+            words = w2
         return unpack(words), st, dt
+
+    def _win(self, i):
+        """读候选表窗口寄存器第 i 字（写索引 + 空读 + 取数）。"""
+        self.reg.write(REG + R_WIN, i)
+        self.reg.read(REG + R_WIN)
+        return self.reg.read(REG + R_WIN) & 0xFFFFFFFF
 
 
 class NPU(object):

@@ -28,6 +28,24 @@ import numpy as np
 sys.path.insert(0, "/root/ip2")
 import cam_pipe as cp
 
+class HW3D(object):
+    """三域位流适配器：cam_pipe.HW 用 0x43C00000，本板位流是三域的 0x400C0000。
+    直接用 cp.HW() 会读未映射地址，PL 不回 rvalid，PS 挂死。"""
+
+    def __init__(self):
+        sys.path.insert(0, "/root/ip2")
+        from cam3d_test import PL3D
+        self.pl = PL3D()
+        self.n = 0
+
+    def run(self, gray):
+        cands, st, dt = self.pl.run(gray)   # PL3D 返回 (cands, st, dt)
+        return st, cands, dt                # eval 期望 (st, cands, dt)
+
+    def version(self):
+        return 0x00010000
+
+
 W, H = 640, 360
 
 
@@ -99,7 +117,7 @@ def main():
     ap.add_argument("--out", default="/root/testset_result.csv")
     a = ap.parse_args()
 
-    hw = cp.HW()
+    hw = HW3D()
     print("device ok, VERSION = 0x%08x" % (hw.version() if hasattr(hw, "version") else 0))
 
     modes = [0, 1] if a.inv == "auto" else [int(a.inv)]

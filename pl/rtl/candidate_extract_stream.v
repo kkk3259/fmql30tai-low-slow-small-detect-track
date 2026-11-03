@@ -15,15 +15,11 @@ module candidate_extract_stream #(
     parameter MAX_CAND = 5,
     parameter MAX_COMP = 64,
     parameter MIN_AREA = 2,
-    // 面积上限：原来是 200，等于把 14px 以上的目标（20px→400）直接滤掉。
-    // 比赛目标 15~70px，上限必须放大，否则“检测得到也算不出来”。
+    // 面积上限（14px 目标的连通域面积已约 200，故放宽到 2047）
     parameter MAX_AREA = 2047,
-    // ---- 去孤立点（默认关，板级顶层会打开）----
-    // CFAR 输出的二值图里常有单像素亮点（噪声/压缩伪影），CCL 会给每个噪点
-    // 分配一个标签、占满 MAX_COMP(64)，并让候选表逐帧抖动。
-    // DENOISE=1：要求左邻也是前景才保留（滤掉 1px 孤立点与 1px 宽细线）。
-    // 代价：1 个寄存器 + 1 个与门，延迟 1 拍，无行缓存。
-    // 默认 0 —— 保证所有历史回归用例（参考表按“不去噪”生成）保持 0 差异。
+    // ---- 去孤立点 ----
+    // DENOISE=1：要求左邻也是前景才保留，滤掉 1px 孤立点与 1px 宽细线，
+    // 避免噪点占满 MAX_COMP 个标签、让候选表逐帧抖动。
     parameter DENOISE = 0,
     parameter BORDER = 24
 )(
@@ -48,9 +44,7 @@ module candidate_extract_stream #(
     localparam CH = (((H + 1)<=2)?1:((H + 1)<=4)?2:((H + 1)<=8)?3:((H + 1)<=16)?4:((H + 1)<=32)?5:((H + 1)<=64)?6:((H + 1)<=128)?7:((H + 1)<=256)?8:((H + 1)<=512)?9:((H + 1)<=1024)?10:((H + 1)<=2048)?11:((H + 1)<=4096)?12:((H + 1)<=8192)?13:((H + 1)<=16384)?14:((H + 1)<=32768)?15:((H + 1)<=65536)?16:((H + 1)<=131072)?17:((H + 1)<=262144)?18:((H + 1)<=524288)?19:((H + 1)<=1048576)?20:((H + 1)<=2097152)?21:((H + 1)<=4194304)?22:((H + 1)<=8388608)?23:((H + 1)<=16777216)?24:((H + 1)<=33554432)?25:((H + 1)<=67108864)?26:((H + 1)<=134217728)?27:((H + 1)<=268435456)?28:((H + 1)<=536870912)?29:((H + 1)<=1073741824)?30:((H + 1)<=2147483648)?31:32);
     localparam LW = (((MAX_COMP + 1)<=2)?1:((MAX_COMP + 1)<=4)?2:((MAX_COMP + 1)<=8)?3:((MAX_COMP + 1)<=16)?4:((MAX_COMP + 1)<=32)?5:((MAX_COMP + 1)<=64)?6:((MAX_COMP + 1)<=128)?7:((MAX_COMP + 1)<=256)?8:((MAX_COMP + 1)<=512)?9:((MAX_COMP + 1)<=1024)?10:((MAX_COMP + 1)<=2048)?11:((MAX_COMP + 1)<=4096)?12:((MAX_COMP + 1)<=8192)?13:((MAX_COMP + 1)<=16384)?14:((MAX_COMP + 1)<=32768)?15:((MAX_COMP + 1)<=65536)?16:((MAX_COMP + 1)<=131072)?17:((MAX_COMP + 1)<=262144)?18:((MAX_COMP + 1)<=524288)?19:((MAX_COMP + 1)<=1048576)?20:((MAX_COMP + 1)<=2097152)?21:((MAX_COMP + 1)<=4194304)?22:((MAX_COMP + 1)<=8388608)?23:((MAX_COMP + 1)<=16777216)?24:((MAX_COMP + 1)<=33554432)?25:((MAX_COMP + 1)<=67108864)?26:((MAX_COMP + 1)<=134217728)?27:((MAX_COMP + 1)<=268435456)?28:((MAX_COMP + 1)<=536870912)?29:((MAX_COMP + 1)<=1073741824)?30:((MAX_COMP + 1)<=2147483648)?31:32);   // 标签位宽（0=背景）
 
-    // 行标签缓存见下方 lbl_ram（1 写 2 读的双口 RAM）。
-    // 原实现是 lbl_even/lbl_odd 两个 W 项寄存器数组 + 三个 W:1 组合 mux，
-    // 实测吃掉约 2.6 万 LUT（占整设计 60%），是布局失败的直接原因。
+    // 行标签缓存见下方 lbl_ram（1 写 2 读的双口 RAM，推断为分布式 RAM）。
 
     reg [LW-1:0] left_lbl;               // 左邻居标签
     reg [LW-1:0] n_lbl;                  // 已用标签数（0 基，标签 = n_lbl+1）
@@ -127,13 +121,9 @@ module candidate_extract_stream #(
     wire [LW-1:0] min_nb = min4(prev_ul, prev_t, prev_ur, nb_l);
 
     // ------------------------------------------------------------------
-    // 去孤立点（见参数注释）：要求本像素的左侧邻居也是前景
-    //   孤立单点(1px)   ：左邻为 0 → 滤掉
-    //   竖直细线(1px宽) ：左邻为 0 → 滤掉
-    //   2px 以上团块/水平线：左邻为 1 → 保留
-    // 代价：1 个寄存器 + 1 个与门，延迟 1 拍，无行缓存、无 RAM。
-    // （先前写的 3×3 邻域计数版需要 2 行行缓存，仿真出现 X 传播、
-    //   输出恒 0，先回退到这个最小可用版本，避免把整链改坏。）
+    // 去孤立点：要求本像素的左侧邻居也是前景
+    //   1px 孤立点 / 1px 宽细线 → 左邻为 0 → 滤掉
+    //   2px 以上团块 / 水平线   → 左邻为 1 → 保留
     // ------------------------------------------------------------------
     reg           b_d1;          // 左邻像素
     reg           f_bin, f_valid_r;
@@ -234,7 +224,7 @@ module candidate_extract_stream #(
     reg [7:0] o_data_r;
     reg o_valid_r;
 
-    // ---- 行标签 RAM 的写口：必须是独立 always 块（写进状态机 case 里 Procise 就不认 RAM）----
+    // ---- 行标签 RAM 的写口：放在独立 always 块，便于推断为 RAM ----
     always @(posedge clk) begin
         if (state == S_RUN && f_valid_r)
             lbl_ram[wr_addr] <= assign_lbl;
@@ -257,7 +247,7 @@ module candidate_extract_stream #(
             case (state)
             S_RUN: begin
                 if (f_valid_r) begin
-                    // 1) 行缓存写标签（写口在下面独立的 always 块里，否则推不成 RAM）
+                    // 1) 行缓存写标签（实际写口在下方独立的 always 块）
                     left_lbl <= assign_lbl;
                     prev_t_d <= prev_t;              // 供下一列作 prev_ul
 
@@ -335,8 +325,7 @@ module candidate_extract_stream #(
                     cy[pi]  <= dv_q[15:0];
                     dv_step <= 6'd0;
                     // 【2026-11-02】边界排除：三域里画面 pad 边沿会产生 peak 200+ 的
-                    // 伪目标，把候选表 8 个槽位全部占满（probe5 实测 t2 的 8 条全在
-                    // y=359）。这里把贴近画面四边的组件 peak 清零，让它在排序中沉底。
+                    // 贴近画面四边的组件多为边缘伪响应：peak 清零令其排序沉底。
                     if ((dv_q[15:0] < BORDER) || (dv_q[15:0] > (H - BORDER)) ||
                         (cx[pi] < BORDER) || (cx[pi] > (W - BORDER)))
                         cpeak[pi] <= 8'd0;
@@ -358,7 +347,7 @@ module candidate_extract_stream #(
             S_SORT: begin
                 if (sort_phase == 2'd0) begin
                     sj <= si; mi <= si; maxp <= cpeak[si];
-                    // 重心与面积标定（原 S_ACCUM 尾部的收尾计算搬到这里之前完成）
+                    // 初始化扫描游标
                     sort_phase <= 2'd1;
                 end else if (sort_phase == 2'd1) begin
                     if (sj < MAX_COMP) begin
@@ -415,8 +404,7 @@ module candidate_extract_stream #(
     assign dbg_state = state;
     assign dbg_px    = px_cnt;
 
-    // CCL 内部 valid 计数：与顶层 cf_valid 计数对比，
-    //   两者相等 => valid 网络连上了；CCL 侧为 0 而顶层不为 0 => 连线/位宽问题。
+    // CCL 内部 valid 计数（与顶层 cf_valid 计数对拍，用于排查连线）
     reg [31:0] vcnt;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)          vcnt <= 32'd0;

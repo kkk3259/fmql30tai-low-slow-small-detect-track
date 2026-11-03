@@ -16,6 +16,7 @@ import argparse
 import io
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -103,6 +104,76 @@ def _make_lut():
             _LUT = (key, np.array([min(255, int(255.0 * ((i / 255.0) ** GAMMA)))
                                    for i in range(256)], np.uint8))
     return _LUT[1]
+
+
+
+# ---------------- 文件输入源（图片 / 视频） ----------------
+SRC = {"path": None, "kind": None, "cap": None, "img": None}
+IMG_DONE = [False]        # 图片源只检测一帧，之后停住
+SRC_DIR = "/root/ip2/uploads"
+CAP_DIR = "/root/ip2/captures"
+DS_DIR = "/root/ip2/dataset"
+DS_EXT_IMG = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+DS_EXT_VID = (".mp4", ".avi", ".mov", ".mkv")
+
+
+def _fit_640x480(img):
+    """等比缩放到宽 640，竖直居中放进 640x480 画布（16:9 源正好上下各补 60 行）。"""
+    import numpy as _np
+    h, w = img.shape[:2]
+    nw = 640
+    nh = max(1, int(round(h * (640.0 / w))))
+    r = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_AREA)
+    if nh >= 480:
+        y0 = (nh - 480) // 2
+        return r[y0:y0 + 480, :]
+    out = _np.zeros((480, 640, 3), _np.uint8)
+    y0 = (480 - nh) // 2
+    out[y0:y0 + nh, :] = r
+    return out
+
+
+def open_src(path):
+    IMG_DONE[0] = False
+    """打开图片或视频作为帧源，返回 (kind, frames)。"""
+    os.makedirs(SRC_DIR, exist_ok=True)
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".jpg", ".jpeg", ".png", ".bmp", ".webp"):
+        img = cv2.imread(path, cv2.IMREAD_COLOR)
+        if img is None:
+            raise RuntimeError("image decode failed")
+        SRC.update(path=path, kind="image", cap=None, img=img)
+        return "image", 1
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        raise RuntimeError("video open failed")
+    SRC.update(path=path, kind="video", cap=cap, img=None)
+    return "video", int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+
+
+def close_src():
+    IMG_DONE[0] = False
+    if SRC.get("cap") is not None:
+        try:
+            SRC["cap"].release()
+        except Exception:                                          # noqa: BLE001
+            pass
+    SRC.update(path=None, kind=None, cap=None, img=None)
+
+
+def read_src():
+    """从文件源取一帧；视频读完自动回到第一帧循环。"""
+    if SRC["kind"] == "image":
+        return True, _fit_640x480(SRC["img"])
+    if SRC["kind"] == "video":
+        ok, f = SRC["cap"].read()
+        if not ok:
+            SRC["cap"].set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ok, f = SRC["cap"].read()
+        if not ok:
+            return False, None
+        return True, _fit_640x480(f)
+    return False, None
 
 
 def to_pl(gray):
@@ -296,7 +367,10 @@ def infer_loop(pl, net):
 
     while INFER["running"]:
         _t_cap = time.time()
-        ok, frame = cap.read()
+        if SRC["kind"]:
+            ok, frame = read_src()
+        else:
+            ok, frame = cap.read()
         STATE["cap_ms"] = 0.85 * STATE["cap_ms"] + 0.15 * (time.time() - _t_cap) * 1000.0
         if not ok:
             time.sleep(0.01)
@@ -304,6 +378,13 @@ def infer_loop(pl, net):
         gray = cv2.cvtColor(frame[60:420, :], cv2.COLOR_BGR2GRAY)   # 裁上下 60 行
         if gray.shape[:2] != (H, W):
             gray = cv2.resize(gray, (W, H), interpolation=cv2.INTER_LINEAR)
+
+        # 图片源：只检测一帧，之后停在结果上（画面与框都冻结）
+        if False and IMG_DONE[0]:   # 暂时停用：会让推流停帧
+            time.sleep(0.02)
+            continue
+        if SRC["kind"] == "image":
+            IMG_DONE[0] = True
 
         t0 = time.time()
         try:
@@ -709,12 +790,86 @@ class SrvHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self):                # noqa: N802
+        p = self.path.split("?")[0]
+        if p != "/upload":
+            self._send(404, "text/plain", b"no")
+            return
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(n) if n else b""
+            m = re.search(rb'filename="([^"]+)"', body)
+            name = os.path.basename(
+                (m.group(1).decode("utf-8", "replace") if m else "upload.bin")) or "upload.bin"
+            i = body.find(b"\r\n\r\n")
+            j = body.rfind(b"\r\n--")
+            data = body[i + 4:j] if (i >= 0 and j > i) else body
+            os.makedirs(SRC_DIR, exist_ok=True)
+            dst = os.path.join(SRC_DIR, name)
+            with open(dst, "wb") as _f:
+                _f.write(data)
+            kind, nf = open_src(dst)
+            self._send(200, "application/json",
+                       json.dumps({"ok": 1, "name": name, "kind": kind,
+                                   "frames": nf, "bytes": len(data)}).encode())
+        except Exception as e:                                     # noqa: BLE001
+            self._send(500, "text/plain", ("upload failed: %s" % e).encode())
+
     def do_GET(self):                 # noqa: N802
         p = self.path.split("?")[0]
         if p == "/":
             self._send(200, "text/html; charset=utf-8", PAGE.encode("utf-8"))
         elif p == "/info":
             self._send(200, "application/json", json.dumps(STATE).encode())
+        elif p == "/src":
+            qs = self.path.split("?", 1)[1] if "?" in self.path else ""
+            if "off=1" in qs:
+                close_src()
+            self._send(200, "application/json",
+                       json.dumps({"kind": SRC["kind"] or "camera",
+                                   "name": os.path.basename(SRC["path"] or "")}).encode())
+        elif p == "/list":
+            try:
+                out = []
+                if os.path.isdir(DS_DIR):
+                    for fn in sorted(os.listdir(DS_DIR)):
+                        ext = os.path.splitext(fn)[1].lower()
+                        k = ("image" if ext in DS_EXT_IMG else
+                             ("video" if ext in DS_EXT_VID else None))
+                        if k:
+                            out.append({"name": fn, "kind": k,
+                                        "size": os.path.getsize(os.path.join(DS_DIR, fn))})
+                self._send(200, "application/json", json.dumps({"files": out}).encode())
+            except Exception as e:                                 # noqa: BLE001
+                self._send(500, "text/plain", ("list failed: %s" % e).encode())
+        elif p == "/pick":
+            try:
+                qs = self.path.split("?", 1)[1] if "?" in self.path else ""
+                nm = ""
+                for kv in qs.split("&"):
+                    if kv.startswith("name="):
+                        from urllib.parse import unquote
+                        nm = unquote(kv[5:])
+                nm = os.path.basename(nm)
+                fp = os.path.join(DS_DIR, nm)
+                if not nm or not os.path.isfile(fp):
+                    raise RuntimeError("not found: %s" % nm)
+                close_src()
+                kind, nf = open_src(fp)
+                self._send(200, "application/json",
+                           json.dumps({"ok": 1, "name": nm, "kind": kind,
+                                       "frames": nf}).encode())
+            except Exception as e:                                 # noqa: BLE001
+                self._send(500, "text/plain", ("pick failed: %s" % e).encode())
+        elif p == "/save":
+            try:
+                os.makedirs(CAP_DIR, exist_ok=True)
+                fn = os.path.join(CAP_DIR, "cap_%s.jpg" % time.strftime("%Y%m%d_%H%M%S"))
+                with open(fn, "wb") as _f:
+                    _f.write(JPEG["buf"])
+                self._send(200, "application/json", json.dumps({"ok": 1, "file": fn}).encode())
+            except Exception as e:                                 # noqa: BLE001
+                self._send(500, "text/plain", str(e).encode())
         elif p == "/snap":
             b = JPEG["buf"] or b""
             self._send(200 if b else 503, "image/jpeg", b)
