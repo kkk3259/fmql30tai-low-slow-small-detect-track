@@ -5,7 +5,7 @@ NPU 视频推理流水线（npu_video.py）
 作用：把 A 交付的 YOLOv11n（截断头）跑在板上 ZG330 NPU 上，处理视频文件/摄像头，
       输出带检测框的视频。填补赛题要求 3 的「端到端性能测试」缺口。
 
-模型事实（来自 deploy/ 交付与 docs/11 第十章 10.12，均经板上实测核对）：
+模型事实（来自 deploy/ 交付与 `docs/33-NPU级联实测记录.md`，均经板上实测核对）：
     输入     (1, 640, 640, 3)  NHWC  UINT8  RGB   （/255 已折入量化，板端不要再除）
     输出     box_raw[1,64,8400] + cls_raw[1,1,8400]   FP32
     截断头   无 DFL softmax / 无 sigmoid / 无 NMS —— 全部在 CPU 侧做
@@ -208,7 +208,7 @@ class IcraftBackend:
     """
     ZG330 NPU 推理后端（**待接入**）。
 
-    板上已确认的可用信息（docs/11 §10.12）：
+    板上已确认的可用信息（`docs/33-NPU级联实测记录.md`）：
         设备      axi://zg330aiu?npu=0x40000000&dma=0x80000000
         JSON/Raw  deploy/yolo11n_drone_trunc_ZG.json / .raw
         裁剪      view_except_op_ids = [0, 275]（op0=Input、op275=Output 在 Host 侧）
@@ -246,7 +246,7 @@ class IcraftBackend:
         初始化 NPU（2026-10-25 板上实测通过）。
 
         依赖：/root/pywork 下的 pyrtutils（官方 Python 工具包）+ icraft 3.39.0
-        实测全链路见 docs/11 §10.13；视频流水线见 §10.14。
+        实测全链路见 `docs/33-NPU级联实测记录.md`；视频流水线见 `docs/45-系统算法与流程完整说明.md`。
         """
         try:
             if self._pyrtutils_dir not in sys.path:
@@ -302,7 +302,7 @@ class IcraftBackend:
 
         [WARN] 不要在这里做 /255 归一化：模型已折入量化。
         [WARN] forward 之后**必须** device.reset(1)，否则从第二次起返回首次缓存，
-           或直接崩 sync failed in op_id:2018（详见 docs/11 §10.14.3 坑①）。
+           或直接崩 sync failed in op_id:2018（详见 `docs/33-NPU级联实测记录.md` 的踩坑记录）。
         """
         if self._session is None:
             raise RuntimeError("IcraftBackend 未 open()")

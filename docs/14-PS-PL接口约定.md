@@ -352,7 +352,7 @@ echo 1 > /sys/class/u-dma-buf/udmabuf0/sync_for_cpu
 | 2 | **触发方式：按帧触发 or 连续流水** | **按帧触发**（§3.2）。比自由运行安全，避免与 PS 写下一帧冲突 |
 | 3 | **图像内容** | **原始 640×360 灰度，无任何预处理**；PL 内部做 5×5 Top-Hat → 31×31 CFAR → CCL。<br>** 补充**：PS 侧降采样是 `gray[::2, ::2]`（取每 2×2 块**左上角**像素），**不是平均池化**。PL 若需复现降采样必须用同规则 |
 | 4 | **同步责任** | **无异议**，`sync_for_device` / `sync_for_cpu` 全部由 PS 侧负责，PL 不涉及 cache |
-| 5 | **候选表 `x,y` 语义** | **质心**（P 的实现正确）。依据：`baseline/detect_v1.py:extract_candidates` 直接取 `cv2.connectedComponentsWithStats` 的质心输出 `cents[i]`。此前 `docs/13` 笼统写"坐标"未指明语义，已更正 |
+| 5 | **候选表 `x,y` 语义** | **质心**（P 的实现正确）。依据：`baseline/detect_v1.py:extract_candidates` 直接取 `cv2.connectedComponentsWithStats` 的质心输出 `cents[i]`。此前接口文档笼统写"坐标"未指明语义，已更正 |
 
 ---
 

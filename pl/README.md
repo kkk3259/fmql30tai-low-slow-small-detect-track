@@ -3,7 +3,7 @@
 FPGA 可编程逻辑部分的 Verilog 源码、约束、仿真与综合脚本。
 
 > 更新时间：2026-10-25（S 依据 P 提交 `a69adc0` 补记）　｜　状态：**IP2 三级流式重构完成；综合 71.0%（LUT 55,772 / 78,600）；AXI 全链路仿真打通（`VERDICT AXI-TOP-OK`）；待时序收敛 + 上板验证**
-> 报告素材见 [`docs/06-FPGA实现与验证.md`](../docs/06-FPGA实现与验证.md)；进展与卡点见 [`docs/13-PL上板进展与卡点.md`](../docs/13-PL上板进展与卡点.md)、[`docs/15-布局失败与LUTRAM减负.md`](../docs/15-布局失败与LUTRAM减负.md)
+> 报告素材见 [`docs/06-FPGA实现与验证.md`](../docs/06-FPGA实现与验证.md)；进展与卡点见 [`docs/15-布局失败与LUTRAM减负.md`](../docs/15-布局失败与LUTRAM减负.md)、[`docs/20-位流打包与上板步骤.md`](../docs/20-位流打包与上板步骤.md)
 
 ---
 
