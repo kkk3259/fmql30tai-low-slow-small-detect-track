@@ -352,7 +352,7 @@ def main():
               (M, M + colw, 620, 1110), (M + colw + gap, W - M, 620, 1110),
               (M, W - M, 1190, 1510),
               (M, M + colw, 1550, 2650), (M + colw + gap, W - M, 1550, 2650),
-              (M, W - M, 2700, 3010)]
+              (M, W - M, 2700, 3050)]
     bg_clear = tech_bg()
     blur_bg = bg_clear.filter(ImageFilter.GaussianBlur(16))
     img = bg_clear.convert("RGBA")
