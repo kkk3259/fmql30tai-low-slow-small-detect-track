@@ -58,64 +58,67 @@ def tech_bg():
 
     # 细网格
     for x in range(0, W, 84):
-        d.line([(x, 0), (x, H)], fill=(174, 214, 228), width=1)
+        d.line([(x, 0), (x, H)], fill=(150, 196, 214), width=1)
     for y in range(0, H, 84):
-        d.line([(0, y), (W, y)], fill=(174, 214, 228), width=1)
+        d.line([(0, y), (W, y)], fill=(150, 196, 214), width=1)
 
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ld = ImageDraw.Draw(layer)
 
     # 柔和光晕
-    for cx, cy, rr, col in [(W - 420, 260, 520, (210, 245, 252, 90)),
-                            (240, H - 520, 460, (225, 248, 252, 80)),
-                            (W - 200, H - 900, 380, (205, 240, 250, 70))]:
+    for cx, cy, rr, col in [(W - 420, 260, 540, (205, 243, 252, 125)),
+                            (240, H - 520, 480, (220, 247, 252, 110)),
+                            (W - 200, H - 900, 400, (200, 238, 250, 95))]:
         for r in range(rr, 0, -10):
             a = int(col[3] * (1 - r / rr) ** 1.6)
             ld.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(col[0], col[1], col[2], a))
 
     # 无人机剪影（三角机身 + 两翼）
     def drone(cx, cy, s, alpha):
-        c = (30, 92, 120, alpha)
+        c = (28, 88, 118, alpha)
         ld.polygon([(cx, cy + s), (cx - s * 0.55, cy - s * 0.5), (cx + s * 0.55, cy - s * 0.5)], fill=c)
-        ld.line([(cx - s * 0.9, cy - s * 0.55), (cx + s * 0.9, cy - s * 0.55)], fill=c, width=max(2, int(s * 0.12)))
-        ld.ellipse([cx - s * 0.95, cy - s * 0.68, cx - s * 0.72, cy - s * 0.45], outline=c, width=2)
-        ld.ellipse([cx + s * 0.72, cy - s * 0.68, cx + s * 0.95, cy - s * 0.45], outline=c, width=2)
+        ld.line([(cx - s * 0.9, cy - s * 0.55), (cx + s * 0.9, cy - s * 0.55)], fill=c, width=max(3, int(s * 0.14)))
+        ld.ellipse([cx - s * 0.98, cy - s * 0.7, cx - s * 0.7, cy - s * 0.42], outline=c, width=3)
+        ld.ellipse([cx + s * 0.7, cy - s * 0.7, cx + s * 0.98, cy - s * 0.42], outline=c, width=3)
 
-    for cx, cy, s, a in [(W - 260, 520, 46, 46), (W - 700, 300, 32, 38),
-                         (300, 760, 28, 34), (W - 160, 1500, 38, 34)]:
+    for cx, cy, s, a in [(W - 270, 520, 62, 100), (W - 720, 300, 42, 85),
+                         (300, 760, 36, 78), (W - 170, 1500, 50, 78),
+                         (520, H - 700, 34, 70)]:
         drone(cx, cy, s, a)
 
     # 检测框 + 准星
-    for x, y, bw, bh, a in [(W - 520, 640, 120, 86, 80), (260, 980, 96, 70, 70)]:
-        ld.rectangle([x, y, x + bw, y + bh], outline=(10, 122, 150, a), width=3)
+    for x, y, bw, bh, a in [(W - 560, 620, 150, 110, 160), (250, 960, 120, 88, 140),
+                            (W - 150, 900, 90, 66, 110)]:
+        ld.rectangle([x, y, x + bw, y + bh], outline=(8, 112, 142, a), width=4)
         mx, my = x + bw // 2, y + bh // 2
-        ld.line([(mx - 16, my), (mx + 16, my)], fill=(10, 122, 150, a), width=2)
-        ld.line([(mx, my - 16), (mx, my + 16)], fill=(10, 122, 150, a), width=2)
+        ld.line([(mx - 18, my), (mx + 18, my)], fill=(8, 112, 142, a), width=3)
+        ld.line([(mx, my - 18), (mx, my + 18)], fill=(8, 112, 142, a), width=3)
 
     # 航迹
-    tr = [(W - 520, 640), (W - 430, 590), (W - 340, 610), (W - 260, 520)]
+    tr = [(W - 560, 620), (W - 460, 560), (W - 360, 585), (W - 270, 520), (W - 170, 480)]
     for i in range(len(tr) - 1):
-        ld.line([tr[i], tr[i + 1]], fill=(10, 122, 150, 70), width=3)
+        ld.line([tr[i], tr[i + 1]], fill=(8, 112, 142, 150), width=4)
     for p in tr:
-        ld.ellipse([p[0] - 5, p[1] - 5, p[0] + 5, p[1] + 5], fill=(10, 122, 150, 90))
+        ld.ellipse([p[0] - 7, p[1] - 7, p[0] + 7, p[1] + 7], fill=(8, 112, 142, 170))
 
     # 右上雷达弧
-    for r in range(200, 720, 90):
+    for r in range(200, 760, 90):
         ld.arc([W - 160 - r, 160 - r, W - 160 + r, 160 + r], start=90, end=270,
-               fill=(26, 110, 140, 45), width=2)
+               fill=(24, 104, 136, 95), width=3)
+    ld.line([(W - 160, 160), (W - 160 - 700, 160)], fill=(24, 104, 136, 90), width=2)
 
     # 电路走线（左下）
     pcb = [(0, H - 420), (170, H - 420), (240, H - 350), (240, H - 180),
-           (400, H - 180), (470, H - 250)]
+           (400, H - 180), (470, H - 250), (470, H - 420), (620, H - 420)]
     for i in range(len(pcb) - 1):
-        ld.line([pcb[i], pcb[i + 1]], fill=(40, 100, 130, 55), width=3)
+        ld.line([pcb[i], pcb[i + 1]], fill=(36, 96, 126, 115), width=4)
     for p in pcb:
-        ld.ellipse([p[0] - 5, p[1] - 5, p[0] + 5, p[1] + 5], fill=(40, 100, 130, 70))
+        ld.ellipse([p[0] - 6, p[1] - 6, p[0] + 6, p[1] + 6], fill=(36, 96, 126, 135))
 
     # 十字标记
-    for cx, cy, s in [(W - 90, 380, 14), (90, 640, 12), (W - 120, 1180, 12), (120, H - 260, 12)]:
-        ld.line([(cx - s, cy), (cx + s, cy)], fill=(255, 255, 255, 150), width=3)
-        ld.line([(cx, cy - s), (cx, cy + s)], fill=(255, 255, 255, 150), width=3)
+    for cx, cy, s in [(W - 90, 380, 16), (90, 640, 14), (W - 120, 1180, 14), (120, H - 260, 14)]:
+        ld.line([(cx - s, cy), (cx + s, cy)], fill=(255, 255, 255, 190), width=3)
+        ld.line([(cx, cy - s), (cx, cy + s)], fill=(255, 255, 255, 190), width=3)
 
     # 底部低空城市剪影
     base = H - 40
@@ -126,11 +129,11 @@ def tech_bg():
                (1820, 60), (1980, 60), (1980, 140), (2140, 140), (2140, 90), (2300, 90),
                (2300, 160), (2480, 160)]
     poly = [(x, base - hh) for x, hh in skyline] + [(W, H), (0, H)]
-    ld.polygon(poly, fill=(52, 110, 140, 38))
+    ld.polygon(poly, fill=(46, 104, 136, 85))
     # 楼宇窗格
     for x, hh in skyline[::2]:
         for wy in range(base - hh + 18, base - 8, 26):
-            ld.line([(x + 14, wy), (x + 40, wy)], fill=(255, 255, 255, 55), width=2)
+            ld.line([(x + 14, wy), (x + 40, wy)], fill=(255, 255, 255, 110), width=2)
 
     img = Image.alpha_composite(img.convert("RGBA"), layer)
     return img
