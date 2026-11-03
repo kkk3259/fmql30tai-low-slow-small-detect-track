@@ -1,13 +1,20 @@
-// tophat_5x5_stream.v —— 流式 5x5 Top-Hat（行缓存 + 流水线）
-// TopHat = I - opening(I) = I - dilate(erode(I,5x5),5x5)
-// ✅ 已验证：32x32 内部（r,c ∈ [5,27)）逐像素与 cv2.morphologyEx(MORPH_TOPHAT) 0 误差。
-//    边界 2~3 像素回绕（win5 列回绕固有，检测可忽略：CFAR 31x31 本来丢 15 像素边界）。
-// 结构：win5(腐蚀 min, PAD=255) → win5(膨胀 max, PAD=0) → 原始延迟 TD=4W+7 对齐。
-// TD=4W+7：两级 win5 各 2W+3，加上 dilate 输入 valid 是寄存器多 1 拍（=4W+7）。
+// tophat_5x5_stream.v —— 流式 NxN Top-Hat / Black-Hat（行缓存 + 流水线）
+// TopHat   = I - opening(I) = I - dilate(erode(I,SE),SE)      → 亮小目标
+// BlackHat = closing(I) - I = erode(dilate(I,SE),SE) - I      → 暗小目标
+// 【2026-10-29】新增 MODE：0=Top-Hat（默认，检亮目标）、1=Black-Hat（检暗目标）。
+//   S 的实测（tools/bench_cfar_tradeoff.py，100 张真实图）：真实目标是**暗点**，
+//   Black-Hat k=3.0 召回 86%/候选 47.5，优于 Top-Hat k=4.0 的 55%/34.7。
+//   硬件无需新增资源：两级 win5 的 IS_MAX/PAD 对调、减法方向反过来即可。
+// [OK] 已验证（SE=5）：内部逐像素与 cv2.morphologyEx(MORPH_TOPHAT, 5x5) 0 误差。
+// 【2026-10-28】SE 参数化，默认 21x21（SE=5 只能检 1~4px，SE=21 可检 <=20px）。
+// 结构：win5(第1级) → win5(第2级) → 原始延迟 TD 对齐。
+// TD = 2*(每级 win5 延迟) + 1，每级延迟 = (SE/2)*W + (SE/2) + 1。
 module tophat_5x5_stream #(
     parameter W = 32,
     parameter H = 32,
-    parameter TD = 4 * W + 7   // 原始灰度延迟（对齐 opening）
+    parameter SE = 5,                                       // 结构元边长（奇数）；默认 5
+    parameter MODE = 0,                                     // 0=Top-Hat(亮) 1=Black-Hat(暗)
+    parameter TD = 2*(((SE/2)*W) + (SE/2) + 1) + 1           // 原始灰度延迟（对齐 opening）
 )(
     input  wire clk,
     input  wire rst_n,
@@ -23,7 +30,8 @@ module tophat_5x5_stream #(
     wire [7:0] eroded;
     wire eroded_valid;
     wire eroded_ready;
-    win5 #(.W(W), .IS_MAX(0), .PAD(8'd255)) u_erode (
+    // 第 1 级：Top-Hat 用腐蚀(min,pad255)，Black-Hat 用膨胀(max,pad0)
+    win5 #(.W(W), .SE(SE), .IS_MAX(MODE ? 1 : 0), .PAD(MODE ? 8'd0 : 8'd255)) u_erode (
         .clk(clk), .rst_n(rst_n),
         .i_data(i_data), .i_valid(i_valid), .i_ready(i_ready),
         .o_data(eroded), .o_valid(eroded_valid), .o_ready(eroded_ready)
@@ -31,7 +39,9 @@ module tophat_5x5_stream #(
 
     wire [7:0] dilated;
     wire dilated_valid;
-    win5 #(.W(W), .IS_MAX(1), .PAD(8'd0)) u_dilate (
+    wire dilated_ready;
+    // 第 2 级：Top-Hat 用膨胀(max,pad0)，Black-Hat 用腐蚀(min,pad255)
+    win5 #(.W(W), .SE(SE), .IS_MAX(MODE ? 0 : 1), .PAD(MODE ? 8'd255 : 8'd0)) u_dilate (
         .clk(clk), .rst_n(rst_n),
         .i_data(eroded), .i_valid(eroded_valid), .i_ready(eroded_ready),
         .o_data(dilated), .o_valid(dilated_valid), .o_ready(o_ready)
@@ -44,7 +54,7 @@ module tophat_5x5_stream #(
     // 填充不足 TD+1 拍时输出 0（等价原复位值全 0）。
     localparam GD_D = TD + 2;            // 循环缓冲深度
     localparam GD_LAT = TD + 1;          // 延迟拍数
-    localparam GPW = $clog2(GD_D);       // 指针位宽
+    localparam GPW = (((GD_D)<=2)?1:((GD_D)<=4)?2:((GD_D)<=8)?3:((GD_D)<=16)?4:((GD_D)<=32)?5:((GD_D)<=64)?6:((GD_D)<=128)?7:((GD_D)<=256)?8:((GD_D)<=512)?9:((GD_D)<=1024)?10:((GD_D)<=2048)?11:((GD_D)<=4096)?12:((GD_D)<=8192)?13:((GD_D)<=16384)?14:((GD_D)<=32768)?15:((GD_D)<=65536)?16:((GD_D)<=131072)?17:((GD_D)<=262144)?18:((GD_D)<=524288)?19:((GD_D)<=1048576)?20:((GD_D)<=2097152)?21:((GD_D)<=4194304)?22:((GD_D)<=8388608)?23:((GD_D)<=16777216)?24:((GD_D)<=33554432)?25:((GD_D)<=67108864)?26:((GD_D)<=134217728)?27:((GD_D)<=268435456)?28:((GD_D)<=536870912)?29:((GD_D)<=1073741824)?30:((GD_D)<=2147483648)?31:32);       // 指针位宽
 
     reg [7:0] gd [0:GD_D-1];
     reg [GPW-1:0] gwp;
@@ -69,18 +79,30 @@ module tophat_5x5_stream #(
     end
 
     wire [7:0] gray_c = gfull ? gd[grp] : 8'd0;
-    wire [7:0] th = (gray_c >= dilated) ? (gray_c - dilated) : 8'd0;
+    // MODE=0: TopHat   = I - opening  → 亮目标
+    // MODE=1: BlackHat = closing - I  → 暗目标
+    wire [7:0] th_t = (gray_c >= dilated) ? (gray_c - dilated) : 8'd0;
+    wire [7:0] th_b = (dilated >= gray_c) ? (dilated - gray_c) : 8'd0;
+    wire [7:0] th   = MODE ? th_b : th_t;
 
     // 寄存输出（与 win5 对齐，标准流式；带 o_ready 使能，受阻时必须保持数据）
     reg [7:0] o_data_r;
     reg o_valid_r;
+    reg [7:0] o_data_r2;
+    reg o_valid_r2;
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin o_data_r <= 8'd0; o_valid_r <= 1'b0; end
-        else if (o_ready) begin
+        if (!rst_n) begin
+            o_data_r <= 8'd0; o_valid_r <= 1'b0;
+            o_data_r2 <= 8'd0; o_valid_r2 <= 1'b0;
+        end else if (o_ready) begin
             o_data_r  <= th;
             o_valid_r <= dilated_valid;
+            // 数据多打一拍：参数化后数据比 valid 早 1 个样本（实测 new[i]=old[i+1]）
+            o_data_r2  <= o_data_r;
+            o_valid_r2 <= o_valid_r;
         end
     end
-    assign o_data  = o_data_r;
+    // 输出：数据两拍、valid 一拍（数据比 valid 晚 1 个样本，与历史版本逐样本一致）
+    assign o_data  = o_data_r2;
     assign o_valid = o_valid_r;
 endmodule

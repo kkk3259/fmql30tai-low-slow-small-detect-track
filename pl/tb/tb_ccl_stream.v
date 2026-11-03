@@ -43,6 +43,15 @@ module tb_ccl_stream;
             enh_valid = 1'b1;
             @(negedge clk);
         end
+        // 帧尾续喂零像素：CCL 内部的 3×3 去噪有 W+2 拍延迟，不补这一段
+        // 最后两行的像素永远出不来，px_cnt 到不了 N-1，状态机不会进 S_MERGE。
+        for (idx = 0; idx < 256; idx = idx + 1) begin
+            i_bin = 1'b0;
+            i_enh = 8'd0;
+            bin_valid = 1'b1;
+            enh_valid = 1'b1;
+            @(negedge clk);
+        end
         @(negedge clk);
         bin_valid = 1'b0;
         enh_valid = 1'b0;

@@ -51,17 +51,17 @@ RTL 是同一套（`pl/rtl/`），Procise 和 Vivado 都能综合，不需要写
 
 ## 3. 关键设计决定（踩过的坑，别改）
 
-1. **PS 晶振参数沿用官方出厂配置 `33.333333`**，不要"按手册改成 50"。
+1. PS 晶振参数沿用官方出厂配置 `33.333333`，不要"按手册改成 50"。
    依据：官方 30TAI 工程 `ps7_parameters.xml:28` 就是 33.333333，而它烧进板子
    UART/DDR/QSPI 全部正常工作。该参数错了会导致 UART 波特率、DDR 频率全偏。
-   我们唯一显式改的是 **FCLK_CLK0 = 50 MHz**（与 50 MHz 位流同频）。
+   我们唯一显式改的是 FCLK_CLK0 = 50 MHz（与 50 MHz 位流同频）。
 2. **像素流必须连续**：IP2 里 Top-Hat 的行缓存和 CFAR 的 31×31 窗口都假设
    "每个有效拍就换一个像素"。AXI 读回来是突发间隙的，所以必须经
    `ip2_pix_fifo.v`（整帧 262,144 深 ≈ 2 Mbit LUTRAM）再喂链，不能用
    `pe=o_ready` 之类"跳过空拍"的做法（试过，几何关系全乱，候选表全 0）。
-3. **寄存器基址固定 `0x43C00000`**，与 `ps/pl_link.py` 里的常量一致；
+3. 寄存器基址固定 `0x43C00000`，与 `ps/pl_link.py` 里的常量一致；
    不要用自动分配的地址（`assign_bd_address` 后要显式改 offset）。
-4. **帧缓冲/结果区物理地址**：帧 `0x30100000`（16 MiB，可放 72 帧）、结果 `0x31000000`。
+4. 帧缓冲/结果区物理地址：帧 `0x30100000`（16 MiB，可放 72 帧）、结果 `0x31000000`。
    注意避开 `0x40000000`（S 明确说被占用）与 `0x80000000`（AI_Mate DMA 用）。
 
 ---
@@ -99,7 +99,7 @@ cd D:\firstharness\synth\vivado
 
 ## 5. 上板（带 PS，不能用 JTAG 直接烧）
 
-带 PS 的设计，**位流必须由 FSBL 从 BOOT.bin 加载**（JTAG 只烧 .bit 的话 PS 不会起来）：
+带 PS 的设计，位流必须由 FSBL 从 BOOT.bin 加载（JTAG 只烧 .bit 的话 PS 不会起来）：
 
 1. Vivado 里 `File → Export → Export Hardware`（勾 Include bitstream）→ 得到 `.hdf`
 2. Xilinx SDK：`File → New → Application Project`，选我们的 hdf，建 `fsbl`

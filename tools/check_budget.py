@@ -20,7 +20,7 @@ tools/check_budget.py —— PL 资源预算检查（目标平台 FMQL30TAI）
   # ③ 读 Procise 报告（格式不同，尽量解析；不行就用 ① 手动粘）
   python tools/check_budget.py --report path/to/procise_report.rpt
 
-⚠️ 本项目（P 这条 Procise 路线）注意两点（2026-10-23 补充）：
+[WARN] 本项目（P 这条 Procise 路线）注意两点（2026-10-23 补充）：
   1. Procise 不产出 Vivado 那种 utilization .rpt；实际做法是读综合网表
      `synth/area_hier.py <edif>`（按模块/信号名统计 LUT/FF/LUTRAM/CARRY）。
   2. 本设计的存储**全部落在 LUTRAM**（块 RAM 用量为 0），1 个 LUT 约 64 bit
@@ -47,7 +47,7 @@ BUDGET = {
 def parse_report(path):
     """从综合报告里尽量提取资源占用（Vivado / Procise 通用启发式）"""
     if not os.path.exists(path):
-        print("❌ 报告文件不存在: " + path)
+        print("[FAIL] 报告文件不存在: " + path)
         return None
     t = io.open(path, encoding="utf-8", errors="replace").read()
     out = {}
@@ -102,7 +102,7 @@ def main():
             vals.update(r)
             print("已从报告解析: " + ", ".join("{}={}".format(k, v) for k, v in r.items()))
         else:
-            print("⚠️ 未能从报告自动解析，请用 --lc/--lut/--dsp/--bram 手动指定")
+            print("[WARN] 未能从报告自动解析，请用 --lc/--lut/--dsp/--bram 手动指定")
 
     for k, v in [("LC", a.lc), ("LUT", a.lut), ("FF", a.ff),
                  ("DSP", a.dsp), ("BRAM_Mb", a.bram)]:
@@ -132,12 +132,12 @@ def main():
             print("  {:<8} {:>12.0f} {:>12} {:>14} {:>10}".format(key, used, "—", "—", "参考"))
             continue
         pct = 100.0 * used / bud
-        flag = "✅ 通过"
+        flag = "[OK] 通过"
         if pct > 100:
-            flag = "❌ 超预算"
+            flag = "[FAIL] 超预算"
             bad.append(key)
         elif pct > 80:
-            flag = "⚠️ 接近上限"
+            flag = "[WARN] 接近上限"
         print("  {:<8} {:>12.1f} {:>12.1f} {:>13.1f}% {:>10}".format(key, used, bud, pct, flag))
 
     print("")
@@ -145,10 +145,10 @@ def main():
 
     print("")
     if bad:
-        print("  ❌ 结论：{} 项超出 30TAI 预算 —— 必须优化后再迁移，否则上不了 30TAI".format(len(bad)))
+        print("  [FAIL] 结论：{} 项超出 30TAI 预算 —— 必须优化后再迁移，否则上不了 30TAI".format(len(bad)))
         print("     超出项：" + "、".join(bad))
         return 1
-    print("  ✅ 结论：所有资源均在 30TAI 预算内，可安全迁移")
+    print("  [OK] 结论：所有资源均在 30TAI 预算内，可安全迁移")
     return 0
 
 

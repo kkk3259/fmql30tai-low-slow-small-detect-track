@@ -132,7 +132,7 @@ def main():
         sy = 1080 / a.h
         cand_str = " ".join("(%d,%d p%d)" % (int(x * sx), int(y * sy), p) for x, y, a, p in cands)
         print("帧 %4d [%2d/%2d] %s  参考候选=%d: %s" %
-              (fid, fi + 1, len(frames), "✅" if ok else "❌", len(cands), cand_str))
+              (fid, fi + 1, len(frames), "[OK]" if ok else "[FAIL]", len(cands), cand_str))
 
     cap.release()
     print("\n===== 逐帧比对结果 =====")

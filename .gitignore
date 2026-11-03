@@ -43,3 +43,5 @@ fmql30tai-low-slow-small-detect-track/
 *.pth
 *.onnx
 !npu/**/*.json
+# Office/WPS 打开文档时生成的锁文件（形如 ~$xxx.docx）
+~\$*

@@ -16,7 +16,7 @@ NPU 视频推理流水线（npu_video.py）
 后处理算法照 deploy/cpu_decode_demo.py（A 已与 FP32 模型数值对拍验证），
 但**从 torch 移植为 numpy** —— 板端没有 torch。
 
-⚠️ 推理后端（infer）尚未接入，见 IcraftBackend 的说明：
+[WARN] 推理后端（infer）尚未接入，见 IcraftBackend 的说明：
     板子上有 zg330backend.cpython-38-aarch64-linux-gnu.so，理论上 Python 可直调，
     但需在板上实测确认。在确认前，用 --dry-run 可以验证除推理外的全部代码。
 
@@ -51,7 +51,7 @@ def letterbox(img_bgr, dst_w=NET_W, dst_h=NET_H):
     """
     保持宽高比缩放到 640×640，多余部分补零（YOLO 标准做法）。
 
-    ⚠️ 不能直接 cv2.resize(img, (640,640))：16:9 → 1:1 会把画面横向压扁，
+    [WARN] 不能直接 cv2.resize(img, (640,640))：16:9 → 1:1 会把画面横向压扁，
        框位置全部偏。必须 letterbox，后处理再用 scale/left/top 反算回原图。
 
     返回：
@@ -85,7 +85,7 @@ def dfl_decode(box_raw, cls_raw, imgsz=NET_W, reg_max=REG_MAX, strides=STRIDES,
         box_raw : (1,64,8400) 或 (64,8400)，FP32 → reshape 成 (4, 16, 8400)
         cls_raw : (1,1,8400) 或 (8400)，FP32
         sel_idx : 只解码这些 anchor 的下标（None = 全量）。
-                  ★ 传候选集下标可大幅省时 —— A 的建议是"别全量解"。
+                   传候选集下标可大幅省时 —— A 的建议是"别全量解"。
 
     返回：
         boxes : (N, 4) 像素 xywh（xy 为框中心），N = len(sel_idx) 或 8400
@@ -163,7 +163,7 @@ def postprocess(box_raw, cls_raw, scale, left, top,
     """
     完整后处理：置信度过滤 → 候选集 DFL 解码 → NMS → 坐标反算回原图。
 
-    ★ 顺序很重要（这是 A 在交付清单里的建议）：**先全量 sigmoid 过滤，
+     顺序很重要（这是 A 在交付清单里的建议）：**先全量 sigmoid 过滤，
       再只对候选集做 DFL**。反过来（先全量 DFL 再过滤）会白算 8000+ 个
       用不上的 anchor —— 实测后处理耗时差 5~7 倍。
 
@@ -222,7 +222,7 @@ class IcraftBackend:
       ③ icraft-run 子进程：每次启动约 800 ms（模型加载 735 ms + Raw 145 ms），
          不适合逐帧调用，只能用于抽样校验。
 
-    ⚠️ 在确认①之前，请用 --dry-run 验证后处理与画图逻辑。
+    [WARN] 在确认①之前，请用 --dry-run 验证后处理与画图逻辑。
     """
 
     def __init__(self, json_path, raw_path, device_url=None,
@@ -269,7 +269,7 @@ class IcraftBackend:
         self._network = loadNetwork(self.json_path, self.raw_path)
         self._netinfo = Netinfo(self._network)
         self._device = xrt.Device.Open(self.device_url)
-        # ★ ocm_option 只能 0/1/2/3/4，传 -1（官方 yaml 写法）会抛异常
+        #  ocm_option 只能 0/1/2/3/4，传 -1（官方 yaml 写法）会抛异常
         self._session = initSession(
             "zg330", self._network, self._device,
             ocm_option=4,
@@ -277,7 +277,7 @@ class IcraftBackend:
             open_speedmode=False,
             open_compressFtmp=False,
         )
-        # ★ apply() 失败时必须主动释放设备：否则 device 处于半初始化状态，
+        #  apply() 失败时必须主动释放设备：否则 device 处于半初始化状态，
         #   后续运行会报 "DMA Read time out"，只能重启板子恢复。
         try:
             self._session.enableTimeProfile(True)
@@ -300,8 +300,8 @@ class IcraftBackend:
         参数：img_rgb_640 —— (640,640,3) uint8，RGB，会被当作 (1,640,640,3) NHWC 输入
         返回：(box_raw, cls_raw) —— (1,64,8400) 和 (1,1,8400) 的 float32
 
-        ⚠️ 不要在这里做 /255 归一化：模型已折入量化。
-        ⚠️ forward 之后**必须** device.reset(1)，否则从第二次起返回首次缓存，
+        [WARN] 不要在这里做 /255 归一化：模型已折入量化。
+        [WARN] forward 之后**必须** device.reset(1)，否则从第二次起返回首次缓存，
            或直接崩 sync failed in op_id:2018（详见 docs/11 §10.14.3 坑①）。
         """
         if self._session is None:
@@ -311,11 +311,11 @@ class IcraftBackend:
             np.ascontiguousarray(img_rgb_640).reshape(1, 640, 640, 3), self._network)
         out = self._session.forward([ten])
 
-        # ★ 输出 Tensor 不能 np.array()（报 memchunk is of ADDR type），必须 read()
+        #  输出 Tensor 不能 np.array()（报 memchunk is of ADDR type），必须 read()
         out[0].read(memoryview(self._buf_box), 0, self._buf_box.size)
         out[1].read(memoryview(self._buf_cls), 0, self._buf_cls.size)
 
-        self._device.reset(1)      # ★ 必须
+        self._device.reset(1)      #  必须
 
         return (self._buf_box.view(np.float32).copy(),
                 self._buf_cls.view(np.float32).copy())
@@ -393,7 +393,7 @@ def run(src, out, backend, max_frames=0, show_hud=True):
     n, t_pre, t_inf, t_post = 0, 0.0, 0.0, 0.0
     t_start = time.time()
 
-    # ★ backend.open() 必须在 try 内：若 session.apply() 中途抛异常（如 DMA 超时），
+    #  backend.open() 必须在 try 内：若 session.apply() 中途抛异常（如 DMA 超时），
     #   放在外面会导致 finally 不执行 → 设备句柄泄漏 → 下次运行 DMA 通道卡死（需重启板子）。
     try:
         backend.open()

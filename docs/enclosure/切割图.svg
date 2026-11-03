@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="420mm" height="330mm" viewBox="0 0 420 330">
+<rect width="420" height="330" fill="#ffffff"/>
+<g stroke="#000000" stroke-width="0.3" fill="none" font-family="sans-serif">
+<text x="10" y="14" font-size="5" stroke="none" fill="#000">亚克力激光切割图 · 3mm 板厚 · 单位 mm · 实线=切穿 · 虚线=折弯参考</text>
+<text x="60.0" y="52.0" font-size="4.5" stroke="none" fill="#000">① 底板（124 × 124）</text>
+<rect x="60.0" y="60.0" width="124.0" height="124.0" rx="5.0"/>
+<rect x="72.0" y="72.0" width="100.0" height="100.0" stroke-dasharray="2,1.5" stroke="#888"/>
+<text x="122.0" y="122.0" font-size="3.5" stroke="none" fill="#888" text-anchor="middle">开发板轮廓 100×100</text>
+<circle cx="77.0" cy="77.0" r="1.6"/>
+<circle cx="167.0" cy="77.0" r="1.6"/>
+<circle cx="77.0" cy="167.0" r="1.6"/>
+<circle cx="167.0" cy="167.0" r="1.6"/>
+<line x1="77.0" y1="193.0" x2="167.0" y2="193.0" stroke-width="0.2"/>
+<text x="122.0" y="197.0" font-size="3.2" stroke="none" fill="#000" text-anchor="middle">90.0</text>
+<line x1="193.0" y1="77.0" x2="193.0" y2="167.0" stroke-width="0.2"/>
+<text x="196.0" y="122.0" font-size="3.2" stroke="none" fill="#000">90.0</text>
+<polyline points="184.0,88.0 170.0,88.0 170.0,100.0 184.0,100.0" fill="none"/>
+<text x="187.0" y="95.0" font-size="2.8" stroke="none" fill="#666">电源 J37</text>
+<polyline points="184.0,108.0 170.0,108.0 170.0,120.0 184.0,120.0" fill="none"/>
+<text x="187.0" y="115.0" font-size="2.8" stroke="none" fill="#666">网口</text>
+<polyline points="184.0,128.0 170.0,128.0 170.0,140.0 184.0,140.0" fill="none"/>
+<text x="187.0" y="135.0" font-size="2.8" stroke="none" fill="#666">USB</text>
+<circle cx="68.0" cy="68.0" r="1.5"/>
+<circle cx="176.0" cy="68.0" r="1.5"/>
+<circle cx="68.0" cy="176.0" r="1.5"/>
+<circle cx="176.0" cy="176.0" r="1.5"/>
+<text x="244.0" y="52.0" font-size="4.5" stroke="none" fill="#000">② 前面板（66 × 75）· 摄像头安装</text>
+<rect x="244.0" y="60.0" width="66.0" height="75.0" rx="5.0"/>
+<rect x="258.0" y="96.0" width="38.0" height="38.0" stroke-dasharray="2,1.5" stroke="#888"/>
+<circle cx="263.0" cy="101.0" r="1.1"/>
+<circle cx="291.0" cy="101.0" r="1.1"/>
+<circle cx="263.0" cy="129.0" r="1.1"/>
+<circle cx="291.0" cy="129.0" r="1.1"/>
+<circle cx="277.0" cy="115.0" r="7.0"/>
+<text x="277.0" y="126.0" font-size="2.8" stroke="none" fill="#666" text-anchor="middle">镜头孔 Ø14</text>
+<circle cx="252.0" cy="126.0" r="1.6"/>
+<circle cx="302.0" cy="126.0" r="1.6"/>
+<line x1="235.0" y1="60.0" x2="235.0" y2="135.0" stroke-width="0.2"/>
+<text x="232.0" y="97.5" font-size="3.2" stroke="none" fill="#000" text-anchor="end">75.0</text>
+<text x="60.0" y="216.0" font-size="4.5" stroke="none" fill="#000">③ 立柱不用切 —— 用现成 M3 铜柱</text>
+<text x="60.0" y="230.0" font-size="3.6" stroke="none" fill="#333">底板侧：M3×25 单通铜柱 × 4（支撑开发板）</text>
+<text x="60.0" y="239.0" font-size="3.6" stroke="none" fill="#333">前面板侧：M3×20 铜柱 × 2 + M3×8 螺丝 × 4（把摄像头前面板支起来）</text>
+<text x="60.0" y="248.0" font-size="3.6" stroke="none" fill="#333">脚垫：Ø12 橡胶自粘脚垫 × 4（贴在底板四角）</text>
+<text x="60.0" y="260.0" font-size="3.4" stroke="none" fill="#666">以上五金合计约 ¥15（淘宝「亚克力铜柱套装」一次买齐）</text>
+<text x="60" y="269.0" font-size="3.6" stroke="none" fill="#000">装配：底板四角拧 M3×25 铜柱 → 固定开发板 → 前面板底部两孔与立柱对接 → 摄像头 M2 螺丝固定 → 镜头朝向目标</text>
+<text x="60" y="277.0" font-size="3.4" stroke="none" fill="#666">材料：3mm 透明亚克力（底板可加厚到 5mm 增加刚性）· 表面：激光切割，不抛光</text>
+</g></svg>

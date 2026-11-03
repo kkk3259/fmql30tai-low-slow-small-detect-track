@@ -14,7 +14,7 @@
 module ip2_axi_bd_wrap #(
     parameter W = 640,
     parameter H = 360,
-    parameter MAX_CAND = 5,
+    parameter MAX_CAND = 64,
     parameter [31:0] DEF_FRAME_ADDR  = 32'h3010_0000,
     parameter [31:0] DEF_RESULT_ADDR = 32'h3100_0000
 )(

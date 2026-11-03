@@ -29,7 +29,7 @@
 - `M6` 驱动 `1'b1` → 对应 LED **常亮**
 - `J8` 驱动 `1'b0` → 对应 LED **常灭**
 
-⇒ **高电平点亮（active-high）**：`led[n] = 1` 灯亮，`= 0` 灯灭。
+⇒ 高电平点亮（active-high）：`led[n] = 1` 灯亮，`= 0` 灯灭。
 
 这一点很关键：此前 `blink_top`（只约束了 `J1`，其余三脚悬空）时看到"别的灯也亮"，
 是因为悬空引脚在弱上拉下的漏电流，**不能**据此推断极性。
@@ -37,8 +37,8 @@
 ## `ip2_board_top` 位流里 LED 的含义
 
 ```verilog
-assign led[0]   = fcnt[7];                              // 心跳：每 128 帧翻转 ≈ 0.63 s
-assign led[3:1] = (ncand > 8'd7) ? 3'd7 : ncand[2:0];    // 本帧检出候选数（饱和到 7）
+assign led[0] = fcnt[7]; // 心跳：每 128 帧翻转 ≈ 0.63 s
+assign led[3:1] = (ncand > 8'd7) ? 3'd7 : ncand[2:0]; // 本帧检出候选数（饱和到 7）
 ```
 
 | 位 | 引脚 | 丝印 | 含义 |
@@ -48,14 +48,14 @@ assign led[3:1] = (ncand > 8'd7) ? 3'd7 : ncand[2:0];    // 本帧检出候选�
 | `led[2]` | H7 | **D19** | `ncand` 的 **bit1**（权值 2） |
 | `led[3]` | J8 | **D21** | `ncand` 的 **bit2**（权值 4） |
 
-> ⚠️ 注意 `assign led[3:1] = ncand[2:0]` 是**位对位**映射：
+> 注意 `assign led[3:1] = ncand[2:0]` 是**位对位**映射：
 > `led[1]←ncand[0]`、`led[2]←ncand[1]`、`led[3]←ncand[2]`。
-> 所以权值是 **D20=1、D19=2、D21=4**，不是 2/4/8。
+> 所以权值是 D20=1、D19=2、D21=4，不是 2/4/8。
 
 读法：`ncand = D21×4 + D19×2 + D20×1`（只看亮/灭；D18 是心跳不算，D7/D8 是电源灯不算）。
 
 - `ncand = 4` → `led[3:1] = 100` → **只有 D21 亮**（D19、D20 灭）
-- `ncand = 3` → `011` → **D19、D20 亮，D21 灭**
+- `ncand = 3` → `011` → D19、D20 亮，D21 灭
 - `ncand = 5` 或更大 → `101`/`111` → **D21 一定亮**
 - `ncand = 0` → **三颗全灭**
 
@@ -63,12 +63,12 @@ assign led[3:1] = (ncand > 8'd7) ? 3'd7 : ncand[2:0];    // 本帧检出候选�
 
 ```tcl
 clear_design
-source D:/firstharness/synth/board_ledmap.tcl     ;# → led_map_top.bit
+source D:/firstharness/synth/board_ledmap.tcl ;# → led_map_top.bit
 ```
 
 ```tcl
 clear_design
-source D:/firstharness/synth/board_ledseq.tcl     ;# → led_seq_top.bit（每步只亮一颗，8 秒循环）
+source D:/firstharness/synth/board_ledseq.tcl ;# → led_seq_top.bit（每步只亮一颗，8 秒循环）
 ```
 
 `led_seq_top.bit` 用于在丝印看不清、或换板子时重新确认映射：

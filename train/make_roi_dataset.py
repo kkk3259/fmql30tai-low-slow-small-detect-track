@@ -6,7 +6,7 @@ ROI 数据集制作工具（A 的工作第一步）
       正样本 = 目标位置裁的 128x128 灰度图块
       负样本 = ① 背景随机位置  ② 检测器虚警位置（难负样本，最有价值）
 
-★ 关键：裁剪用的是 ps_app.py 里的 crop_roi()，保证【训练与推理预处理完全一致】。
+ 关键：裁剪用的是 ps_app.py 里的 crop_roi()，保证【训练与推理预处理完全一致】。
 
 用法：
   # 用合成序列（最快上手，真值精确）
@@ -39,7 +39,7 @@ sys.path.insert(0, os.path.join(_PROJ, "ps"))
 
 from run import to_gray_down, gauss, tophat                 # noqa: E402
 from detect_v1 import adaptive_threshold, extract_candidates  # noqa: E402
-from ps_app import crop_roi, ROI_SIZE                         # noqa: E402  ★ 复用同一裁剪函数
+from ps_app import crop_roi, ROI_SIZE                         # noqa: E402   复用同一裁剪函数
 
 
 def ensure_dirs(out):
@@ -131,7 +131,7 @@ def main():
             rows.append([name, 0, "neg_bg", frame_idx, round(rx, 2), round(ry, 2)])
             stat["neg_bg"] += 1
 
-        # ---------- ③ 负样本 B：检测器虚警位置（★ 难负样本，最有价值）----------
+        # ---------- ③ 负样本 B：检测器虚警位置（ 难负样本，最有价值）----------
         if args.neg_fa_per_frame > 0:
             th = tophat(gauss(gray, 0), args.tophat)
             binary, _ = adaptive_threshold(th, 31, args.k, args.floor)

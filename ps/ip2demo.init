@@ -1,0 +1,81 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          ip2demo
+# Required-Start:    $remote_fs
+# Required-Stop:     $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: IP2 浣庡皬鐩爣妫€娴?瀹炴椂棰勮
+### END INIT INFO
+#
+# 2026-10-29 淇锛?#   1) 鍘绘帀 Required-Start: $network 鈥斺€?缃戠粶澶辫触涓嶈鎷栧灝鎴戜滑鐨勬湇鍔★紙鍘熸潵浼氳繛甯?failed锛?#   2) 鎽勫儚澶存寜 v4l2 鍚嶅瓧鑷姩璇嗗埆锛?USB Camera"锛夛紝涓嶅啀鍐欐 /dev/video1
+#      鈥斺€?閲嶅惎鍚?video0/video1 椤哄簭浼氬彉锛屽啓姝讳細璧蜂笉鏉?#   3) 鏃ュ織瓒呰繃 2000 琛岃嚜鍔ㄦ埅鏂紝閬垮厤 SD 鍗″啓婊?#   4) 缁撳熬缁熶竴 exit 0锛岄伩鍏?systemd 璁?failed
+BIN=/lib/firmware/ip2_bd_wrapper.bin
+FWM=/sys/class/fpga_manager/fpga0
+DIR=/root/ip2
+LOG=/var/log/ip2demo.log
+
+find_cam() {
+    # 鍦?v4l2 璁惧閲屾壘鍚嶅瓧鍚?"USB Camera" 鐨勯偅涓妭鐐?    for d in /sys/class/video4linux/video*; do
+        [ -e "$d/name" ] || continue
+        case "$(cat "$d/name" 2>/dev/null)" in
+            *USB*Camera*) echo "/dev/$(basename $d)"; return 0 ;;
+        esac
+    done
+    [ -c /dev/video0 ] && { echo /dev/video0; return 0; }
+    return 1
+}
+
+trim_log() {
+    [ -f "$LOG" ] || return 0
+    n=$(wc -l < "$LOG" 2>/dev/null || echo 0)
+    if [ "$n" -gt 2000 ]; then
+        tail -1000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+    fi
+}
+
+start() {
+    trim_log
+    echo "== ip2demo start $(date) ==" >> $LOG
+    pkill -f 'cam_pipe[.]py' 2>/dev/null
+    pkill -f 'cam_demo[.]py' 2>/dev/null
+    sleep 1
+    if [ -f "$BIN" ]; then
+        echo ip2_bd_wrapper.bin > $FWM/firmware 2>>$LOG
+        echo "fpga_manager load rc=$? state=$(cat $FWM/state 2>/dev/null)" >> $LOG
+    else
+        echo "WARN: $BIN 涓嶅瓨鍦紝PL 鍙兘鏈厤缃? >> $LOG
+    fi
+    sleep 1
+    CAM=$(find_cam)
+    if [ -n "$CAM" ]; then
+        # 澶滈棿鍏夌嚎涓嶈冻鏃堕┍鍔ㄤ細銆岄檷甯ф崲闀挎洕鍏夈€嶁啋 杩愬姩妯＄硦 + 鎺夊埌 20fps
+        v4l2-ctl -d $CAM --set-ctrl exposure_auto_priority=0 2>>$LOG
+        echo "camera: $CAM $(v4l2-ctl -d $CAM --get-ctrl exposure_auto_priority 2>>$LOG)" >> $LOG
+    else
+        echo "WARN: 娌℃壘鍒?USB 鎽勫儚澶? >> $LOG
+    fi
+    cd $DIR || { echo "ERR: $DIR 涓嶅瓨鍦? >> $LOG; exit 0; }
+    setsid nohup python3 -u cam_pipe.py --cam "${CAM#/dev/video}" --port 8080 --motion-frac 0.0 --multi-scale 1 --ms-every 1 --gamma 0.06 >> $LOG 2>&1 < /dev/null &
+    echo $! > /var/run/ip2demo.pid
+    echo "server pid=$(cat /var/run/ip2demo.pid) cam=$CAM" >> $LOG
+}
+
+stop() {
+    if [ -f /var/run/ip2demo.pid ]; then
+        kill $(cat /var/run/ip2demo.pid) 2>/dev/null
+        rm -f /var/run/ip2demo.pid
+    fi
+    pkill -f 'cam_pipe[.]py' 2>/dev/null
+    pkill -f 'cam_demo[.]py' 2>/dev/null
+    echo "ip2demo stopped $(date)" >> $LOG
+}
+
+case "$1" in
+    start)   start ;;
+    stop)    stop ;;
+    restart) stop; sleep 1; start ;;
+    status)  pgrep -f 'cam_pipe[.]py' >/dev/null && echo running || echo stopped ;;
+    *) echo "鐢ㄦ硶: $0 {start|stop|restart|status}" ;;
+esac
+exit 0

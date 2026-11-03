@@ -8,14 +8,14 @@ PS ↔ PL 通信模块（pl_link.py）
 数据通路（实测确认）：
     /dev/udmabuf0        物理基址 0x30100000，128 MiB
     sync_mode = 1        可按 offset/size 局部同步
-    dma_coherent = 0     ★ 必须手动 sync，否则"随机帧结果错"，极难定位
+    dma_coherent = 0      必须手动 sync，否则"随机帧结果错"，极难定位
 
 内存分区（docs/14 §1.1）：
     0x30100000 ~ 0x30FFFFFF   16 MiB  输入帧区（72 帧 × 230400 B）
     0x31000000 ~ 0x310FFFFF    1 MiB  输出区（候选表 + 状态字）
     0x31100000 ~ 0x380FFFFF  111 MiB  备用
 
-✅ P 已确认（2026-10-26）：寄存器基址 = 0x43C00000（挂 PS 的 M_AXI_GP0），
+[OK] P 已确认（2026-10-26）：寄存器基址 = 0x43C00000（挂 PS 的 M_AXI_GP0），
    访问方式 = /dev/mem + mmap；`trigger()` 会写 CTRL.bit0=1 启动一帧，
    `version()` / `status()` 可用于上板首测。其余按 docs/14 v0.2 实现。
 
@@ -161,7 +161,7 @@ class PlLink:
 
         off = (k % N_FRAMES) * FRAME_SIZE
         self._buf[off:off + FRAME_SIZE] = gray.tobytes()
-        self._sync(off, FRAME_SIZE, for_device=True)      # ★ 不可省
+        self._sync(off, FRAME_SIZE, for_device=True)      #  不可省
         return off
 
     # ------------------------------------------------------------ 触发
@@ -169,7 +169,7 @@ class PlLink:
         """
         通过 AXI4-Lite 寄存器通知 PL 处理第 frame_id 帧。
 
-        ⚠️ PL 侧判据是"寄存器值发生变化"，因此**不要重复写同一个 frame_id**
+        [WARN] PL 侧判据是"寄存器值发生变化"，因此**不要重复写同一个 frame_id**
            （否则 PL 不触发）。需要重复处理同一帧时，用 frame_id + 0x10000
            翻转 bit16 即可（P 在 docs/14 §3 的约定）。
 
@@ -201,7 +201,7 @@ class PlLink:
         """
         deadline = time.time() + timeout_s
         while time.time() < deadline:
-            self._sync(CAND_OFFSET, STATUS_OFFSET + 4, for_device=False)   # ★ 读前必同步
+            self._sync(CAND_OFFSET, STATUS_OFFSET + 4, for_device=False)   #  读前必同步
             status = struct.unpack_from("<I", self._buf, STATUS_OFFSET)[0]
             if status & STATUS_DONE:
                 if status & STATUS_ERROR:
@@ -272,7 +272,7 @@ def _self_test():
         print("  读回一致: %s" % same)
         if not same:
             diff = int((frame != got).sum())
-            print("  ⚠️ 差异 %d 字节 / %d" % (diff, FRAME_SIZE))
+            print("  [WARN] 差异 %d 字节 / %d" % (diff, FRAME_SIZE))
 
         # 验证候选表解析（手工造一条，确认字节序与字段偏移）
         pl._buf[CAND_OFFSET] = 1

@@ -13,7 +13,7 @@
     sudo python3 stream_npu.py --src /root/bird.mp4   # 用视频文件代替摄像头（调试）
 然后笔记本浏览器打开 http://<板子IP>:8080
 
-★ 三个关键优化（都经板端实测）：
+ 三个关键优化（都经板端实测）：
   ① 用 ffmpeg 管道解码，不用 cv2.VideoCapture
      · OpenCV 解 720P MJPG 要 60.7 ms（仅 16.5 fps）
      · ffmpeg 解同一个流能到 30 fps
@@ -22,11 +22,11 @@
   ③ letterbox 开 cv2.setNumThreads(4)
      · 单线程 12.84 ms → 4 线程 9.61 ms
 
-★ 采集与推理用「双线程 + 单槽交接」做流水线：
+ 采集与推理用「双线程 + 单槽交接」做流水线：
    采集线程只管把最新帧放进 slot（永远覆盖，不排队），
    推理线程取最新帧处理 —— 这样解码和推理能重叠，端到端接近 max(解码, 推理) 而非两者之和。
 
-★ 依赖：icraft 3.39.0 + /root/pywork/modelzoo_utils/pyrtutils
+ 依赖：icraft 3.39.0 + /root/pywork/modelzoo_utils/pyrtutils
 """
 
 import argparse
@@ -162,7 +162,7 @@ class Grabber(threading.Thread):
 
     def run(self):
         try:
-            # ★ 必须关掉 stdin：否则 ffmpeg 会继承父进程的输入，
+            #  必须关掉 stdin：否则 ffmpeg 会继承父进程的输入，
             #   把 stdin 上的内容当成交互命令解析，然后报 Parse error 退出。
             self.proc = subprocess.Popen(self._cmd(),
                                          stdin=subprocess.DEVNULL,
@@ -286,7 +286,7 @@ def main():
     buf_box = np.zeros(BOX_BYTES, np.uint8)
     buf_cls = np.zeros(CLS_BYTES, np.uint8)
 
-    # ★ 优化②：tensor 建一次，之后只 write
+    #  优化②：tensor 建一次，之后只 write
     ten_in = numpy2Tensor(np.zeros((1, NET, NET, 3), np.uint8), network)
 
     # ---- 采集线程 ----
@@ -325,12 +325,12 @@ def main():
             rgb = np.ascontiguousarray(rgb)
             t1 = time.perf_counter()
 
-            # ★ 优化②：复用 tensor
+            #  优化②：复用 tensor
             ten_in.write(0, memoryview(rgb), rgb.nbytes)
             out = session.forward([ten_in])
             out[0].read(memoryview(buf_box), 0, BOX_BYTES)
             out[1].read(memoryview(buf_cls), 0, CLS_BYTES)
-            device.reset(1)                  # ★ 必须
+            device.reset(1)                  #  必须
             t2 = time.perf_counter()
 
             cls = buf_cls.view(np.float32)
@@ -368,7 +368,7 @@ def main():
                         % ("CAM" if is_cam else "FILE", len(dets), avg, 1000.0 / avg),
                         (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
 
-            # ★ 推流前缩到 disp_w，大幅降低 JPEG 编码耗时（A53 编 720P 太慢）
+            #  推流前缩到 disp_w，大幅降低 JPEG 编码耗时（A53 编 720P 太慢）
             t4 = time.perf_counter()
             if a.disp_w and a.disp_w != w:
                 dw = a.disp_w

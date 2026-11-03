@@ -1,6 +1,6 @@
 # report/ —— 作品报告的生成链（可复现）
 
-本目录存放**作品报告与各文档的生成脚本**，目的是让报告的产出过程**可复现**，
+本目录存放作品报告与各文档的生成脚本，目的是让报告的产出过程**可复现**，
 满足赛题要求中的"提交可复现的工程文件"。
 
 ## 目录内容
@@ -17,7 +17,7 @@
 
 ```powershell
 # 0) 准备：把本机路径按你的环境改好（见下方"路径说明"）
-$py = "D:\lowslow\venv\Scripts\python.exe"     # 换成你自己的虚拟环境
+$py = "D:\lowslow\venv\Scripts\python.exe" # 换成你自己的虚拟环境
 
 # 1) 填充内容（产出 out_report.docx）
 & $py report\fill_report.py
@@ -35,7 +35,7 @@ $py = "D:\lowslow\venv\Scripts\python.exe"     # 换成你自己的虚拟环境
 $Docs = "D:\你的工作目录"
 Invoke-Expression ([IO.File]::ReadAllText('report\md2docx.ps1', [Text.Encoding]::UTF8))
 ```
-> ⚠️ 调用方请用 `$workDir` 之类的变量名，**不要用 `$tmp`** —— `md2docx.ps1` 内部会覆盖同名变量。
+> 调用方请用 `$workDir` 之类的变量名，不要用 `$tmp` —— `md2docx.ps1` 内部会覆盖同名变量。
 
 ## 路径说明（重要）
 
@@ -51,9 +51,9 @@ Invoke-Expression ([IO.File]::ReadAllText('report\md2docx.ps1', [Text.Encoding]:
 
 ## 报告结构（11 个表格 / 8 张插图）
 
-> **2026-10-23 实测核对**：产物 `docs/08-作品报告（完整版）.docx` 为非空段落 174 段、**表格 11 个**、嵌入图片 10 张（8 张插图 + 2 张模板自带）。
+> 2026-10-23 实测核对：产物 `docs/08-作品报告（完整版）.docx` 为非空段落 174 段、**表格 11 个**、嵌入图片 10 张（8 张插图 + 2 张模板自带）。
 >
-> **⚠️ 修改内容请改 `fill_report.py` 再重跑**，不要手改产物 docx —— 否则下次重跑会被覆盖。插图仍占位 4 处（图 3/4/7/8 实物图，待拍摄）。
+> 修改内容请改 `fill_report.py` 再重跑，不要手改产物 docx —— 否则下次重跑会被覆盖。插图仍占位 4 处（图 3/4/7/8 实物图，待拍摄）。
 
 内容按赛题模板的章节组织，其中与实测数据相关的关键章节：
 
@@ -63,9 +63,9 @@ Invoke-Expression ([IO.File]::ReadAllText('report\md2docx.ps1', [Text.Encoding]:
 | 表格 | 真实场景 vs 合成序列对比、参数尝试、候选数上限对照 | `results/*.csv` |
 | 插图 | 系统框图、硬件连接、软件流程、PL 模块框图、检测跟踪效果、检出率曲线、仿真波形、技术路线 | `report/figs/` |
 
-## ⚠️ 保持一致的注意事项
+## 保持一致的注意事项
 
-1. **不要手改产物 docx** —— 所有内容改动应回到 `fill_report.py`，然后重新生成；
+1. 不要手改产物 docx —— 所有内容改动应回到 `fill_report.py`，然后重新生成；
 2. **插图替换**：换 `figs/` 里的图片后重跑 `insert_figs.py` 即可；
 3. **表格完整性**：`insert_figs.py` 采用**字符串级精确替换**（早期按段落重排会丢 `w:tbl` 结构），
-   生成后请核对"表格数 > 0"（脚本会打印）。
+ 生成后请核对"表格数 > 0"（脚本会打印）。

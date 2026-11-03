@@ -280,10 +280,10 @@ def main():
         judge = GridJudge(a.json, a.raw, a.grid, a.cell, a.thr)
         try:
             info = judge.open()
-            print("  ✓ 网格模型已加载（%d×%d 格，输入 %d）"
+            print("   网格模型已加载（%d×%d 格，输入 %d）"
                   % (a.grid, a.grid, a.grid * a.cell))
         except Exception as e:
-            print("  ✗ 模型加载失败：%s" % e)
+            print("   模型加载失败：%s" % e)
             print("    检查 --json/--raw 路径、icraft 环境、NPU 是否在位流里")
             print("    PC 上请用 --judge dummy")
             return 1
@@ -291,9 +291,9 @@ def main():
         judge = Cls128Judge(a.json, a.raw, a.cell, a.thr)
         try:
             judge.open()
-            print("  ✓ cls128 已加载（逐个判，%d 次 forward/帧）" % n_cand)
+            print("   cls128 已加载（逐个判，%d 次 forward/帧）" % n_cand)
         except Exception as e:
-            print("  ✗ 模型加载失败：%s" % e)
+            print("   模型加载失败：%s" % e)
             return 1
 
     # ---- 采集 ----

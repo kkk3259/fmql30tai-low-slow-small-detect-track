@@ -16,11 +16,12 @@ SIM = r'D:\firstharness\repo\pl\sim'
 TB = r'D:\firstharness\repo\pl\tb'
 RTL = r'D:\firstharness\repo\pl\rtl'
 
-ALL_RTL = ['win5.v', 'tophat_5x5_stream.v', 'cfar_threshold_stream.v',
+ALL_RTL = ['minmax_tree.v', 'win5.v', 'tophat_5x5_stream.v',
+           'cfar_threshold_stream.v',
            'candidate_extract_stream.v', 'ip2_top_stream.v']
 
 JOBS = {
-    'tophat':   dict(tb='tb_tophat_stream.v',    rtl=['tophat_5x5_stream.v', 'win5.v'],
+    'tophat':   dict(tb='tb_tophat_stream.v',    rtl=['minmax_tree.v', 'tophat_5x5_stream.v', 'win5.v'],
                      out='output_tophat_stream.hex',  ref='ref_tophat.hex'),
     'cfar64':   dict(tb='tb_cfar_stream.v',      rtl=['cfar_threshold_stream.v'],
                      out='output_cfar_stream.hex',    ref='ref_cfar.hex'),

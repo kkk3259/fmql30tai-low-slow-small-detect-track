@@ -52,7 +52,7 @@ def run_sim(iv_dir, sim_dir, tb, rtl, workdir):
         print(r1.stdout)
         print(r1.stderr)
         raise SystemExit("编译失败（returncode={}）".format(r1.returncode))
-    print("     ✅ 编译通过")
+    print("     [OK] 编译通过")
 
     print("  ② 运行 vvp ...")
     r2 = subprocess.run([vvp, "tb.vvp"], cwd=workdir, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -132,9 +132,9 @@ def main():
                 if not (y == 0 or y == H_OUT - 1 or x == 0 or x == W_OUT - 1):
                     inner_max = max(inner_max, abs(mine[i] - ref[i]))
         print("  内部像素最大误差 : {} LSB   （规范要求 <= 2 LSB）-> {}".format(
-            inner_max, "通过 ✅" if inner_max <= 2 else "不通过 ❌"))
+            inner_max, "通过 [OK]" if inner_max <= 2 else "不通过 [FAIL]"))
         if his and max(d2) == 0:
-            print("  可复现性         : 我跑的结果与提交的完全一致 ✅")
+            print("  可复现性         : 我跑的结果与提交的完全一致 [OK]")
         print("  边界像素          : 见上方统计（若明显偏大，说明边界模式与 OpenCV 不一致：")
         print("                      OpenCV GaussianBlur 默认 REFLECT_101，RTL 里是 clamp）")
         print("")

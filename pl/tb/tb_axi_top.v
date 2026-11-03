@@ -31,6 +31,7 @@ module tb_axi_top;
     reg [7:0] mem [0:MEMSZ-1];
     reg [7:0] in_mem [0:NPIX-1];
     reg [7:0] ref_mem [0:35];
+    integer    n_ref_bytes = 36;   // 参考表有效字节数（1 + 5*7）
 
     integer i;
     initial begin
@@ -45,7 +46,7 @@ module tb_axi_top;
     wire [3:0] led;
 
     // AXI4-Lite 主（tb 扮演 PS）
-    reg  [5:0]  s_awaddr  = 6'd0;
+    reg  [7:0]  s_awaddr  = 6'd0;
     reg         s_awvalid = 1'b0;
     wire        s_awready;
     reg  [31:0] s_wdata   = 32'd0;
@@ -55,7 +56,7 @@ module tb_axi_top;
     wire [1:0]  s_bresp;
     wire        s_bvalid;
     reg         s_bready  = 1'b1;
-    reg  [5:0]  s_araddr  = 6'd0;
+    reg  [7:0]  s_araddr  = 6'd0;
     reg         s_arvalid = 1'b0;
     wire        s_arready;
     wire [31:0] s_rdata;
@@ -92,7 +93,7 @@ module tb_axi_top;
     wire        m_bready_s;
 
     ip2_axi_top #(
-        .W(W), .H(H), .MAX_CAND(5),
+        .W(W), .H(H), .MAX_CAND(64),
         .DEF_FRAME_ADDR(FRAME_ADDR), .DEF_RESULT_ADDR(RES_ADDR)
     ) dut (
         .clk(clk), .rst_n(rst_n), .led(led),
@@ -227,7 +228,7 @@ module tb_axi_top;
     // ==================================================================
     // AXI-Lite 主机任务（tb 扮演 PS）
     // ==================================================================
-    task axi_write(input [5:0] a, input [31:0] d);
+    task axi_write(input [7:0] a, input [31:0] d);
         begin
             @(negedge clk);
             s_awaddr  = a;
@@ -246,7 +247,7 @@ module tb_axi_top;
         end
     endtask
 
-    task axi_read(input [5:0] a, output [31:0] d);
+    task axi_read(input [7:0] a, output [31:0] d);
         begin
             @(negedge clk);
             s_araddr  = a;
@@ -266,6 +267,8 @@ module tb_axi_top;
     // ==================================================================
     reg [31:0] st;
     integer    t, nloop, diffs, done_seen;
+    integer    wi, bi, b_idx, n_words;
+    reg [31:0] wd, w0, w1, w2, w3;
     reg [7:0]  got_byte, exp_byte;
 
     initial begin
@@ -279,8 +282,7 @@ module tb_axi_top;
         // 配置并启动一帧
         axi_write(6'h04, FRAME_ADDR);
         axi_write(6'h08, RES_ADDR);
-        axi_write(6'h10, 32'h0000_0001);   // frame_id = 1
-        axi_write(6'h00, 32'h0000_0001);   // start
+                axi_write(6'h00, 32'h0000_0001);   // start
 
         // 轮询 STATUS.done（bit1）
         done_seen = 0;
@@ -301,23 +303,38 @@ module tb_axi_top;
         $display("STATUS = 0x%08x  (busy=%0d done=%0d err=%0d n_cand=%0d cap=%0d)",
                  st, st[0], st[1], st[2], st[15:8], st[23:16]);
 
-        // 比对候选表：结果区 0x31000000 -> mem 索引 0x000000
+        // 比对候选表：从索引窗口读（0x40 写索引 / 0x44 读数据）
+        //   MAX_CAND=64 时缓冲区 = 1 + 64*7 = 449 字节，向上补齐到 452（113 个字）
         diffs = 0;
-        for (i = 0; i < 36; i = i + 1) begin
-            got_byte = mem[i[23:0]];
-            exp_byte = ref_mem[i];
-            if (got_byte !== exp_byte) begin
-                diffs = diffs + 1;
-                if (diffs <= 10)
-                    $display("  DIFF byte%0d got=%02X exp=%02X", i, got_byte, exp_byte);
+        n_words = (n_ref_bytes + 3) / 4;
+        for (wi = 0; wi < n_words; wi = wi + 1) begin
+            axi_write(6'h10, wi[31:0]);
+            axi_read (6'h10, wd);
+            for (bi = 0; bi < 4; bi = bi + 1) begin
+                b_idx = wi*4 + bi;
+                if (b_idx < n_ref_bytes) begin
+                    got_byte = wd[bi*8 +: 8];
+                    exp_byte = ref_mem[b_idx];
+                    if (got_byte !== exp_byte) begin
+                        diffs = diffs + 1;
+                        if (diffs <= 10)
+                            $display("  DIFF byte%0d got=%02X exp=%02X", b_idx, got_byte, exp_byte);
+                    end
+                end
             end
         end
 
+        // 打印前 15 字节（重读一遍窗口 0..3）
+        axi_write(6'h10, 32'd0); axi_read(6'h10, w0);
+        axi_write(6'h10, 32'd1); axi_read(6'h10, w1);
+        axi_write(6'h10, 32'd2); axi_read(6'h10, w2);
+        axi_write(6'h10, 32'd3); axi_read(6'h10, w3);
         $display("候选表前 15 字节: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
-                 mem[0],mem[1],mem[2],mem[3],mem[4],mem[5],mem[6],mem[7],
-                 mem[8],mem[9],mem[10],mem[11],mem[12],mem[13],mem[14]);
-        $display("状态字: %02X %02X %02X %02X", mem[64],mem[65],mem[66],mem[67]);
-        $display("RESULT diffs=%0d / 36   n_cand=%0d   led=%b", diffs, st[15:8], led);
+                 w0[7:0],w0[15:8],w0[23:16],w0[31:24],
+                 w1[7:0],w1[15:8],w1[23:16],w1[31:24],
+                 w2[7:0],w2[15:8],w2[23:16],w2[31:24],
+                 w3[7:0],w3[15:8],w3[23:16]);
+        $display("RESULT diffs=%0d / %0d   n_cand=%0d   led=%b", diffs, n_ref_bytes, st[15:8], led);
 
         if (diffs == 0 && st[1] === 1'b1 && st[2] === 1'b0)
             $display("VERDICT AXI-TOP-OK");
