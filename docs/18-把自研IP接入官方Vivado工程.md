@@ -5,9 +5,9 @@
 > 这是"位流路径 3（重打 BOOT.bin）"的具体施工步骤。
 >
 > 前置结论（已核实）：
-> - 官方工程 = `D:\firstharness\official\fpai_demo_fpga\fpai_demo_fpga\fpai_demo_vivado.xpr`（已从 rar 完整解压，含 `ps_ai.bd`、`rtl/`、`PS_AI IP/`）
+> - 官方工程 = `<官方工程>\fpai_demo_vivado.xpr`（已从 rar 完整解压，含 `ps_ai.bd`、`rtl/`、`PS_AI IP/`）
 > - 官方约束 = `constrs_1\impl_constraints.xdc`（C8/C7 200 MHz 差分、J1/M6 LED、F8 复位）
-> - JFM_Kits = `D:\firstharness\JFM_Kits`（含 `ip_patch/run.tcl`、`030ai` 补丁目录）
+> - JFM_Kits = `<JFM_Kits>`（含 `ip_patch/run.tcl`、`030ai` 补丁目录）
 > - 本机需安装 Vivado **2018.3**（官方指定版本）
 
 ---
@@ -19,7 +19,7 @@
 | 版本 | **Vivado 2018.3**（官方文档明确；其他版本 `ip_patch` 可能不匹配） |
 | 安装选项 | 只勾 **7 Series / Zynq-7000** 器件支持 + Vivado 主程序（SDK 可选，生成 BOOT.bin 用 Procise 的 Create Image 就行） |
 | 磁盘 | 约 20~30 GB |
-| 来源 | Xilinx 官网（要账号）；或找 S / 学长要安装包（学校常有离线安装包） |
+| 来源 | Xilinx 官网（需账号）；或使用学校/实验室提供的离线安装包 |
 
 装完把 `vivado.bat` 加进 PATH，或者用开始菜单的 Vivado 2018.3 快捷方式。
 
@@ -27,10 +27,10 @@
 
 ## 阶段 1：环境变量 JFM_Kits
 
-1. 确认 `D:\firstharness\JFM_Kits\ip_patch\run.tcl` 存在（已有）
-2. 设用户环境变量：`JFM_PATH = D:\firstharness\JFM_Kits`
+1. 确认 `<JFM_Kits>\ip_patch\run.tcl` 存在（已有）
+2. 设用户环境变量：`JFM_PATH = <JFM_Kits>`
  - 图形界面：此电脑 → 属性 → 高级系统设置 → 环境变量 → 新建
- - 或 PowerShell（管理员）：`[Environment]::SetEnvironmentVariable("JFM_PATH","D:\firstharness\JFM_Kits","User")`
+ - 或 PowerShell（管理员）：`[Environment]::SetEnvironmentVariable("JFM_PATH","<JFM_Kits>","User")`
 3. 重开 Vivado，Tcl 控制台验证：`puts $::env(JFM_PATH)` → 打印路径即成功
 
 > 路径必须**纯英文、无空格**。中文路径下 Vivado 打补丁会失败（我们踩过 7z 的同类坑）。
@@ -41,7 +41,7 @@
 
 这一步不是白跑，它回答一个战略问题：NPU 占多少 PL 资源，我们的 IP 还能不能塞进去。
 
-1. 打开 `D:\firstharness\official\fpai_demo_fpga\fpai_demo_fpga\fpai_demo_vivado.xpr`
+1. 打开 `<官方工程>\fpai_demo_vivado.xpr`
 2. Settings → IP → IP Cache → Cache scope = Disabled（官方要求，否则 IP 补丁不生效）
 3. 每个 IP（`clk_wiz_0`、`mig_7series_0`、各 afifo）右键 → Generate Output Products，选 Out-of-context per IP，Generate（不要 Skip）
 4. Tcl 控制台依次执行：
@@ -74,7 +74,7 @@
 后者内含 `IBUFDS + BUFG + ÷2`（板载 200 MHz 晶振分频），但在 BD 里时钟由 PS 的 `FCLK_CLK0` 提供，重复加时钟会冲突。
 
 1. **加设计文件**：`Add Sources → Add or create design sources`
- 把 `D:\firstharness\repo\pl\rtl\` 下这 11 个文件加进去：
+ 把 `pl\rtl\\` 下这 11 个文件加进去：
  ```
  ip2_axi_top.v ip2_axi_master_rd.v ip2_axi_master_wr.v
  ip2_top_stream.v win5.v tophat_5x5_stream.v

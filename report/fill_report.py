@@ -12,8 +12,9 @@ import re
 import zipfile
 import os
 
-TPL = r"C:\Users\孔令浩1\Desktop\竞赛创新项目\嵌赛\技术文档（报告）.docx"
-OUT = r"D:\lowslow\out_report.docx"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TPL = os.path.join(os.path.dirname(ROOT), "技术文档（报告）.docx")  # 官方模板，置于仓库上一级
+OUT = os.path.join(ROOT, "out_report.docx")
 
 FONT = '<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" w:cs="Times New Roman"/>'
 FONT_H = '<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" w:cs="Times New Roman" w:hint="eastAsia"/>'

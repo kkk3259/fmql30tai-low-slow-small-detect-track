@@ -1,12 +1,12 @@
 # 等 ours3d_s4.bit 出流 → 转 bin → 烧板 → 跑竖线图两帧测试
 $ErrorActionPreference = "Continue"
-$bit = "D:\firstharness\work\ours3d_s4\ours3d_s4.bit"
-$bin = "D:\firstharness\dl\ours3d_s4.bin"
-$py  = "D:\firstharness\venv\Scripts\python.exe"
-$scp = "C:\Users\xujia\Git\usr\bin\scp.exe"
-$ssh = "C:\Users\xujia\Git\usr\bin\ssh.exe"
-$key = "D:\firstharness\dl\board_key"
-$log = "D:\firstharness\dl\s4_test.txt"
+$bit = Join-Path $PSScriptRoot "..\..\ours3d_s4.bit"   # 按实际构建产物替换
+$bin = Join-Path $PSScriptRoot "ours3d_s4.bin"
+$py  = "python.exe"
+$scp = "scp.exe"
+$ssh = "ssh.exe"
+$key = $env:BOARD_KEY
+$log = Join-Path $PSScriptRoot "s4_test.txt"
 
 function Say($m) { $t = (Get-Date).ToString("HH:mm:ss"); "$t  $m" | Tee-Object -FilePath $log -Append }
 
@@ -22,7 +22,7 @@ while ((Get-Date) -lt $deadline) {
 if (-not (Test-Path $bit)) { Say "超时未出流"; exit 1 }
 
 Say "转 bin..."
-& $py "D:\firstharness\repo\tools\mk_bin.py" $bit $bin 2>&1 | Select-Object -Last 2 | ForEach-Object { Say "  $_" }
+& $py "./tools\mk_bin.py" $bit $bin 2>&1 | Select-Object -Last 2 | ForEach-Object { Say "  $_" }
 if (-not (Test-Path $bin)) { Say "转 bin 失败"; exit 1 }
 
 Say "上传到板子..."

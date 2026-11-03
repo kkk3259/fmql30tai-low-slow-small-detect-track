@@ -2,7 +2,7 @@
 # test_tracker.py —— 用合成候选序列验证去抖/跟踪逻辑（不依赖相机与板卡）
 import io, random, re, sys
 
-src = io.open(r"D:\firstharness\repo\ps\cam_pipe.py", encoding="utf-8").read()
+src = io.open(r"./ps\cam_pipe.py", encoding="utf-8").read()
 m = re.search(r"^class Tracker\(object\):.*?(?=^\S)", src, re.S | re.M)
 if not m:
     print("没找到 Tracker 类"); sys.exit(1)

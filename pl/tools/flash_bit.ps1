@@ -1,7 +1,7 @@
 # flash_bit.ps1 —— 把位流烧进 PL（fpga_manager 自加载，可远程执行）
 #
 # 用法：
-#   powershell -File flash_bit.ps1 -Bin D:\firstharness\synth\vivado\ip2_ps4\ip2_board_se21.bin
+#   powershell -File flash_bit.ps1 -Bin ./synth\vivado\ip2_ps4\ip2_board_se21.bin
 #
 # 要点（踩过的坑，别改）：
 #   1. 必须用 Vivado 的 `write_bitstream -bin_file` 直接生成的**无头 .bin**；
@@ -16,10 +16,11 @@ param(
     [switch]$SkipStop
 )
 $ErrorActionPreference = "Continue"
-$ssh = "C:\Users\xujia\Git\usr\bin\ssh.exe"
-$scp = "C:\Users\xujia\Git\usr\bin\scp.exe"
-$key = "D:\firstharness\dl\board_key"
-$py = "D:\firstharness\venv\Scripts\python.exe"
+# 依赖 PATH 中的 ssh / scp / python；板卡私钥路径由环境变量 BOARD_KEY 指定
+$ssh = "ssh.exe"
+$scp = "scp.exe"
+$key = $env:BOARD_KEY
+$py = "python.exe"
 
 if (-not (Test-Path $Bin)) { "ERROR: 找不到 $Bin"; exit 1 }
 $item = Get-Item $Bin
@@ -27,7 +28,7 @@ $item = Get-Item $Bin
 
 # 1) 字节交换（Vivado 已生成无头 .bin，这里只交换，不剥头）
 $swapped = [System.IO.Path]::Combine($item.DirectoryName, ($item.BaseName + "_swap.bin"))
-& $py "D:\firstharness\repo\tools\mk_swap_bin.py" $Bin $swapped | Out-Null
+& $py "./tools\mk_swap_bin.py" $Bin $swapped | Out-Null
 if (-not (Test-Path $swapped)) { "ERROR: 字节交换失败"; exit 1 }
 $head = [System.IO.File]::ReadAllBytes($swapped)[0..3]
 $headHex = ($head | ForEach-Object { $_.ToString("X2") }) -join " "

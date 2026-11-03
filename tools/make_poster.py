@@ -6,7 +6,7 @@
   2. para 的 maxw 未扣除起始 x 偏移 → 文字压到右栏（逐处精算）
   3. 架构图框宽 148 装不下 "Top-Hat/Black-Hat" → 加宽到 176
   4. 下半部分空 1800 px → 左栏加实拍图，右栏加两张对比表
-数据来源：docs/24、docs/27、docs/14 v0.6 的板上实测值，不虚构
+数据来源：`docs/指标台账.md`、`docs/14` v0.6 的板上实测值，不虚构
 
 用法：python tools/make_poster.py
 """
@@ -234,7 +234,7 @@ y += 4 * 152 + 6
 # ---------------- 左 ④ 实拍图 ----------------
 y = section(d, LX, y, LW, "04", "板上实拍 —— 实时运行中的检测界面")
 
-PHOTO = r"D:\lowslow\_roi_check\board_snap5.jpg"
+PHOTO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "report", "figs", "board_snap5.jpg")
 if os.path.exists(PHOTO):
     pim = Image.open(PHOTO).convert("RGB")
     pw = 940
@@ -376,7 +376,7 @@ FY = 3306
 d.line([M, FY, W - M, FY], fill=LINE, width=2)
 for i, (k, v) in enumerate([
     ("平台", "FMQL30TAI 悟净 Lite ｜ PL 78,600 LUT @50 MHz ｜ PS 4×A53 @1 GHz ｜ NPU ZG330 8 TOPS INT8"),
-    ("数据", "全部为板上实测：docs/24（验收汇总）· docs/27（链路调优）· docs/14 v0.6（接口约定）"),
+    ("数据", "全部为板上实测：`docs/指标台账.md`（指标出处）· `docs/14` v0.6（接口约定）"),
 ]):
     fy = FY + 26 + i * 52
     d.text((M, fy), k, font=F(26, "cn_b"), fill=CYAN_D)

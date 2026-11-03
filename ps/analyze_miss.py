@@ -3,7 +3,7 @@ import sys
 import numpy as np
 import cv2
 
-path = sys.argv[1] if len(sys.argv) > 1 else r"D:\firstharness\dl\line_rej.jpg"
+path = sys.argv[1] if len(sys.argv) > 1 else r"./data/line_rej.jpg"
 img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
 assert img is not None, "读图失败: " + path
 H, W = img.shape

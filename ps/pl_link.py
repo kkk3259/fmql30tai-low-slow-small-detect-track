@@ -197,7 +197,7 @@ class PlLink:
 
         返回：
             [{"x":int, "y":int, "area":int, "peak":int}, ...]，最多 5 个
-            坐标为**质心**（详见 docs/13 的更正说明）
+            坐标为**质心**（详见 `docs/14-PS-PL接口约定.md` 的更正说明）
         """
         deadline = time.time() + timeout_s
         while time.time() < deadline:

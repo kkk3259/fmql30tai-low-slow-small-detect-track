@@ -24,7 +24,7 @@
 ```
 主线（必须保住）：Vivado + 现有 ip2_ps4 位流
  检测算法、候选表、网页、跟踪、演示，全部在这条线上迭代
- 产物：D:\firstharness\synth\vivado\ip2_ps4\ip2_ps.runs\impl_1\ip2_bd_wrapper.bit
+ 产物：synth\vivado\ip2_ps4\...\ip2_bd_wrapper.bit
 
 支线（限时突破）：Procise 三域
  只回答一个问题：PS + NPU + IP2 能否同板综合出位流
@@ -58,7 +58,7 @@ source D:/firstharness/JFM_Kits/ip_patch/run.tcl
 1. `copy_patch`：把 `edif/`、`edif_transform/`、`process_control/`、`paspd/`、`tools/*.tcl`、`all_src_files.tcl`、`xadc_filter/` 拷到 `<工程目录>/ip_patch/`；
 2. `jfm_run`：备份 `all_src_files.tcl` → `.bak`，再 `source` 加密脚本，在**当前会话**注册 100AI 器件数据与流程钩子。
 
-补丁来源：`D:\2026嵌赛FPGA开发\20260916\JFM_Kits.zip`（官方 1.18 GB 包），我们机器上解出在 `D:\firstharness\JFM_Kits\ip_patch\`（完整版，含 `edif` / `edif_transform` / `tools` / `xadc_filter`；队友拿到的 40 MB 版是缺这些的子集）。
+补丁来源：官方 `JFM_Kits.zip`（1.18 GB 包），解压后 `JFM_Kits\ip_patch` 为完整版，含 `edif` / `edif_transform` / `tools` / `xadc_filter`；另一份 40 MB 的包是缺这些内容的子集。
 
 ## 6. 已验证到哪一步（截至 2026-10-30 19:21）
 
@@ -82,7 +82,7 @@ source D:/firstharness/JFM_Kits/ip_patch/run.tcl
 | `close_project` 不存在 | Procise 2025.1.1 没有该命令 | 不调用 |
 | 脚本里写中文注释会把换行吞掉 | PowerShell/编码问题 | 脚本一律纯 ASCII |
 
-## 8. 报告/答辩可用的表述
+## 8. 双工具链策略小结
 
 > 本设计采用双工具链策略：以 Vivado 作为日常研发与验证环境（迭代快、可脚本化），以复旦微官方 Procise 完成含 AI 硬核的三域集成验证（唯一支持 100AI 器件的工具链）。经实测，Procise 对 SystemVerilog 与 Xilinx IP 原语支持有限，故 PL 自定义逻辑严格采用 Verilog-2001 可综合子集编写，保证双工具链兼容。
 

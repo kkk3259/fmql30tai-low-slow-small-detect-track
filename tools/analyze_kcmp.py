@@ -57,13 +57,13 @@ def match(cands, gts, tol=12):
 
 
 def main():
-    d = sys.argv[1] if len(sys.argv) > 1 else r"D:\firstharness\dl\kframes"
+    d = sys.argv[1] if len(sys.argv) > 1 else r"./data/kframes"
     scenes = ["sky_tiny", "clouds_bird", "sky_bird_multi"]
     print("%-16s %-6s %6s %6s %6s %6s %s" % ("场景", "配置", "字节", "候选", "命中", "虚警", "召回"))
     print("-" * 68)
     rows = []
     for sc in scenes:
-        gt_path = os.path.join(r"D:\firstharness\dl\testset2", sc + ".json")
+        gt_path = os.path.join(r"./data/testset2", sc + ".json")
         gts = []
         if os.path.exists(gt_path):
             j = json.load(open(gt_path, encoding="utf-8"))

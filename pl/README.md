@@ -3,7 +3,7 @@
 FPGA 可编程逻辑部分的 Verilog 源码、约束、仿真与综合脚本。
 
 > 更新时间：2026-10-25（S 依据 P 提交 `a69adc0` 补记）　｜　状态：**IP2 三级流式重构完成；综合 71.0%（LUT 55,772 / 78,600）；AXI 全链路仿真打通（`VERDICT AXI-TOP-OK`）；待时序收敛 + 上板验证**
-> 报告素材见 [`docs/06-FPGA实现与验证.md`](../docs/06-FPGA实现与验证.md)；进展与卡点见 [`docs/13-PL上板进展与卡点.md`](../docs/13-PL上板进展与卡点.md)、[`docs/15-布局失败与LUTRAM减负.md`](../docs/15-布局失败与LUTRAM减负.md)
+> 报告素材见 [`docs/06-FPGA实现与验证.md`](../docs/06-FPGA实现与验证.md)；进展与卡点见 [`docs/15-布局失败与LUTRAM减负.md`](../docs/15-布局失败与LUTRAM减负.md)、[`docs/20-位流打包与上板步骤.md`](../docs/20-位流打包与上板步骤.md)
 
 ---
 
@@ -93,9 +93,9 @@ CCL : MAX_COMP=64, MIN_AREA=2, MAX_AREA=200
 ## 5. 怎么跑仿真（一键回归）
 
 ```powershell
-cd D:\firstharness\repo\pl\tools
-& "D:\firstharness\venv\Scripts\python.exe" run_sim.py # 全部
-& "D:\firstharness\venv\Scripts\python.exe" run_sim.py cfar64 # 单跑一项
+cd pl\tools
+& "<venv>\Scripts\python.exe" run_sim.py # 全部
+& "<venv>\Scripts\python.exe" run_sim.py cfar64 # 单跑一项
 ```
 
 当前回归基线（这四个数字是"已知且可接受"的，不要拿它们当 bug）：
@@ -128,7 +128,7 @@ JTAG 接线表：[`constr/jtag_wiring.md`](constr/jtag_wiring.md)
 | `led[0..3]` | **J1 / M6 / H7 / J8** | `LVCMOS15` | J1、M6 见官方 xdc；H7、J8 见《硬件使用手册》LED 表 |
 
 - 时钟来源：板载 `SIT9121AI-2D2-XE200.000000K` → `PL_DDR_EXT_CLK_P/N`，200 MHz。板上的 100 MHz 晶振官方未在 demo 里使用，我们 200 MHz ÷ 2 = 100 MHz 作为主频。
-- 官方约束文件原始出处：20260916 资料包 `fpai_demo_fpga.rar → constrs_1/impl_constraints.xdc`（本机解压副本 `D:\firstharness\dl\xdc\impl_constraints.xdc`），内含 HDMI(TMDS_33)/SFP/FMC/PL-JTAG 等全部引脚。
+- 官方约束文件原始出处：20260916 资料包 `fpai_demo_fpga.rar → constrs_1/impl_constraints.xdc`（本机解压副本 `<厂商包>\xdc\impl_constraints.xdc`），内含 HDMI(TMDS_33)/SFP/FMC/PL-JTAG 等全部引脚。
 
 ---
 
@@ -152,7 +152,7 @@ clear_design
 source D:/firstharness/synth/board_ip2.tcl ;# rtl_analyze → synthesize → place → route → bitgen
 ```
 
-- 脚本目录：`D:\firstharness\synth\`（`test_ip2.tcl` 640×360 elaborate、`board_ip2.tcl` 板级全流程、`test_ccl_only.tcl` CCL 单独探针）
+- 脚本目录：`synth\\`（`test_ip2.tcl` 640×360 elaborate、`board_ip2.tcl` 板级全流程、`test_ccl_only.tcl` CCL 单独探针）
 - 输出：`D:\FudanMicro\Procise\ip2_board_top.bit` 等
 - 本机 Procise：`2025.1.1 temp`，`SVN Version: 32494` —— 与官方位流头部 `PatchID=32494` 同一构建，不需要额外打位流补丁、不需要 license 申请
 - 下载：GUI `Tools -> Configure Device…` → Connect to board → 右键 FPGA → Assign New Configuration File → Program

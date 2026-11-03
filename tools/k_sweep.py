@@ -10,7 +10,7 @@ import sys
 import cv2
 import numpy as np
 
-sys.path.insert(0, r"D:\firstharness\repo\pl\tools") if False else None
+sys.path.insert(0, r"./pl\tools") if False else None
 
 W, H = 640, 360
 SE = 5
@@ -69,7 +69,7 @@ def main():
         th_all = 0
         c_all = 0
         for name, gt in GT.items():
-            p = r"D:\firstharness\dl\\" + name
+            p = "./data/" + name
             img = cv2.imread(p, cv2.IMREAD_GRAYSCALE)
             if img is None:
                 continue

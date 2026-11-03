@@ -1,6 +1,6 @@
 ﻿# 用 PowerPoint COM 画 1.6 设计流程图（4 阶段横向流程）
 $ErrorActionPreference = "Continue"
-$OUT = "C:\Users\孔令浩1\Desktop\竞赛创新项目\嵌赛\lowslow-tracking\report\figs\图H_设计流程图.png"
+$OUT = Join-Path $PSScriptRoot "figs\图H_设计流程图.png"
 
 $ppt = New-Object -ComObject PowerPoint.Application
 try {

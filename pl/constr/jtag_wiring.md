@@ -3,7 +3,7 @@
 ## 来源（权威）
 《悟净开发板Lite（轻量版）硬件使用手册V1.0》第 16 页，"4.7 JTAG 接口"原理图
 （U19 = PL_JTAG，U18 = PS_JTAG），从该 PDF 内嵌图像导出：
-`D:\firstharness\dl\mimg\p16_IM196.jpg`，放大版 `D:\firstharness\dl\mimg\u19_zoom.png`。
+`<素材>\p16_IM196.jpg`，放大版 `<素材>\u19_zoom.png`。
 
 ## U19 = PL_JTAG（2×10，20 针）引脚定义
 
