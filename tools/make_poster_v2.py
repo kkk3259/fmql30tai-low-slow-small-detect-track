@@ -14,12 +14,12 @@ FIG = os.path.join(ROOT, "report", "figs")
 W, H = 2480, 3508
 M = 110
 
-BG0, BG1 = (8, 13, 26), (13, 21, 40)
-CARD, CARD2 = (18, 28, 48), (22, 34, 58)
-LINE = (42, 62, 94)
-CYAN, ORANGE, GREEN, PURPLE = (34, 211, 238), (245, 158, 11), (52, 211, 153), (167, 139, 250)
-BLUE = (96, 165, 250)
-WHITE, GREY, DIM = (232, 238, 247), (143, 163, 191), (96, 116, 145)
+BG0, BG1 = (248, 250, 252), (240, 244, 249)
+CARD, CARD2 = (255, 255, 255), (255, 255, 255)
+LINE = (214, 223, 234)
+CYAN, ORANGE, GREEN, PURPLE = (8, 145, 178), (194, 112, 8), (5, 150, 105), (109, 40, 217)
+BLUE = (37, 99, 235)
+WHITE, GREY, DIM = (15, 27, 45), (71, 85, 105), (100, 116, 139)
 
 F_BOLD = "C:/Windows/Fonts/msyhbd.ttc"
 F_REG = "C:/Windows/Fonts/msyh.ttc"
@@ -50,8 +50,8 @@ def wrap(d, text, f, maxw):
 
 
 def gradient_bg():
-    # 纯黑背景：留 5,6,8 而不是 0,0,0，避免 A2 打印时死黑发灰、出现条纹
-    img = Image.new("RGB", (W, H), (5, 6, 8))
+    # 学术风浅色底：浅灰白，避免大面积深色打印偏色
+    img = Image.new("RGB", (W, H), BG0)
     return img
 
 
@@ -59,7 +59,7 @@ def card(d, box, fill=CARD, outline=LINE, radius=22, width=2):
     d.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
 
 
-def pill(d, x, y, text, f, fg=CYAN, bg=(18, 40, 56), padx=22, pady=9):
+def pill(d, x, y, text, f, fg=CYAN, bg=(236, 246, 249), padx=22, pady=9):
     w, h = tw(d, text, f)
     d.rounded_rectangle([x, y, x + w + padx * 2, y + h + pady * 2],
                         radius=(h + pady * 2) // 2, fill=bg, outline=fg, width=2)
@@ -159,14 +159,13 @@ def coverage(d, x, y, w):
         ry = y + i * rh
         d.text((x, ry + 6), name, font=font(24, False), fill=WHITE)
         bx = x + label_w
-        d.rounded_rectangle([bx, ry + 4, bx + bar_w, ry + rh - 6], radius=8, fill=(15, 24, 42))
+        d.rounded_rectangle([bx, ry + 4, bx + bar_w, ry + rh - 6], radius=8, fill=(232, 238, 246))
         d.rounded_rectangle([bx + a * scale, ry + 4, bx + b * scale, ry + rh - 6], radius=8, fill=c)
         tx = bx + a * scale + 12
-        d.text((tx, ry + 10), f"{a}~{b} px", font=font(19, mono=True),
-               fill=(8, 13, 26) if b - a > 24 else WHITE)
+        d.text((tx, ry + 10), f"{a}~{b} px", font=font(19, mono=True), fill=(255, 255, 255))
     ry = y + 4 * rh + 12
     bx = x + label_w
-    d.rounded_rectangle([bx, ry, bx + bar_w, ry + 36], radius=8, fill=(22, 60, 52), outline=GREEN, width=2)
+    d.rounded_rectangle([bx, ry, bx + bar_w, ry + 36], radius=8, fill=(232, 246, 240), outline=GREEN, width=2)
     d.text((bx + 20, ry + 6), "四路合并：2 ~ 80 px，中间无空档", font=font(23), fill=GREEN)
     return ry + 36
 
@@ -264,7 +263,7 @@ def main():
             ("端到端帧率", "5.92 fps（软件基线）", "16.6 fps（三域同板）")]
     rh = 80
     col1, col2 = 470, 700
-    d.rounded_rectangle([M, y, W - M, y + rh], radius=12, fill=CARD2)
+    d.rounded_rectangle([M, y, W - M, y + rh], radius=12, fill=(235, 241, 248))
     d.text((M + 28, y + 20), "维度", font=font(27), fill=GREY)
     d.text((M + col1, y + 20), "传统做法", font=font(27), fill=GREY)
     d.text((M + col1 + col2, y + 20), "本方案", font=font(27), fill=CYAN)
