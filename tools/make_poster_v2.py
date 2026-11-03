@@ -15,7 +15,7 @@ FIG = os.path.join(ROOT, "report", "figs")
 W, H = 2480, 3508
 M = 120
 
-BG_TOP, BG_BOT = (116, 202, 224), (244, 251, 253)
+BG_TOP, BG_BOT = (88, 172, 200), (212, 236, 246)
 INK, INK2, INK3 = (16, 48, 72), (72, 104, 128), (120, 148, 168)
 BAR = (26, 88, 136)
 CYAN, ORANGE, GREEN, PURPLE = (8, 122, 150), (190, 106, 6), (12, 118, 98), (96, 58, 186)
@@ -329,7 +329,7 @@ def main():
     # 页脚
     by = H - 74
     d.text((M, by), "全部指标为板上实测 ｜ 代码与文档：gitee.com/kkk3259/fmql30tai-low-slow-small-detect-track",
-           font=font(21, False), fill=INK3)
+           font=font(21, False), fill=(206, 222, 235))
 
     # 每个内容块加白底框
     blocks = [(390, 600), (620, 850), (870, 1230), (1250, 1670),
