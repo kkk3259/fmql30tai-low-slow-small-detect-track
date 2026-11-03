@@ -14,12 +14,12 @@ FIG = os.path.join(ROOT, "report", "figs")
 W, H = 2480, 3508
 M = 110
 
-BG0, BG1 = (248, 250, 252), (240, 244, 249)
-CARD, CARD2 = (255, 255, 255), (255, 255, 255)
-LINE = (214, 223, 234)
-CYAN, ORANGE, GREEN, PURPLE = (8, 145, 178), (194, 112, 8), (5, 150, 105), (109, 40, 217)
-BLUE = (37, 99, 235)
-WHITE, GREY, DIM = (15, 27, 45), (71, 85, 105), (100, 116, 139)
+BG0, BG1 = (7, 19, 32), (12, 30, 51)
+CARD, CARD2 = (13, 27, 44), (17, 33, 52)
+LINE = (38, 58, 84)
+CYAN, ORANGE, GREEN, PURPLE = (34, 211, 238), (245, 158, 11), (52, 211, 153), (167, 139, 250)
+BLUE = (96, 165, 250)
+WHITE, GREY, DIM = (232, 238, 247), (150, 170, 196), (105, 125, 152)
 
 F_BOLD = "C:/Windows/Fonts/msyhbd.ttc"
 F_REG = "C:/Windows/Fonts/msyh.ttc"
@@ -49,9 +49,68 @@ def wrap(d, text, f, maxw):
     return lines
 
 
-def gradient_bg():
-    # 学术风浅色底：浅灰白，避免大面积深色打印偏色
-    img = Image.new("RGB", (W, H), BG0)
+def tech_bg():
+    """科技感主题背景：深蓝渐变 + 工程网格 + 雷达环 + 检测框/航迹"""
+    img = Image.new("RGB", (W, H))
+    d = ImageDraw.Draw(img)
+    for y in range(H):
+        t = y / H
+        d.line([(0, y), (W, y)],
+               fill=tuple(int(a + (b - a) * t) for a, b in zip(BG0, BG1)))
+
+    # 工程网格
+    for x in range(0, W, 80):
+        d.line([(x, 0), (x, H)], fill=(16, 38, 58), width=1)
+    for y in range(0, H, 80):
+        d.line([(0, y), (W, y)], fill=(16, 38, 58), width=1)
+
+    # 顶部光晕
+    glow = Image.new("RGB", (W, H), (0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    for r in range(1000, 0, -8):
+        a = int(30 * (1 - r / 1000))
+        gd.ellipse([W // 2 - r, -700 - r // 2, W // 2 + r, -700 + r // 2],
+                   fill=(a // 4, a, a + 10))
+    img = Image.blend(img, glow, 0.5)
+    d = ImageDraw.Draw(img)
+
+    # 右上：雷达同心环 + 扫描扇区
+    cx, cy = W - 280, 300
+    for r in range(140, 820, 110):
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(18, 62, 84), width=2)
+    d.line([(cx - 820, cy), (cx + 820, cy)], fill=(18, 62, 84), width=1)
+    d.line([(cx, cy - 820), (cx, cy + 820)], fill=(18, 62, 84), width=1)
+    d.arc([cx - 660, cy - 660, cx + 660, cy + 660], start=-70, end=12,
+          fill=(26, 120, 140), width=4)
+    d.arc([cx - 440, cy - 440, cx + 440, cy + 440], start=-40, end=35,
+          fill=(22, 96, 116), width=3)
+
+    # 目标检测框 + 十字准星 + 航迹
+    targets = [(W - 640, 470, 96, 70), (W - 400, 650, 74, 54),
+               (250, H - 430, 86, 62), (W - 900, 980, 62, 46)]
+    for tx, ty, bw, bh in targets:
+        d.rectangle([tx, ty, tx + bw, ty + bh], outline=(32, 130, 150), width=2)
+        mx, my = tx + bw // 2, ty + bh // 2
+        d.line([(mx - 14, my), (mx + 14, my)], fill=(32, 130, 150), width=2)
+        d.line([(mx, my - 14), (mx, my + 14)], fill=(32, 130, 150), width=2)
+    track = [(W - 640, 470), (W - 560, 430), (W - 470, 445), (W - 400, 650)]
+    for i in range(len(track) - 1):
+        d.line([track[i], track[i + 1]], fill=(28, 108, 128), width=2)
+        d.ellipse([track[i][0] - 4, track[i][1] - 4, track[i][0] + 4, track[i][1] + 4],
+                  fill=(28, 108, 128))
+
+    # 左下：PCB 走线
+    pcb = [(0, H - 560), (180, H - 560), (260, H - 480), (260, H - 300),
+           (420, H - 300), (500, H - 380)]
+    for i in range(len(pcb) - 1):
+        d.line([pcb[i], pcb[i + 1]], fill=(18, 50, 76), width=3)
+    for px, py in pcb:
+        d.ellipse([px - 5, py - 5, px + 5, py + 5], fill=(20, 60, 88))
+
+    # 右下：淡青斜线（信号感）
+    for i in range(0, 8):
+        x0 = W - 520 + i * 26
+        d.line([(x0, H), (x0 + 260, H - 260)], fill=(16, 42, 64), width=2)
     return img
 
 
@@ -59,7 +118,7 @@ def card(d, box, fill=CARD, outline=LINE, radius=22, width=2):
     d.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
 
 
-def pill(d, x, y, text, f, fg=CYAN, bg=(236, 246, 249), padx=22, pady=9):
+def pill(d, x, y, text, f, fg=CYAN, bg=(18, 40, 56), padx=22, pady=9):
     w, h = tw(d, text, f)
     d.rounded_rectangle([x, y, x + w + padx * 2, y + h + pady * 2],
                         radius=(h + pady * 2) // 2, fill=bg, outline=fg, width=2)
@@ -159,19 +218,19 @@ def coverage(d, x, y, w):
         ry = y + i * rh
         d.text((x, ry + 6), name, font=font(24, False), fill=WHITE)
         bx = x + label_w
-        d.rounded_rectangle([bx, ry + 4, bx + bar_w, ry + rh - 6], radius=8, fill=(232, 238, 246))
+        d.rounded_rectangle([bx, ry + 4, bx + bar_w, ry + rh - 6], radius=8, fill=(15, 24, 42))
         d.rounded_rectangle([bx + a * scale, ry + 4, bx + b * scale, ry + rh - 6], radius=8, fill=c)
         tx = bx + a * scale + 12
-        d.text((tx, ry + 10), f"{a}~{b} px", font=font(19, mono=True), fill=(255, 255, 255))
+        d.text((tx, ry + 10), f"{a}~{b} px", font=font(19, mono=True), fill=(8, 13, 26))
     ry = y + 4 * rh + 12
     bx = x + label_w
-    d.rounded_rectangle([bx, ry, bx + bar_w, ry + 36], radius=8, fill=(232, 246, 240), outline=GREEN, width=2)
+    d.rounded_rectangle([bx, ry, bx + bar_w, ry + 36], radius=8, fill=(22, 60, 52), outline=GREEN, width=2)
     d.text((bx + 20, ry + 6), "四路合并：2 ~ 80 px，中间无空档", font=font(23), fill=GREEN)
     return ry + 36
 
 
 def main():
-    img = gradient_bg()
+    img = tech_bg()
     d = ImageDraw.Draw(img)
 
     # 顶部
@@ -263,7 +322,7 @@ def main():
             ("端到端帧率", "5.92 fps（软件基线）", "16.6 fps（三域同板）")]
     rh = 80
     col1, col2 = 470, 700
-    d.rounded_rectangle([M, y, W - M, y + rh], radius=12, fill=(235, 241, 248))
+    d.rounded_rectangle([M, y, W - M, y + rh], radius=12, fill=CARD2)
     d.text((M + 28, y + 20), "维度", font=font(27), fill=GREY)
     d.text((M + col1, y + 20), "传统做法", font=font(27), fill=GREY)
     d.text((M + col1 + col2, y + 20), "本方案", font=font(27), fill=CYAN)
