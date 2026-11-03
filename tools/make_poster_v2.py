@@ -15,7 +15,7 @@ FIG = os.path.join(ROOT, "report", "figs")
 W, H = 2480, 3508
 M = 120
 
-BG_TOP, BG_BOT = (88, 172, 200), (212, 236, 246)
+BG_TOP, BG_BOT = (64, 142, 172), (196, 224, 238)
 INK, INK2, INK3 = (16, 48, 72), (72, 104, 128), (120, 148, 168)
 BAR = (26, 88, 136)
 CYAN, ORANGE, GREEN, PURPLE = (8, 122, 150), (190, 106, 6), (12, 118, 98), (96, 58, 186)
@@ -316,24 +316,18 @@ def main():
         d.line([(M, ry + rh), (W - M, ry + rh)], fill=(196, 218, 230), width=1)
 
     # 能力边界
-    y = section(d, M, 2570, "能力边界：一份硬件覆盖 2~80 px")
-    coverage(d, M, 2640, W - M * 2)
-
-    # 交付与复现
-    y3 = section(d, M, 2860, "交付与复现")
-    d.text((M, y3), "仓库包含 PL 源码与约束、PS 应用、模型与量化校准集、测试数据与完整报告。",
-           font=font(22, False), fill=INK2)
-    d.text((M, y3 + 40), "板上复现：加载 ours3d_s5.bin，启动 init.d 服务，浏览器打开 :8080。",
-           font=font(22, False), fill=INK2)
+    y = section(d, M, 2750, "能力边界：一份硬件覆盖 2~80 px")
+    coverage(d, M, 2820, W - M * 2)
 
     # 页脚
     by = H - 74
+    d.rectangle([0, H - 110, W, H], fill=(8, 24, 40, 210))
     d.text((M, by), "全部指标为板上实测 ｜ 代码与文档：gitee.com/kkk3259/fmql30tai-low-slow-small-detect-track",
-           font=font(21, False), fill=(206, 222, 235))
+           font=font(21, False), fill=(214, 228, 240))
 
     # 每个内容块加白底框
     blocks = [(390, 600), (620, 850), (870, 1230), (1250, 1670),
-              (1690, 2140), (2160, 2570), (2590, 2850), (2870, 3020)]
+              (1690, 2140), (2160, 2570), (2750, 3010)]
     img = tech_bg()
     db = ImageDraw.Draw(img)
     for a, b in blocks:

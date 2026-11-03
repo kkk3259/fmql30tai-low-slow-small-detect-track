@@ -14,7 +14,7 @@ FIG = os.path.join(ROOT, "report", "figs")
 W, H = 2480, 3508
 M = 100
 
-TOP, BOT = (82, 166, 196), (208, 234, 244)
+TOP, BOT = (60, 138, 168), (192, 222, 236)
 INK, INK2, INK3 = (16, 48, 72), (70, 102, 126), (118, 146, 166)
 BAR = (24, 86, 134)
 NAVY = (18, 62, 100)
@@ -194,7 +194,7 @@ def main():
               os.path.join(FIG, "图14_耗时分解.png")),
              ("平台约束下落地", "绕开未焊接接口，检测器接入 AI_Mate。",
               os.path.join(FIG, "图C_网页控制台界面.png"))]
-    cw, ch = 1110, 420
+    cw, ch = 1110, 380
     for i, (head, body, path) in enumerate(cards):
         cx = M + (i % 2) * (cw + 50)
         cy = y + 78 + (i // 2) * (ch + 40)
