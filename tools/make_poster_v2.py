@@ -81,9 +81,9 @@ def tech_bg():
         ld.ellipse([cx - s * 0.98, cy - s * 0.7, cx - s * 0.7, cy - s * 0.42], outline=c, width=3)
         ld.ellipse([cx + s * 0.7, cy - s * 0.7, cx + s * 0.98, cy - s * 0.42], outline=c, width=3)
 
-    for cx, cy, s, a in [(W - 270, 520, 62, 100), (W - 720, 300, 42, 85),
-                         (300, 760, 36, 78), (W - 170, 1500, 50, 78),
-                         (520, H - 700, 34, 70)]:
+    for cx, cy, s, a in [(W - 270, 600, 58, 95), (W - 760, 520, 40, 80),
+                         (300, 820, 34, 72), (W - 170, 1500, 48, 72),
+                         (520, H - 700, 32, 64)]:
         drone(cx, cy, s, a)
 
     # 检测框 + 准星
@@ -102,10 +102,9 @@ def tech_bg():
         ld.ellipse([p[0] - 7, p[1] - 7, p[0] + 7, p[1] + 7], fill=(8, 112, 142, 170))
 
     # 右上雷达弧
-    for r in range(200, 760, 90):
-        ld.arc([W - 160 - r, 160 - r, W - 160 + r, 160 + r], start=90, end=270,
-               fill=(24, 104, 136, 95), width=3)
-    ld.line([(W - 160, 160), (W - 160 - 700, 160)], fill=(24, 104, 136, 90), width=2)
+    for r in range(160, 520, 80):
+        ld.arc([W - 70 - r, 70 - r, W - 70 + r, 70 + r], start=90, end=270,
+               fill=(24, 104, 136, 90), width=2)
 
     # 电路走线（左下）
     pcb = [(0, H - 420), (170, H - 420), (240, H - 350), (240, H - 180),
@@ -147,12 +146,19 @@ def section(d, x, y, title, size=32):
     return y + size + 26 + 28
 
 
-def metric(d, x, y, value, unit, label, sub, color):
+def metric(d, x, y, value, unit, label, sub, color, center=False):
     f_v, f_u = font(76, mono=True), font(24)
-    d.text((x, y), value, font=f_v, fill=color)
-    d.text((x + tw(d, value, f_v)[0] + 8, y + 36), unit, font=f_u, fill=color)
-    d.text((x, y + 92), label, font=font(25), fill=INK)
-    d.text((x, y + 128), sub, font=font(19, False), fill=INK3)
+    if center:
+        d.text((x, y), value, font=f_v, fill=color, anchor="ma")
+        vw = tw(d, value, f_v)[0]
+        d.text((x + vw // 2 + 8, y + 36), unit, font=f_u, fill=color)
+        d.text((x, y + 92), label, font=font(25), fill=INK, anchor="ma")
+        d.text((x, y + 128), sub, font=font(19, False), fill=INK3, anchor="ma")
+    else:
+        d.text((x, y), value, font=f_v, fill=color)
+        d.text((x + tw(d, value, f_v)[0] + 8, y + 36), unit, font=f_u, fill=color)
+        d.text((x, y + 92), label, font=font(25), fill=INK)
+        d.text((x, y + 128), sub, font=font(19, False), fill=INK3)
 
 
 def paste_pic(img, path, box, crop=None, pad=0, border=(150, 190, 210)):
@@ -227,24 +233,27 @@ def main():
     d = ImageDraw.Draw(content)
 
     # 标题区
-    d.text((M, 90), "2026 全国大学生嵌入式芯片与系统设计竞赛 · FPGA 创新设计赛道 · 复旦微方向",
-           font=font(23, False), fill=INK2)
-    d.rounded_rectangle([M, 136, M + 14, 268], radius=7, fill=BAR)
-    d.text((M + 34, 134), "低小慢空间目标智能检测与跟踪系统", font=font(96), fill=INK)
-    d.text((M + 34, 258), "PL 像素粗筛   ·   NPU 候选精判   ·   PS 航迹管理", font=font(36), fill=CYAN)
-    d.text((M + 34, 320), "FMQL30TAI 悟净 Lite    ARM 4×A53 @1 GHz    ZG330 8 TOPS INT8    78000 LUT @50 MHz",
-           font=font(23, False), fill=INK2)
+    t1 = "2026 全国大学生嵌入式芯片与系统设计竞赛 · FPGA 创新设计赛道 · 复旦微方向"
+    d.text(((W - tw(d, t1, font(23, False))[0]) // 2, 92), t1, font=font(23, False), fill=INK2)
+    t2 = "低小慢空间目标智能检测与跟踪系统"
+    d.text(((W - tw(d, t2, font(96))[0]) // 2, 136), t2, font=font(96), fill=INK)
+    t3 = "PL 像素粗筛   ·   NPU 候选精判   ·   PS 航迹管理"
+    d.text(((W - tw(d, t3, font(36))[0]) // 2, 260), t3, font=font(36), fill=CYAN)
+    t4 = "FMQL30TAI 悟净 Lite    ARM 4×A53 @1 GHz    ZG330 8 TOPS INT8    78000 LUT @50 MHz"
+    d.text(((W - tw(d, t4, font(23, False))[0]) // 2, 322), t4, font=font(23, False), fill=INK2)
 
     # 关键数字
     y = 412
-    cols = [(M, "16.6", "fps", "三域端到端帧率", "相机 → PL → NPU → 跟踪 → 推流", CYAN),
-            (M + 560, "4.19", "ms", "PL 检测单帧", "512 位 PL-DDR", ORANGE),
-            (M + 1120, "0.68", "ms", "NPU 候选判别", "cls128 · 121 算子", GREEN),
-            (M + 1680, "2~80", "px", "目标尺寸覆盖", "全分辨率 + 三档降采样", PURPLE)]
-    for i, (x, v, u, l, s, c) in enumerate(cols):
-        metric(d, x, y, v, u, l, s, c)
+    col_w = (W - 2 * M) // 4
+    cols = [("16.6", "fps", "三域端到端帧率", "相机 → PL → NPU → 跟踪 → 推流", CYAN),
+            ("4.19", "ms", "PL 检测单帧", "512 位 PL-DDR", ORANGE),
+            ("0.68", "ms", "NPU 候选判别", "cls128 · 121 算子", GREEN),
+            ("2~80", "px", "目标尺寸覆盖", "全分辨率 + 三档降采样", PURPLE)]
+    for i, (v, u, l, s, c) in enumerate(cols):
+        cx = M + col_w * i + col_w // 2
+        metric(d, cx, y, v, u, l, s, c, center=True)
         if i:
-            d.line([(x - 26, y + 6), (x - 26, y + 154)], fill=(180, 205, 220), width=1)
+            d.line([(M + col_w * i, y + 6), (M + col_w * i, y + 154)], fill=(180, 205, 220), width=1)
 
     # 问题
     y = section(d, M, 660, "问题")
@@ -288,14 +297,15 @@ def main():
     paste_pic(content, os.path.join(FIG, "图9b_NPU检测效果.png"),
               [rx, y, rx + 760, y + 330], crop=(0, 128, 1724, 445))
     ty = y + 360
+    stat_col = 380
     for i, (v, l, c) in enumerate([("76.6% → 0.8%", "航迹确认后的虚警残留", ORANGE),
                                    ("0.920", "mAP50（自研 YOLOv11n 单类）", GREEN),
                                    ("13.1 s", "断电到服务就绪", CYAN),
                                    ("84.4%", "三域位流 LUT（独立位流 61.9%）", PURPLE)]):
-        sx = rx + (i % 2) * 390
+        sx = rx + 190 + (i % 2) * stat_col
         sy = ty + (i // 2) * 112
-        d.text((sx, sy), v, font=font(30, mono=True), fill=c)
-        d.text((sx, sy + 38), l, font=font(19, False), fill=INK2)
+        d.text((sx, sy), v, font=font(30, mono=True), fill=c, anchor="ma")
+        d.text((sx, sy + 38), l, font=font(19, False), fill=INK2, anchor="ma")
 
     # 公开基准对比
     y = section(d, M, 2490, "公开基准对比（DUT Anti-UAV test）")
@@ -328,6 +338,13 @@ def main():
     bg_clear = tech_bg()
     blur_bg = bg_clear.filter(ImageFilter.GaussianBlur(16))
     img = bg_clear.convert("RGBA")
+    # 标题区淡色蒙版：压住背景元素，保证居中标题干净
+    veil = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    vd = ImageDraw.Draw(veil)
+    for yy in range(0, 400):
+        a = int(200 * (1 - yy / 400) ** 0.65)
+        vd.line([(0, yy), (W, yy)], fill=(238, 247, 251, a))
+    img = Image.alpha_composite(img, veil)
 
     boxes = []
     for a, b in blocks:
