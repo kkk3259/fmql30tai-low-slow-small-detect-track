@@ -201,7 +201,7 @@ def flow(d, x, y, w):
         ("跟踪", "卡尔曼 + 匹配", CYAN, "航迹"),
         ("推流", "网页 MJPEG", CYAN, "画面"),
     ]
-    bw, gap, bh = 238, 46, 104
+    bw, gap, bh = 230, 38, 104
     groups = [(0, 0, "PS", (70, 110, 140)), (1, 4, "PL", ORANGE), (5, 5, "NPU", GREEN), (6, 7, "PS", CYAN)]
     for a, b, label, col in groups:
         gx0 = x + a * (bw + gap)
@@ -304,7 +304,7 @@ def main():
 
     # 方案（全宽居中）
     y = section_at(d, W // 2, 1215, "方案：一条流水线跑完检测与跟踪")
-    flow(d, (W - 2196) // 2, y, 2196)
+    flow(d, (W - 2106) // 2, y, 2106)
 
     # 左栏：结果
     y = section_at(d, lcx, 1575, "结果：系统整体与板上实测")
@@ -339,7 +339,7 @@ def main():
 
     # 能力边界（全宽）
     y = section_at(d, W // 2, 2725, "能力边界：一份硬件覆盖 2~80 px")
-    coverage(d, M + 60, y, W - 2 * M - 120)
+    coverage(d, M + 40, y, W - 2 * M - 80)
 
     # 页脚
     by = H - 74
