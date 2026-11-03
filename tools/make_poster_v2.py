@@ -5,6 +5,7 @@
 输出：docs/poster/作品海报_A2_v2.png / .pdf
 """
 import os
+import math
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -15,7 +16,7 @@ W, H = 2480, 3508
 M = 110
 
 BG0, BG1 = (7, 19, 32), (12, 30, 51)
-CARD, CARD2 = (13, 27, 44), (17, 33, 52)
+CARD, CARD2 = (13, 27, 44, 238), (17, 33, 52, 238)
 LINE = (38, 58, 84)
 CYAN, ORANGE, GREEN, PURPLE = (34, 211, 238), (245, 158, 11), (52, 211, 153), (167, 139, 250)
 BLUE = (96, 165, 250)
@@ -79,6 +80,40 @@ def photo_bg():
     d.line([(cx, cy - 820), (cx, cy + 820)], fill=(20, 70, 92), width=1)
     d.arc([cx - 660, cy - 660, cx + 660, cy + 660], start=-70, end=12,
           fill=(28, 130, 150), width=4)
+
+    # 雷达扫描亮线
+    ang = math.radians(-26)
+    d.line([(cx, cy), (cx + 660 * math.cos(ang), cy + 660 * math.sin(ang))],
+           fill=(44, 170, 190), width=3)
+
+    # 左侧候选表 HEX（候选表窗口示意）
+    hex_rows = ["0x10 0C 1F 2A", "0x18 0D 21 2B", "0x20 0E 24 2C",
+                "0x28 0F 27 2D", "0x30 10 2A 2E"]
+    for i, row in enumerate(hex_rows):
+        d.text((6, 960 + i * 34), row, font=font(15, mono=True), fill=(22, 68, 88))
+
+    # 右侧航迹（卡尔曼跟踪）
+    tr = [(W - 46, 760), (W - 92, 830), (W - 62, 910), (W - 108, 990), (W - 72, 1070)]
+    for i in range(len(tr) - 1):
+        d.line([tr[i], tr[i + 1]], fill=(32, 120, 140), width=3)
+    for p in tr:
+        d.ellipse([p[0] - 5, p[1] - 5, p[0] + 5, p[1] + 5], fill=(32, 120, 140))
+
+    # 底部 CFAR 包络 + 阈值虚线
+    base_y = H - 58
+    prev = None
+    for x in range(0, W, 8):
+        y = base_y - int(24 * math.sin(x / 70) + 10 * math.sin(x / 23))
+        if prev:
+            d.line([prev, (x, y)], fill=(24, 92, 112), width=2)
+        prev = (x, y)
+    for x in range(0, W, 30):
+        d.line([(x, base_y - 34), (x + 14, base_y - 34)], fill=(28, 104, 124), width=2)
+
+    # 顶部刻度
+    for x in range(0, W, 60):
+        h = 16 if x % 240 == 0 else 8
+        d.line([(x, 0), (x, h)], fill=(26, 74, 96), width=1)
 
     # 顶部与底部压暗，保证标题和页脚可读
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -209,7 +244,7 @@ def coverage(d, x, y, w):
 
 
 def main():
-    img = photo_bg()
+    img = photo_bg().convert("RGBA")
     d = ImageDraw.Draw(img)
 
     # 顶部
@@ -307,7 +342,7 @@ def main():
     d.text((M + col1 + col2, y + 20), "本方案", font=font(27), fill=CYAN)
     for i, (a, b, c) in enumerate(rows):
         ry = y + rh * (i + 1)
-        d.rounded_rectangle([M, ry, W - M, ry + rh], radius=12, fill=CARD if i % 2 == 0 else BG1)
+        d.rounded_rectangle([M, ry, W - M, ry + rh], radius=12, fill=CARD if i % 2 == 0 else (12, 30, 51, 238))
         d.text((M + 28, ry + 22), a, font=font(26, False), fill=WHITE)
         d.text((M + col1, ry + 22), b, font=font(26, False), fill=GREY)
         d.text((M + col1 + col2, ry + 22), c, font=font(26), fill=CYAN)
@@ -326,6 +361,7 @@ def main():
            font=font(24, False), fill=DIM)
 
     os.makedirs(OUT_DIR, exist_ok=True)
+    img = img.convert("RGB")
     png = os.path.join(OUT_DIR, "作品海报_A2_v2.png")
     img.save(png, "PNG")
     img.save(os.path.join(OUT_DIR, "作品海报_A2_v2.pdf"), "PDF", resolution=150.0)
