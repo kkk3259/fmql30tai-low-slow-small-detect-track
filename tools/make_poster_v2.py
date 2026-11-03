@@ -281,23 +281,24 @@ def main():
             d.text((cx + 46, cy + 42 + j * 32), line, font=font(23, False), fill=INK2)
 
     # 结果
-    y = section(d, M, 1740, "结果：板上实测")
-    img_w = 1400
+    y = section(d, M, 1740, "结果：系统整体与板上实测")
+    paste_pic(content, os.path.join(FIG, "系统整体实现.jpg"),
+              [M, y, M + 780, y + 585])
+    rx = M + 830
     paste_pic(content, os.path.join(FIG, "图9b_NPU检测效果.png"),
-              [M, y, M + img_w, y + 290], crop=(0, 128, 1724, 445))
-    rx = M + img_w + 70
-    d.text((rx, y + 4), "NPU 整图检测 · 真实 720P 逐帧", font=font(21, False), fill=INK3)
-    ty = y + 40
-    for v, l, c in [("76.6% → 0.8%", "航迹确认后的虚警残留", ORANGE),
-                    ("0.920", "mAP50（自研 YOLOv11n 单类）", GREEN),
-                    ("13.1 s", "断电到服务就绪", CYAN),
-                    ("84.4%", "三域位流 LUT（独立位流 61.9%）", PURPLE)]:
-        d.text((rx, ty), v, font=font(34, mono=True), fill=c)
-        d.text((rx, ty + 42), l, font=font(20, False), fill=INK2)
-        ty += 76
+              [rx, y, rx + 760, y + 330], crop=(0, 128, 1724, 445))
+    ty = y + 360
+    for i, (v, l, c) in enumerate([("76.6% → 0.8%", "航迹确认后的虚警残留", ORANGE),
+                                   ("0.920", "mAP50（自研 YOLOv11n 单类）", GREEN),
+                                   ("13.1 s", "断电到服务就绪", CYAN),
+                                   ("84.4%", "三域位流 LUT（独立位流 61.9%）", PURPLE)]):
+        sx = rx + (i % 2) * 390
+        sy = ty + (i // 2) * 112
+        d.text((sx, sy), v, font=font(30, mono=True), fill=c)
+        d.text((sx, sy + 38), l, font=font(19, False), fill=INK2)
 
     # 公开基准对比
-    y = section(d, M, 2210, "公开基准对比（DUT Anti-UAV test）")
+    y = section(d, M, 2490, "公开基准对比（DUT Anti-UAV test）")
     pic_w = 1010
     paste_pic(content, os.path.join(FIG, "baseline_comparison.png"),
               [M, y, M + pic_w, y + 384])
@@ -312,8 +313,8 @@ def main():
         ty += 124
 
     # 能力边界
-    y = section(d, M, 2780, "能力边界：一份硬件覆盖 2~80 px")
-    coverage(d, M, 2850, W - M * 2)
+    y = section(d, M, 3060, "能力边界：一份硬件覆盖 2~80 px")
+    coverage(d, M, 3130, W - M * 2)
 
     # 页脚
     by = H - 74
@@ -323,7 +324,7 @@ def main():
 
     # 每个内容块加磨砂玻璃底
     blocks = [(390, 610), (630, 870), (900, 1270), (1290, 1690),
-              (1710, 2160), (2180, 2720), (2730, 3030)]
+              (1710, 2430), (2460, 3020), (3040, 3310)]
     bg_clear = tech_bg()
     blur_bg = bg_clear.filter(ImageFilter.GaussianBlur(16))
     img = bg_clear.convert("RGBA")
