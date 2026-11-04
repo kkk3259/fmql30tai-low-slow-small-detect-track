@@ -63,12 +63,12 @@ assign led[3:1] = (ncand > 8'd7) ? 3'd7 : ncand[2:0]; // 本帧检出候选数�
 
 ```tcl
 clear_design
-source D:/firstharness/synth/board_ledmap.tcl ;# → led_map_top.bit
+source synth/board_ledmap.tcl ;# → led_map_top.bit
 ```
 
 ```tcl
 clear_design
-source D:/firstharness/synth/board_ledseq.tcl ;# → led_seq_top.bit（每步只亮一颗，8 秒循环）
+source synth/board_ledseq.tcl ;# → led_seq_top.bit（每步只亮一颗，8 秒循环）
 ```
 
 `led_seq_top.bit` 用于在丝印看不清、或换板子时重新确认映射：

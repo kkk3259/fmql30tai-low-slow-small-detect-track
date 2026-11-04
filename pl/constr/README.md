@@ -42,7 +42,7 @@ set_property PULLTYPE PULLUP [get_ports {rst_n}]
 ## 用法
 
 ```tcl
-add_design_file -file { .../pl/rtl/*.v D:/firstharness/repo/pl/constr/board_lite.fdc }
+add_design_file -file { .../pl/rtl/*.v pl/constr/board_lite.fdc }
 set_top -top ip2_board_top
 load_design -stage_elaborate -no_hier
 rtl_analyze

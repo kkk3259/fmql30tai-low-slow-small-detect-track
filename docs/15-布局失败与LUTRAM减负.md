@@ -15,7 +15,7 @@ hpwl = 267660.4
 Phase 2.2 Legalize Placement
 solver infeasible by network simplex
  ERROR: PLACE-0021: place error: Global Placement failed.
-source D:/firstharness/synth/board_ip2.tcl elapsed_time 2219.10 seconds
+source <工程根>/synth/board_ip2.tcl elapsed_time 2219.10 seconds
 ```
 
 各阶段耗时：

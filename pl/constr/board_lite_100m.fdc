@@ -10,7 +10,7 @@
 #
 # ★ 引脚来源（已交叉验证两处，可信）：
 #   A) FMSH 官方工程 fpai_demo_fpga\constrs_1\impl_constraints.xdc
-#      （D:\firstharness\dl\xdc\impl_constraints.xdc，从 20260916 资料包解出）
+#      （官方资料包 constrs_1/impl_constraints.xdc，从 20260916 资料包解出）
 #   B) 《悟净开发板 Lite 硬件使用手册》正文表格
 # =============================================================================
 

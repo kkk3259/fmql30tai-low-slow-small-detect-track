@@ -50,8 +50,8 @@ repo/pl/rtl/ip2_pix_fifo.v
 ## 一键恢复/编译顺序
 
 ```tcl
-set ::env(JFM_PATH) D:/firstharness/JFM_Kits
-source D:/firstharness/JFM_Kits/ip_patch/run.tcl
+set ::env(JFM_PATH) <JFM_Kits>
+source <JFM_Kits>/ip_patch/run.tcl
 add_hook_tcl_to_prj ;# 打印 Set BRAM/FIFO -bram_patch_check TRUE!
 replace_7z030ai_file ;# 换 zynq.rtd 成 30AI 版，否则 INBB-3
 read_edif .../ps_ai_wrap_demo.edf

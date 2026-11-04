@@ -131,7 +131,7 @@ module tb_user_op;
         exp_x[3]=150; exp_y[3]=250; exp_a[3]=324;
         exp_x[4]=480; exp_y[4]=260; exp_a[4]=400;
 
-        $readmemh("D:/firstharness/repo/pl/sim/frame_user_test.hex", mem);
+        $readmemh("pl/sim/frame_user_test.hex", mem);
         repeat (10) @(posedge clk);
         rst_n = 1; ra_rst_n = 1;
         repeat (20) @(posedge clk);

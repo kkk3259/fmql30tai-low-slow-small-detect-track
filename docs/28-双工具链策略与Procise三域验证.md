@@ -47,10 +47,10 @@ IP2 全部 RTL 限定在 Verilog-2001 可综合子集：
 补丁**不写安装目录**，而是拷进工程目录并在当前会话 `source` 一次：
 
 ```tcl
-set ::env(JFM_PATH) "D:/firstharness/JFM_Kits"
+set ::env(JFM_PATH) "<JFM_Kits>"
 create_project -name myproj -device JFMQL30TAI676H
 save_project ;# 必须先存，run.tcl 要读工程目录
-source D:/firstharness/JFM_Kits/ip_patch/run.tcl
+source <JFM_Kits>/ip_patch/run.tcl
 ```
 
 `run.tcl` 干两件事（已读全文确认）：
