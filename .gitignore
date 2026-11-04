@@ -52,3 +52,6 @@ fmql30tai-low-slow-small-detect-track/
 
 # Vivado 工程与报告生成目录（由 pl/tools/build_bd.tcl 生成）
 build/
+
+# 交付压缩包（本地生成，不进仓库）
+deliver/
