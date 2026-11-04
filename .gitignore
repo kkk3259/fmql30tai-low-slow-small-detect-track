@@ -49,3 +49,6 @@ fmql30tai-low-slow-small-detect-track/
 .tmp-*/
 # Office/WPS 打开文档时生成的锁文件（形如 ~$xxx.docx）
 ~\$*
+
+# Vivado 工程与报告生成目录（由 pl/tools/build_bd.tcl 生成）
+build/
