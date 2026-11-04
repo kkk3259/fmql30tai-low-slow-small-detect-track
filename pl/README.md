@@ -132,32 +132,50 @@ JTAG 接线表：[`constr/jtag_wiring.md`](constr/jtag_wiring.md)
 
 ---
 
-## 7. 怎么综合 / 出位流（Procise）
+## 7. 综合与出位流
 
-Procise 没有可用批处理入口，必须由人在 GUI Shell 里执行：
+### 7.1 用 Vivado 还原工程（评委复现用，推荐）
 
-1. 开始菜单 → Start Procise Shell → 弹框选 `D:\FudanMicro\Procise\bin\procise.exe` → 打开
-2. 在 shell 里：
+`pl/tools/build_bd.tcl` 从源码自动生成完整工程：建 Block Design、放 PS7、套官方 PS 配置、连 AXI、综合实现、导出位流和报告。路径按脚本自身位置推导，换机器不用改。
 
-```tcl
-clear_design
-source D:/firstharness/synth/test_ip2.tcl ;# 只到 elaborate（资源摸底，约 1.6 分钟）
-synthesize ;# 约 11 分钟
+前置条件：
+
+- Vivado 2018.2 或 2018.3，器件 `xc7z030ffg676-2`
+- 仓库内 `pl/rtl/`（10 个 RTL）与 `pl/tools/ps7_config.tcl`
+
+批处理跑法：
+
+```bash
+cd <仓库根>/pl/tools
+<Vivado>/bin/vivado.bat -mode batch -source build_bd.tcl -nojournal
 ```
 
-或全流程（出位流）：
+也可以开 Vivado GUI，在 Tcl Console 里 `cd <仓库根>/pl/tools` 后 `source build_bd.tcl`。
 
-```tcl
-clear_design
-source D:/firstharness/synth/board_ip2.tcl ;# rtl_analyze → synthesize → place → route → bitgen
-```
+产出（均在仓库根 `build/` 下）：
 
-- 脚本目录：`synth\\`（`test_ip2.tcl` 640×360 elaborate、`board_ip2.tcl` 板级全流程、`test_ccl_only.tcl` CCL 单独探针）
-- 输出：`D:\FudanMicro\Procise\ip2_board_top.bit` 等
-- 本机 Procise：`2025.1.1 temp`，`SVN Version: 32494` —— 与官方位流头部 `PatchID=32494` 同一构建，不需要额外打位流补丁、不需要 license 申请
-- 下载：GUI `Tools -> Configure Device…` → Connect to board → 右键 FPGA → Assign New Configuration File → Program
+| 文件 | 说明 |
+|---|---|
+| `build/ip2_ps2/ip2_ps.xpr` | 工程文件，双击可打开 |
+| `build/ip2_ps2/ip2_ps.runs/impl_1/*_wrapper.bit` | 位流 |
+| `build/utilization.rpt` | 资源报告 |
+| `build/timing.rpt` | 时序报告（WNS/TNS，20 条最差路径） |
+| `build/ip2_bd.hwdef` | 硬件定义，供 SDK 打 BOOT.bin |
 
----
+只想要工程、不跑综合：把脚本第 13–15 节（综合、实现、导出）注释掉，跑到第 12 节即可得到 `.xpr`。
+
+> 三域工程（`synth/vivado_3d/ours3d_s5.tcl`）额外依赖 AI_Mate 网表 `ps_ai_wrap_demo.edf`（约 132 MB，未随仓库提交）和复旦微 `JFM_Kits` 补丁，不在 `build_bd.tcl` 的还原范围内。
+
+### 7.2 Procise 全流程（开发期记录）
+
+Procise 没有批处理入口，只能在它的 GUI Shell 里人工执行。相关脚本保留在开发机上（`synth/test_ip2.tcl` 到 elaborate、`synth/board_ip2.tcl` 板级全流程），未随仓库提交，这里仅记录流程：
+
+1. 开始菜单 → Start Procise Shell
+2. `clear_design` → `source <脚本>` → `synthesize`（约 11 分钟）
+3. 输出 `ip2_board_top.bit`，GUI `Tools → Configure Device…` 下载
+
+Three-domain 位流的综合与验证过程见 `docs/28-双工具链策略与Procise三域验证.md`。
+
 
 ## 8. 已知差异 / 待办
 
