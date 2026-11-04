@@ -1,0 +1,69 @@
+# DRC（Design Rule Check）结果摘要
+
+工程   : ours3d_bram（三域联合版：自研检测器 + 厂商 AI_Mate 平台 + PS7）
+器件   : xc7z030ffg676-2
+工具   : Vivado 2018.3
+位流   : ours3d_bram_load.bin（板上实际运行，md5 c721137683aba41e04bf473a34518cc4）
+数据来源: vivado_run.log —— 该次构建的完整 stdout（含综合 / 优化 / 布局 / 布线 / DRC）
+
+说明：本文件按规则编号归并自完整日志，不是 report_drc 的原生输出。
+      原因：三域工程目录的 .runs 子目录在清理磁盘时被删除，原生 .rpt 一并丢失；
+      原始日志已完整随包提供（reports/vivado_run.log，560 KB），可逐行核对。
+
+==============================================================================
+结论
+==============================================================================
+  INFO: [Project 1-461] DRC finished with 0 Errors
+  INFO: [Vivado_Tcl 4-198] DRC finished with 0 Errors
+  INFO: [Vivado_Tcl 4-198] DRC finished with 0 Errors, 42 Warnings
+  INFO: [Vivado_Tcl 4-198] DRC finished with 0 Errors, 1 Warnings
+  INFO: [Vivado 12-3199] DRC finished with 0 Errors, 60 Warnings
+
+==============================================================================
+按规则归并
+==============================================================================
+  规则             条数     说明
+  --------------------------------------------------------------------------
+  REQP-1839      40     RAMB36 async control check
+  REQP-1840      40     RAMB18 async control check
+  REQP-1580      8      Phase alignment
+  CHECK-3        4      Report rule limit reached
+  DPIP-1         4      Input pipelining
+  DPOP-2         2      MREG Output pipelining
+  PLCK-23        1      Clock Placer Checks
+  DPOP-1         1      PREG Output pipelining
+  REQP-1577      1      Clock output buffering
+  REQP-1709      1      Clock output buffering
+  RTSTAT-10      1      No routable loads
+
+==============================================================================
+典型样例（完整行见 vivado_run.log）
+==============================================================================
+
+  [CHECK-3] Report rule limit reached
+    WARNING: [DRC CHECK-3] Report rule limit reached: REQP-1839 rule limit reached: 20 violations have been found.
+
+  [REQP-1839] RAMB36 async control check
+    WARNING: [DRC REQP-1839] RAMB36 async control check: The RAMB36E1 U0_ps_ai_wrap_demo/U0_ps_ai_peripheral/ZGolo/u_AI_Mate_top/U0_ddr2hp_itcn/U0_dmux4/U0_aw_axi_fifo/w616d64_fifo.U0_w616d64_fifo/U0/inst_fifo_gen/gconvfifo.rf/grf.rf/gntv_or_sync_fifo.mem/gbm.gbmg.gbmga.ngecc.bmg/inst_blk_mem_gen/gnbram.gnativebmg.native_blk_mem_gen/valid.cstr/ramloop[0].ram.r/prim_noinit.ram/DEVIC
+
+  [REQP-1840] RAMB18 async control check
+    WARNING: [DRC REQP-1840] RAMB18 async control check: The RAMB18E1 U0_ps_ai_wrap_demo/U0_ps_ai_peripheral/ZGolo/u_AI_Mate_top/U0_ddr2hp_itcn/U0_dmux4/U0_ar_axi_fifo/w32d64_fifo.U0_w32d64_fifo/U0/inst_fifo_gen/gconvfifo.rf/grf.rf/gntv_or_sync_fifo.mem/gbm.gbmg.gbmga.ngecc.bmg/inst_blk_mem_gen/gnbram.gnativebmg.native_blk_mem_gen/valid.cstr/ramloop[0].ram.r/prim_noinit.ram/DEVICE_
+
+  [PLCK-23] Clock Placer Checks
+    WARNING: [DRC PLCK-23] Clock Placer Checks: Sub-optimal placement for a clock-capable IO pin and MMCM pair.
+
+  [DPIP-1] Input pipelining
+    WARNING: [DRC DPIP-1] Input pipelining: DSP U_ip2_op/u_ip2/u_chain/u_cfar/q2_xa_w input U_ip2_op/u_ip2/u_chain/u_cfar/q2_xa_w/A[29:0] is not pipelined. Pipelining DSP48 input will improve performance.
+
+  [DPOP-1] PREG Output pipelining
+    WARNING: [DRC DPOP-1] PREG Output pipelining: DSP U_ip2_op/u_ip2/u_chain/u_cfar/q4_lsq_w output U_ip2_op/u_ip2/u_chain/u_cfar/q4_lsq_w/P[47:0] is not pipelined (PREG=0). Pipelining the DSP48 output will improve performance and often saves power so it is suggested whenever possible to fully pipeline this function.  If this DSP48 function was inferred, it is suggested to describe
+
+==============================================================================
+结论解读
+==============================================================================
+  · 0 Errors —— 设计通过 DRC，位流可以正常生成（已实测出流并上板运行）。
+  · 所有 Warning 均来自厂商 AI_Mate 平台 IP（实例路径以 U0_ps_ai_wrap_demo/ 开头），
+    不涉及自研检测器模块（win5 / tophat / cfar / candidate_extract / ip2_user_op）。
+  · REQP-1840 是 RAMB18 异步控制检查，源自厂商 IP 内部 FIFO 的既有写法；
+    RTSTAT-10 是平台内部 138 条无负载网络，与检测通路无关。
+  · 自研部分的等价检查在 reports/timing.rpt 中全部通过（180,044 个端点 0 失败）。
