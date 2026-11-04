@@ -129,3 +129,7 @@ report_drc                -file drc.rpt
 ```
 
 **注意**：三域联合版依赖厂商文件（`ps_ai_wrap_demo.edf` 132 MB + `JFM_Kits` 2 GB），不在提交包内；可完整重建的独立检测器版见 `1_FPGA工程/build_bd.tcl`，其资源约 55,000 LUT / 70%。
+
+## 关于报告内的路径
+
+`utilization.rpt`、`timing.rpt`、`vivado_run.log`、`build_flow.tcl` 中的 `D:/firstharness/...` 是出位流那台构建机上的路径，属于 Vivado 原始输出的一部分，未做改动，以保证报告的真实性。仓库内可用 `pl/tools/build_bd.tcl` 重新生成等价工程。
