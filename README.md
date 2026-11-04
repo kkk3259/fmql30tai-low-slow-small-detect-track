@@ -1,13 +1,13 @@
-# 低小慢空间目标智能识别与跟踪系统
+# 低小慢空间目标智能检测与跟踪系统
 
 > 2026 全国大学生嵌入式芯片与系统设计竞赛 · FPGA 创新设计赛道（复旦微方向）
 > 平台：FMQL30TAI-悟净开发板 Lite ｜ ARM 四核 A53 + ZG330 NPU（8 TOPS INT8）+ 可编程逻辑
 
 ---
 
-## 当前状态（2026-11-03）
+## 当前状态（2026-11-04）
 
-**已实测通过**：三域同板闭环（`ours3d_s5.bin`，`state=operating`，16.6 fps）、PL 自研 4 IP 上板、YOLOv11n 与 cls128 在 ZG330 上推理（7.955 ms / 0.68 ms，数值误差 0.002）、网页控制台实时推流、开机自启 13.1 s。
+**已实测通过**：三域同板闭环（`ours3d_bram_load.bin`，`state=operating`，16.6 fps）、PL 自研 4 IP 上板、YOLOv11n 与 cls128 在 ZG330 上推理（7.955 ms / 0.68 ms，数值误差 0.002）、网页控制台实时推流、开机自启 13.1 s。
 
 **交付状态**：
 
@@ -144,7 +144,7 @@ http://<板卡IP>:8080/
 ```bash
 pkill -9 -f 'cam_pipe[.]py'; pkill -9 -f 'cam3d_pipe[.]py' # 先停所有访问 PL 的进程
 sleep 3
-echo ours3d_s5.bin > /sys/class/fpga_manager/fpga0/firmware
+echo ours3d_bram_load.bin > /sys/class/fpga_manager/fpga0/firmware
 sleep 3
 cat /sys/class/fpga_manager/fpga0/state # 必须是 operating
 ```
