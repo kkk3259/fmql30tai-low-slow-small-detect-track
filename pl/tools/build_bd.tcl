@@ -31,6 +31,9 @@ set PS7_CFG   [file normalize [file join $SCRIPT_DIR "ps7_config.tcl"]]
 set PART      "xc7z030ffg676-2"
 set TOP_BD    "ip2_bd"
 
+# 产物统一放仓库根 build/，首次运行自动创建
+file mkdir [file join $ROOT "build"]
+
 puts "\[build_bd\] ===== 1. 创建工程 ====="
 # 安全保护：如果当前 Vivado 里已经打开着工程（比如上一次跑失败后没关），
 # 必须先关掉，否则 create_project -force 不能替换内存里的那份，
@@ -202,7 +205,7 @@ set_property top ${TOP_BD}_wrapper [current_fileset]
 update_compile_order -fileset sources_1
 
 puts "\[build_bd\] ===== 13. 约束：LED[3:0] = J1/M6/H7/J8（LVCMOS15） ====="
-set xdc "$ROOT/synth/vivado/ip2_ps_pins.xdc"
+set xdc [file normalize [file join $ROOT "build" "ip2_ps_pins.xdc"]]
 set fh [open $xdc w]
 puts $fh "# IP2 + PS BD 的引脚约束（时钟/复位由 BD 内部提供，不需要 create_clock）"
 puts $fh "# PL 侧 4 个 LED：led[0]=J1、led[1]=M6、led[2]=H7、led[3]=J8"
